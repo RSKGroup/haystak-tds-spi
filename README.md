@@ -1,5 +1,7 @@
 # haystak-tds-spi
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/RSKGroup/haystak-tds-spi.svg)](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi)
+
 A SQL Server wire-protocol (TDS) gateway, shipped as importable Go modules. It speaks
 TDS (the protocol SQL Server clients talk) on the front, and translates through a
 pluggable backend SPI to whatever store sits behind it. Any TDS client (sqlcmd, SSMS,
@@ -14,6 +16,17 @@ TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` an
 `CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and
 fail-closed when unsupported. The `examples/` directory has working backends, including
 a real MongoDB adapter in three catalog flavors.
+
+## Install
+
+```sh
+go get github.com/RSKGroup/haystak-tds-spi
+```
+
+Implement `tds.Backend`, then serve it with `server.ListenAndServe`. See
+[Build a backend](#build-a-backend) below, the runnable examples on
+[pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds#example-package),
+and the complete backends in [`examples/`](examples/) to copy from.
 
 ## Architecture
 
@@ -166,6 +179,17 @@ take literals; the rich expression tree from the read path doesn't apply here.
 Pinned protocol specs: MS-TDS (the wire), MC-SQLR (instance resolution), and MS-BINXML
 (the `xml` type). See [docs/README.md](docs/README.md) for provenance and the licensing
 notice.
+
+## Documentation
+
+Full API reference and runnable examples are on
+[pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi):
+
+- [`tds`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds) — the SPI: `Backend`, `Scanner`/`QueryExecutor`, `Writer`/`DDL`/`DatabaseDDL`/`Databaser`, `Authenticator`, `Caps`.
+- [`server`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/server) — `ListenAndServe`, `Server`, `StaticAuth`.
+- [`tds/catalog`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds/catalog) — the schema model (`Schema`/`Table`/`Column`/`ForeignKey`).
+- [`tds/types`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds/types) — the backend-neutral type system.
+- [`tds/tdstest`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds/tdstest) — the `RunConformance` harness.
 
 ## License
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.1
+
+Documentation only, no API or behavior changes: a doc comment on every exported symbol,
+package overviews on all public packages, and runnable `Example` functions (package
+example, `ExampleAuthFunc`, `ExampleServer`, `ExampleStaticAuth`) — so the full reference
+renders on pkg.go.dev. README gains Install, Documentation, and a Go Reference badge.
+
 ## v1.0.0
 
 Initial release — a pure-Go TDS (SQL Server wire) gateway shipped as an importable SPI,

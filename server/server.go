@@ -1,6 +1,8 @@
 // Copyright 2026 RSKGroup, LLC.
 // SPDX-License-Identifier: Apache-2.0
 
+// Package server runs the TDS wire protocol (PRELOGIN/LOGIN7, TLS-in-TDS, SQL_BATCH, RPC) on a tds.Backend.
+// ListenAndServe is the one-liner; Server adds TLS, authentication, and server/database naming.
 package server
 
 import (
@@ -15,19 +17,22 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
+// Server serves a tds.Backend over the TDS wire. The zero value needs only Backend set; the rest is optional.
 type Server struct {
 	Backend    tds.Backend
 	Auth       tds.Authenticator // optional; falls back to a Backend that implements Authenticator
-	ServerName string
-	Database   string
-	TLSConfig  *tls.Config
+	ServerName string            // reported as @@SERVERNAME (default "haystak")
+	Database   string            // reported as the current database (default "master")
+	TLSConfig  *tls.Config       // non-nil enables TLS-in-TDS
 	Logf       func(string, ...any)
 }
 
+// ListenAndServe serves b on addr (host:port) with default settings: no TLS, anonymous auth.
 func ListenAndServe(addr string, b tds.Backend) error {
 	return (&Server{Backend: b}).ListenAndServe(addr)
 }
 
+// ListenAndServe listens on addr (host:port) and serves until the listener fails.
 func (s *Server) ListenAndServe(addr string) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -37,6 +42,7 @@ func (s *Server) ListenAndServe(addr string) error {
 	return s.Serve(ln)
 }
 
+// Serve accepts connections on ln and serves each in its own goroutine until Accept fails.
 func (s *Server) Serve(ln net.Listener) error {
 	for {
 		conn, err := ln.Accept()

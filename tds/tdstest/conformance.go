@@ -1,6 +1,7 @@
 // Copyright 2026 RSKGroup, LLC.
 // SPDX-License-Identifier: Apache-2.0
 
+// Package tdstest provides a conformance harness for tds.Backend implementations.
 package tdstest
 
 import (
@@ -11,6 +12,8 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
+// RunConformance checks that a backend's Caps match the interfaces it implements, then drives real
+// SELECT and catalog queries through the gateway engine. Call it from a Test in your backend's package.
 func RunConformance(t testing.TB, b tds.Backend) {
 	t.Helper()
 	ctx := context.Background()

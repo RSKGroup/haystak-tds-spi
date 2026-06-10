@@ -3,6 +3,7 @@
 
 package tds
 
+// Op is a predicate comparison or membership operator.
 type Op int
 
 const (
@@ -19,6 +20,7 @@ const (
 	OpExists // Sub returns ≥1 row
 )
 
+// Predicate is one comparison in a WHERE expression: Column (or LeftExpr) Op Value.
 type Predicate struct {
 	Column   string
 	LeftExpr *ValueExpr // optional: left side is an expression (nil → use Column)
@@ -39,6 +41,7 @@ type Expr struct {
 	Const *bool // resolved constant (e.g. EXISTS folded before exec)
 }
 
+// AggFunc identifies an aggregate in a SelectItem (AggNone for a plain column).
 type AggFunc int
 
 const (
@@ -59,6 +62,7 @@ type SelectItem struct {
 	Alias  string     // output column name (optional)
 }
 
+// ValueKind tags the variant of a ValueExpr scalar expression.
 type ValueKind int
 
 const (
@@ -96,12 +100,14 @@ type CaseWhen struct {
 	Result *ValueExpr
 }
 
+// OrderItem is one ORDER BY term: a column or a 1-based select-list ordinal, ascending unless Desc.
 type OrderItem struct {
 	Column  string
 	Ordinal int // 1-based select-list position (ORDER BY n); 0 = use Column
 	Desc    bool
 }
 
+// JoinType is the kind of join in a multi-table FROM.
 type JoinType int
 
 const (
@@ -121,6 +127,7 @@ type Join struct {
 	On     *Expr // nil for CROSS JOIN
 }
 
+// SetOp is the junction between SELECTs in a UNION/INTERSECT/EXCEPT chain.
 type SetOp int
 
 const (
