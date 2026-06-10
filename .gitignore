@@ -1,0 +1,24 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test / coverage
+*.test
+*.out
+coverage.*
+
+# Go workspace / vendor
+go.work.sum
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+workplan/
