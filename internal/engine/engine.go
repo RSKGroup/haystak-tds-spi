@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -313,6 +314,17 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	if caps.FullQuery {
 		if qe, ok := b.(tds.QueryExecutor); ok {
 			return qe.ExecuteQuery(ctx, q)
+		}
+	}
+	if caps.Aggregate && len(q.Joins) == 0 && q.FromSub == nil && exec.IsAggregate(q) {
+		if agg, ok := b.(tds.Aggregator); ok {
+			rows, err := agg.Aggregate(ctx, q)
+			if err == nil {
+				return rows, nil
+			}
+			if !errors.Is(err, tds.ErrAggregateUnsupported) {
+				return nil, err
+			}
 		}
 	}
 	if caps.Pushdown {

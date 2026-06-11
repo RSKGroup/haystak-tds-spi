@@ -28,6 +28,7 @@ type Caps struct {
 	Pushdown  bool    // implements Scanner (thin path; engine evaluates the query)
 	Writable  bool    // implements Writer (INSERT/UPDATE/DELETE)
 	DDL       bool    // implements DDL and/or DatabaseDDL
+	Aggregate bool    // implements Aggregator (pushes some GROUP BY / aggregate queries)
 	Tx        TxModel // transaction support level
 }
 
@@ -54,6 +55,14 @@ type Writer interface {
 	Update(ctx context.Context, up *Update) (Result, error)
 	Delete(ctx context.Context, del *Delete) (Result, error)
 }
+
+// Aggregator optionally pushes a pure aggregation (no joins); return ErrAggregateUnsupported to fall back to scan.
+type Aggregator interface {
+	Aggregate(ctx context.Context, q *Query) (Rows, error)
+}
+
+// ErrAggregateUnsupported tells the engine an Aggregator can't push this query — use the scan path.
+var ErrAggregateUnsupported = errors.New("tds: aggregate not pushable")
 
 // DDL is the optional table-write contract (CREATE/ALTER/DROP TABLE), gated by Caps.DDL.
 type DDL interface {

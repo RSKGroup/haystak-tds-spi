@@ -80,6 +80,9 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (td
 	return &memRows{cols: outCols, data: out}, nil
 }
 
+// IsAggregate reports whether q is a GROUP BY / aggregate-function query.
+func IsAggregate(q *tds.Query) bool { return isAggregate(q) }
+
 func isAggregate(q *tds.Query) bool {
 	if len(q.GroupBy) > 0 {
 		return true
