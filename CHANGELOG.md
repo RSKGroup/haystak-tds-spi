@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.1.0
+
+Engine and examples, additive — no breaking API changes.
+
+- **Join pushdown** — for an equi-`JOIN … ON`, the engine scans the right table only for rows whose
+  join key matches a left-side key (a semi-join pushed as a right-side `IN` filter), for INNER/LEFT
+  joins. The database qualifier of a joined table is now threaded through the parser and executor, so
+  cross-database joins (`… JOIN otherdb.schema.t …`) resolve against the intended database.
+- **Aggregates in HAVING and ORDER BY** — `COUNT(*)` parses as a function argument anywhere an
+  expression is allowed, so `HAVING COUNT(*) > 1` works; `ORDER BY` accepts expressions and aggregates
+  (`ORDER BY COUNT(*) DESC`); and aggregate calls in HAVING/ORDER BY evaluate over the group rather than
+  the already-aggregated output row. `tds.OrderItem` gains an `Expr` field.
+- **Elasticsearch and OpenSearch example backends** — `examples/elasticsearch-community` and
+  `examples/opensearch-community` (inferred catalog, fields sampled from `_source`) plus their `-2`
+  variants (declared catalog: columns from the native `_mapping`, primary/foreign keys from a reserved
+  `haystak_catalog` index). Each takes `--host <url:port>` and `--db <name>`; the MongoDB examples gain
+  the same flags.
+
 ## v1.0.1
 
 Documentation only, no API or behavior changes: a doc comment on every exported symbol,
