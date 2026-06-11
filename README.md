@@ -2,6 +2,8 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/RSKGroup/haystak-tds-spi.svg)](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi)
 
+> It's a Go library you drop into your own application so that your app can answer SQL queries as if it were Microsoft SQL Server — letting everyday SQL tools like Excel, Power BI, and SSMS talk to whatever data you've got behind it, whether that's Mongo, Elasticsearch, OpenSearch, or whatever you build.
+
 A SQL Server wire-protocol (TDS) gateway, shipped as importable Go modules. It speaks
 TDS (the protocol SQL Server clients talk) on the front, and translates through a
 pluggable backend SPI to whatever store sits behind it. Any TDS client (sqlcmd, SSMS,
