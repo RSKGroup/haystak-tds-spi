@@ -72,11 +72,11 @@ func (p *parser) parseInsert() (*tds.Insert, error) {
 	if err := p.expectKeyword("INTO"); err != nil {
 		return nil, err
 	}
-	_, _, tbl, err := p.tableName()
+	db, sch, tbl, err := p.tableName()
 	if err != nil {
 		return nil, err
 	}
-	ins := &tds.Insert{Table: tbl}
+	ins := &tds.Insert{Database: db, Schema: sch, Table: tbl}
 	if p.peek().kind == tLParen {
 		p.next()
 		cols, err := p.identList()
@@ -117,11 +117,11 @@ func (p *parser) parseInsert() (*tds.Insert, error) {
 
 func (p *parser) parseUpdate() (*tds.Update, error) {
 	p.next() // UPDATE
-	_, _, tbl, err := p.tableName()
+	db, sch, tbl, err := p.tableName()
 	if err != nil {
 		return nil, err
 	}
-	up := &tds.Update{Table: tbl}
+	up := &tds.Update{Database: db, Schema: sch, Table: tbl}
 	if err := p.expectKeyword("SET"); err != nil {
 		return nil, err
 	}
@@ -161,11 +161,11 @@ func (p *parser) parseDelete() (*tds.Delete, error) {
 	if err := p.expectKeyword("FROM"); err != nil {
 		return nil, err
 	}
-	_, _, tbl, err := p.tableName()
+	db, sch, tbl, err := p.tableName()
 	if err != nil {
 		return nil, err
 	}
-	del := &tds.Delete{Table: tbl}
+	del := &tds.Delete{Database: db, Schema: sch, Table: tbl}
 	if p.isKeyword("WHERE") {
 		p.next()
 		preds, err := p.simpleWhere()
