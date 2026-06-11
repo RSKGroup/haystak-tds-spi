@@ -45,7 +45,7 @@ func DecodeRPC(payload []byte) (string, bool) {
 	} else {
 		proc = r.ucs2n(int(nameLen))
 	}
-	if !strings.EqualFold(proc, "sp_executesql") {
+	if proc == "" {
 		return "", false
 	}
 	if _, ok := r.u16(); !ok { // OptionFlags
@@ -59,18 +59,41 @@ func DecodeRPC(payload []byte) (string, bool) {
 		}
 		params = append(params, p)
 	}
-	if len(params) == 0 {
-		return "", false
+	if strings.EqualFold(proc, "sp_executesql") {
+		if len(params) == 0 {
+			return "", false
+		}
+		stmt, _ := params[0].val.(string)
+		if stmt == "" {
+			return "", false
+		}
+		decls := ""
+		if len(params) >= 2 {
+			decls, _ = params[1].val.(string)
+		}
+		return expandParams(stmt, decls, params[2:]), true
 	}
-	stmt, _ := params[0].val.(string)
-	if stmt == "" {
-		return "", false
+	return rebuildExec(proc, params), true
+}
+
+// rebuildExec turns a named-proc RPC into the equivalent `EXEC proc args` batch for the engine.
+func rebuildExec(proc string, params []rpcParam) string {
+	var sb strings.Builder
+	sb.WriteString("EXEC ")
+	sb.WriteString(proc)
+	for i, p := range params {
+		if i == 0 {
+			sb.WriteString(" ")
+		} else {
+			sb.WriteString(", ")
+		}
+		if p.name != "" {
+			sb.WriteString(p.name)
+			sb.WriteString(" = ")
+		}
+		sb.WriteString(sqlLiteral(p.val))
 	}
-	decls := ""
-	if len(params) >= 2 {
-		decls, _ = params[1].val.(string)
-	}
-	return expandParams(stmt, decls, params[2:]), true
+	return sb.String()
 }
 
 type cur struct {

@@ -30,7 +30,8 @@ const (
 	envPacketSize = 4
 )
 
-var tdsVersion74 = [4]byte{0x04, 0x00, 0x00, 0x74}
+// LOGINACK TDS 7.4: the bytes real SQL Server sends; go-mssqldb reads them big-endian as verTDS74 (0x74000004).
+var tdsVersion74 = [4]byte{0x74, 0x00, 0x00, 0x04}
 
 type Token struct {
 	Type byte
@@ -79,6 +80,12 @@ func EmptyDone() []byte { return done(DoneFinal, 0, 0) }
 
 // DoneWithCount is the DONE(final, count) response to a write/DDL with rows-affected set.
 func DoneWithCount(n uint64) []byte { return done(DoneFinal|DoneCount, 0, n) }
+
+// EnvChangeDatabase is the ENVCHANGE(database) token, to lead a response after USE changes the db.
+func EnvChangeDatabase(db string) []byte { return envChange(envDatabase, db, "") }
+
+// DatabaseChange is the standalone USE response: ENVCHANGE(database) + DONE(final).
+func DatabaseChange(db string) []byte { return append(EnvChangeDatabase(db), done(DoneFinal, 0, 0)...) }
 
 func mkToken(typ byte, data []byte) []byte {
 	out := make([]byte, 3, 3+len(data))

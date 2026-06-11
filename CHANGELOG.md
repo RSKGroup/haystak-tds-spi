@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.2.1
+
+GUI/driver compatibility — additive, no breaking API changes.
+
+- **LOGINACK TDS version** — the server reports TDS 7.4 with the on-the-wire bytes real SQL Server
+  sends (`74 00 00 04`), so strict clients (FreeTDS — SQLPro Studio, DBeaver/jTDS, pyodbc/pymssql)
+  accept the login instead of dropping it, while go-mssqldb / .NET read the full 7.4 feature level.
+- **Catalog stored procedures** — `sp_databases`, `sp_tables`, and `sp_columns` are answered both as a
+  batch (`EXEC sp_tables`) and as a by-name RPC, and an RPC for any other procedure is no longer
+  silently dropped, so ODBC/GUI clients can enumerate databases, tables, and columns.
+- **TDS-in-TLS handshake pinned to TLS 1.2** — the PRELOGIN-wrapped handshake completes with FreeTDS
+  and other clients that do not expect a TLS 1.3 flight.
+- **Session current database** — `USE [db]` updates the connection's current database (with an
+  `ENVCHANGE`), an unqualified query resolves against it, and `DB_NAME()` reflects it.
+- **Per-database catalog scoping** — `sys.tables` / `sys.columns` / `INFORMATION_SCHEMA` report the
+  current database's objects so a GUI's per-node table list is correct; `sys.databases` stays
+  server-wide, and an unknown or system database resolves to an empty catalog rather than an error.
+
 ## v1.2.0
 
 Additive — no breaking API changes.

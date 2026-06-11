@@ -6,7 +6,41 @@ package wire
 import (
 	"encoding/binary"
 	"testing"
+	"unicode/utf16"
 )
+
+// bNamedProc builds a by-name RPC frame (the form FreeTDS/ODBC catalog functions use).
+func bNamedProc(proc string, params ...[]byte) []byte {
+	u := utf16.Encode([]rune(proc))
+	var b []byte
+	var nl [2]byte
+	binary.LittleEndian.PutUint16(nl[:], uint16(len(u)))
+	b = append(b, nl[:]...)
+	for _, c := range u {
+		var cb [2]byte
+		binary.LittleEndian.PutUint16(cb[:], c)
+		b = append(b, cb[:]...)
+	}
+	b = append(b, 0x00, 0x00) // OptionFlags
+	for _, p := range params {
+		b = append(b, p...)
+	}
+	return append([]byte{4, 0, 0, 0}, b...)
+}
+
+func TestDecodeNamedProc_Databases(t *testing.T) {
+	sql, ok := DecodeRPC(bNamedProc("sp_databases"))
+	if !ok || sql != "EXEC sp_databases" {
+		t.Fatalf("got (%q,%v), want (\"EXEC sp_databases\", true)", sql, ok)
+	}
+}
+
+func TestDecodeNamedProc_TablesWithParam(t *testing.T) {
+	sql, ok := DecodeRPC(bNamedProc("sp_tables", bNVarParam("@table_qualifier", "sales")))
+	if !ok || sql != "EXEC sp_tables @table_qualifier = 'sales'" {
+		t.Fatalf("got (%q,%v)", sql, ok)
+	}
+}
 
 func bExecSQL(stmt, decls string, args []any) []byte {
 	names := declaredNames(decls)

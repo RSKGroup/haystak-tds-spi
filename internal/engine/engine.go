@@ -27,23 +27,8 @@ func Query(ctx context.Context, b tds.Backend, sql string) (tds.Rows, error) {
 
 // Exec runs a batch and returns the last result set, or rows-affected (>=0) for a write/DDL.
 func Exec(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, error) {
-	var lastRows tds.Rows
-	lastAffected := int64(-1)
-	for _, s := range splitBatch(sql) {
-		if strings.TrimSpace(s) == "" {
-			continue
-		}
-		rs, aff, err := queryOne(ctx, b, s)
-		if err != nil {
-			return nil, -1, err
-		}
-		if rs != nil {
-			lastRows, lastAffected = rs, -1
-		} else if aff >= 0 {
-			lastRows, lastAffected = nil, aff
-		}
-	}
-	return lastRows, lastAffected, nil
+	rs, aff, _, err := NewSession(b, currentDB(ctx)).Exec(ctx, sql)
+	return rs, aff, err
 }
 
 func execWrite(ctx context.Context, b tds.Backend, sql string) (int64, bool, error) {
@@ -134,7 +119,11 @@ func splitBatch(sql string) []string {
 }
 
 func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, error) {
-	if rs, handled, err := probe(sql); handled {
+	db := currentDB(ctx)
+	if rs, handled, err := probe(sql, db); handled {
+		return rs, -1, err
+	}
+	if rs, handled, err := execProc(ctx, b, sql); handled {
 		return rs, -1, err
 	}
 	if affected, isWrite, err := execWrite(ctx, b, sql); isWrite {
@@ -144,6 +133,7 @@ func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, 
 	if err != nil {
 		return nil, -1, err
 	}
+	applyDefaultDB(q, db)
 	if q.Union != nil {
 		rs, err := unionRun(ctx, b, q)
 		return rs, -1, err
@@ -260,6 +250,9 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 	if strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") {
+		if q.Database == "" {
+			q.Database = currentDB(ctx)
+		}
 		schema, _, err := introspectSchema(ctx, b, q)
 		if err != nil {
 			return nil, err
@@ -274,6 +267,9 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	}
 
 	if strings.EqualFold(q.Schema, "sys") {
+		if q.Database == "" && !strings.EqualFold(q.Table, "databases") {
+			q.Database = currentDB(ctx)
+		}
 		schema, dbs, err := introspectSchema(ctx, b, q)
 		if err != nil {
 			return nil, err
@@ -934,15 +930,18 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 	}
 	want := dbs
 	if q.Database != "" {
-		want = []string{q.Database}
+		want = nil
+		for _, db := range dbs {
+			if strings.EqualFold(db, q.Database) {
+				want = []string{db}
+				break
+			}
+		}
 	}
 	var agg catalog.Schema
 	for _, db := range want {
 		s, err := d.DescribeDatabase(ctx, db)
 		if err != nil {
-			if q.Database != "" {
-				return catalog.Schema{}, nil, err
-			}
 			continue
 		}
 		for i := range s.Tables {
@@ -955,7 +954,7 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 
 const serverVersion = "Microsoft SQL Server 2022 (haystak-tds-spi gateway) - TDS 7.4"
 
-func probe(sql string) (tds.Rows, bool, error) {
+func probe(sql, db string) (tds.Rows, bool, error) {
 	u := strings.TrimSuffix(strings.TrimSpace(sql), ";")
 	u = strings.ToUpper(strings.TrimSpace(u))
 	if u == "" || strings.HasPrefix(u, "SET ") || strings.HasPrefix(u, "USE ") {
@@ -968,7 +967,7 @@ func probe(sql string) (tds.Rows, bool, error) {
 	if i := strings.Index(e, " AS "); i >= 0 {
 		e = strings.TrimSpace(e[:i])
 	}
-	val, ok := probeValue(e)
+	val, ok := probeValue(e, db)
 	if !ok {
 		return nil, false, nil
 	}
@@ -980,7 +979,10 @@ func probe(sql string) (tds.Rows, bool, error) {
 	return rs, true, err
 }
 
-func probeValue(e string) (any, bool) {
+func probeValue(e, db string) (any, bool) {
+	if db == "" {
+		db = "master"
+	}
 	switch e {
 	case "@@VERSION":
 		return serverVersion, true
@@ -993,7 +995,7 @@ func probeValue(e string) (any, bool) {
 	case "@@ROWCOUNT", "@@ERROR", "@@TRANCOUNT", "@@FETCH_STATUS":
 		return int64(0), true
 	case "DB_NAME()", "ORIGINAL_DB_NAME()":
-		return "master", true
+		return db, true
 	case "SCHEMA_NAME()":
 		return "dbo", true
 	case "SYSTEM_USER", "CURRENT_USER", "SESSION_USER", "SUSER_NAME()", "SUSER_SNAME()", "USER_NAME()", "USER":

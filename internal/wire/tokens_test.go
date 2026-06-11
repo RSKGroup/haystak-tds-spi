@@ -24,6 +24,18 @@ func TestLoginResponseStructure(t *testing.T) {
 	}
 }
 
+// TestLoginAckVersion locks the LOGINACK TDS version to real SQL Server's 74 00 00 04 (go-mssqldb reads it big-endian as verTDS74; FreeTDS accepts it).
+func TestLoginAckVersion(t *testing.T) {
+	toks, err := ParseTokens(BuildLoginResponse("haystak", "master"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := toks[2].Data[1:5]
+	if want := []byte{0x74, 0x00, 0x00, 0x04}; string(v) != string(want) {
+		t.Fatalf("LOGINACK version = % x, want % x", v, want)
+	}
+}
+
 func TestParseTokensUnknown(t *testing.T) {
 	if _, err := ParseTokens([]byte{0x99}); err == nil {
 		t.Fatal("expected unknown-token error")

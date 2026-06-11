@@ -62,24 +62,24 @@ func (s *Server) logf(format string, args ...any) {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	s.logf("conn from %s", conn.RemoteAddr())
-	sess, princ, err := s.handshake(conn)
+	sess, princ, db, err := s.handshake(conn)
 	if err != nil {
 		s.logf("handshake error: %v", err)
 		return
 	}
-	s.logf("handshake complete (user=%q)", princ.Username)
-	s.serve(sess, princ)
+	s.logf("handshake complete (user=%q db=%q)", princ.Username, db)
+	s.serve(sess, princ, db)
 }
 
-func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, error) {
+func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, error) {
 	var none tds.Principal
 	pre, err := wire.ReadMessage(conn)
 	if err != nil {
-		return nil, none, err
+		return nil, none, "", err
 	}
 	s.logf("recv PRELOGIN type=0x%02X len=%d", byte(pre.Type), len(pre.Payload))
 	if pre.Type != wire.PacketPreLogin {
-		return nil, none, errors.New("server: expected PRELOGIN")
+		return nil, none, "", errors.New("server: expected PRELOGIN")
 	}
 
 	useTLS := false
@@ -95,14 +95,14 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, error) {
 		respEnc = wire.EncryptOn
 	}
 	if err := s.send(conn, wire.ServerPreloginResponse(respEnc)); err != nil {
-		return nil, none, err
+		return nil, none, "", err
 	}
 	s.logf("sent PRELOGIN response (enc=%d)", respEnc)
 
 	if useTLS {
 		tlsConn, terr := wire.ServerTLS(conn, s.TLSConfig)
 		if terr != nil {
-			return nil, none, fmt.Errorf("server: tls handshake: %w", terr)
+			return nil, none, "", fmt.Errorf("server: tls handshake: %w", terr)
 		}
 		s.logf("TLS established")
 		conn = tlsConn
@@ -110,15 +110,15 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, error) {
 
 	login, err := wire.ReadMessage(conn)
 	if err != nil {
-		return nil, none, err
+		return nil, none, "", err
 	}
 	s.logf("recv LOGIN7 type=0x%02X len=%d", byte(login.Type), len(login.Payload))
 	if login.Type != wire.PacketLogin7 {
-		return nil, none, errors.New("server: expected LOGIN7")
+		return nil, none, "", errors.New("server: expected LOGIN7")
 	}
 	l, err := wire.ParseLogin7(login.Payload)
 	if err != nil {
-		return nil, none, err
+		return nil, none, "", err
 	}
 	s.logf("login user=%q db=%q app=%q tls=%v", l.UserName, l.Database, l.AppName, useTLS)
 
@@ -129,14 +129,18 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, error) {
 	if autherr != nil {
 		s.logf("auth rejected user=%q: %v", l.UserName, autherr)
 		_ = s.send(conn, wire.LoginError("Login failed for user '"+l.UserName+"'."))
-		return nil, none, autherr
+		return nil, none, "", autherr
 	}
 
-	if err := s.send(conn, wire.BuildLoginResponse(s.serverName(), s.database())); err != nil {
-		return nil, none, err
+	loginDB := s.database()
+	if l.Database != "" {
+		loginDB = l.Database
+	}
+	if err := s.send(conn, wire.BuildLoginResponse(s.serverName(), loginDB)); err != nil {
+		return nil, none, "", err
 	}
 	s.logf("sent LOGIN response")
-	return conn, princ, nil
+	return conn, princ, loginDB, nil
 }
 
 // authenticate runs the configured Authenticator, else a Backend that implements one; with neither
@@ -164,8 +168,9 @@ func StaticAuth(creds map[string]string) tds.Authenticator {
 	})
 }
 
-func (s *Server) serve(conn net.Conn, princ tds.Principal) {
+func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string) {
 	ctx := tds.WithPrincipal(context.Background(), princ)
+	sess := engine.NewSession(s.Backend, initialDB)
 	for {
 		msg, err := wire.ReadMessage(conn)
 		if err != nil {
@@ -179,6 +184,9 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal) {
 		case wire.PacketRPC:
 			expanded, ok := wire.DecodeRPC(msg.Payload)
 			if !ok {
+				if err := s.send(conn, wire.EmptyDone()); err != nil {
+					return
+				}
 				continue
 			}
 			sql = expanded
@@ -186,9 +194,15 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal) {
 			continue
 		}
 		s.logf("stmt: %q", sql)
-		resp, err := s.runQuery(ctx, sql)
+		rows, affected, envDB, err := sess.Exec(ctx, sql)
 		if err != nil {
 			s.logf("query error: %v", err)
+			_ = s.send(conn, wire.BuildError(err.Error()))
+			continue
+		}
+		resp, err := buildResponse(rows, affected, envDB)
+		if err != nil {
+			s.logf("response error: %v", err)
 			_ = s.send(conn, wire.BuildError(err.Error()))
 			continue
 		}
@@ -198,16 +212,17 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal) {
 	}
 }
 
-func (s *Server) runQuery(ctx context.Context, sql string) ([]byte, error) {
-	rows, affected, err := engine.Exec(ctx, s.Backend, sql)
-	if err != nil {
-		return nil, err
+// buildResponse renders a result set or rows-affected, led by an ENVCHANGE when USE changed the db.
+func buildResponse(rows tds.Rows, affected int64, envDB string) ([]byte, error) {
+	var lead []byte
+	if envDB != "" {
+		lead = wire.EnvChangeDatabase(envDB)
 	}
 	if rows == nil {
 		if affected >= 0 {
-			return wire.DoneWithCount(uint64(affected)), nil
+			return append(lead, wire.DoneWithCount(uint64(affected))...), nil
 		}
-		return wire.EmptyDone(), nil
+		return append(lead, wire.EmptyDone()...), nil
 	}
 	defer rows.Close()
 	cols := rows.Columns()
@@ -222,7 +237,11 @@ func (s *Server) runQuery(ctx context.Context, sql string) ([]byte, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return wire.BuildResultResponse(cols, data)
+	body, err := wire.BuildResultResponse(cols, data)
+	if err != nil {
+		return nil, err
+	}
+	return append(lead, body...), nil
 }
 
 func (s *Server) send(conn net.Conn, payload []byte) error {
