@@ -124,14 +124,20 @@ func typeInfo(t types.Type) []byte {
 		binary.LittleEndian.PutUint16(out[1:3], uint16(maxBytes))
 		return out
 	default:
-		maxBytes := 8000
-		if t.MaxLen > 0 && t.MaxLen*2 < maxBytes {
-			maxBytes = t.MaxLen * 2
-		}
 		out := []byte{typeNVARCHAR, 0, 0}
-		binary.LittleEndian.PutUint16(out[1:3], uint16(maxBytes))
+		if nvarcharIsMax(t) {
+			binary.LittleEndian.PutUint16(out[1:3], 0xFFFF) // nvarchar(max) — value is PLP-encoded
+		} else {
+			binary.LittleEndian.PutUint16(out[1:3], uint16(t.MaxLen*2))
+		}
 		return append(out, 0, 0, 0, 0, 0) // collation
 	}
+}
+
+// nvarcharIsMax reports whether a string column is unbounded or too long for a sized nvarchar
+// (>4000 chars), so it must be declared nvarchar(max) and its values PLP-encoded.
+func nvarcharIsMax(t types.Type) bool {
+	return t.MaxLen <= 0 || t.MaxLen > 4000
 }
 
 func encodeValue(t types.Type, v any) []byte {
@@ -166,6 +172,9 @@ func encodeValue(t types.Type, v any) []byte {
 	case types.Bytes:
 		return encodeVarbinary(v)
 	default:
+		if nvarcharIsMax(t) {
+			return encodePLPString(v)
+		}
 		return encodeNVarchar(v)
 	}
 }
@@ -304,6 +313,34 @@ func encodeNVarchar(v any) []byte {
 		out = append(out, byte(c), byte(c>>8))
 	}
 	return out
+}
+
+// encodePLPString encodes nvarchar(max) as PLP: an 8-byte total length, length-prefixed body chunks,
+// then a 0-length terminator — carrying values of any size (a full report's text, not just 8000 bytes).
+func encodePLPString(v any) []byte {
+	if v == nil {
+		return []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF} // PLP_NULL
+	}
+	u := utf16.Encode([]rune(fmt.Sprintf("%v", v)))
+	data := make([]byte, len(u)*2)
+	for i, c := range u {
+		data[2*i] = byte(c)
+		data[2*i+1] = byte(c >> 8)
+	}
+	out := make([]byte, 8, 8+len(data)+len(data)/(1<<20)*4+4)
+	binary.LittleEndian.PutUint64(out[0:8], uint64(len(data))) // total length
+	const chunk = 1 << 20
+	for off := 0; off < len(data); off += chunk {
+		end := off + chunk
+		if end > len(data) {
+			end = len(data)
+		}
+		var cl [4]byte
+		binary.LittleEndian.PutUint32(cl[:], uint32(end-off))
+		out = append(out, cl[:]...)
+		out = append(out, data[off:end]...)
+	}
+	return append(out, 0, 0, 0, 0) // PLP terminator
 }
 
 func usVarchar(s string) []byte {
