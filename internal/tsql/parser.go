@@ -122,15 +122,21 @@ func (p *parser) peekN(n int) token {
 	return p.toks[i]
 }
 
+// identLike: current token usable as an identifier (plain ident or non-reserved keyword).
+func (p *parser) identLike() bool {
+	t := p.peek()
+	return t.kind == tIdent || (t.kind == tKeyword && nonReserved[strings.ToUpper(t.text)])
+}
+
 func (p *parser) qualifiedName() (string, bool) {
-	if p.peek().kind != tIdent {
+	if !p.identLike() {
 		return "", false
 	}
 	name := p.peek().text
 	p.next()
 	for p.peek().kind == tDot {
 		p.next()
-		if p.peek().kind != tIdent {
+		if !p.identLike() {
 			break
 		}
 		name += "." + p.peek().text
@@ -227,7 +233,7 @@ func (p *parser) next() token {
 
 func (p *parser) isKeyword(kw string) bool {
 	t := p.peek()
-	return t.kind == tKeyword && t.text == kw
+	return t.kind == tKeyword && strings.EqualFold(t.text, kw)
 }
 
 func (p *parser) expectKeyword(kw string) error {
@@ -551,7 +557,7 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 			return nil, err
 		}
 		return &tds.ValueExpr{Kind: tds.ValLit, Lit: v}, nil
-	case t.kind == tIdent:
+	case p.identLike():
 		if strings.EqualFold(t.text, "CAST") && p.peekN(1).kind == tLParen {
 			return p.castExpr()
 		}
@@ -766,19 +772,17 @@ func (p *parser) identList() ([]string, error) {
 }
 
 func (p *parser) tableName() (db, schema, table string, err error) {
-	t := p.peek()
-	if t.kind != tIdent {
-		return "", "", "", fmt.Errorf("tsql: expected table name, got %q", t.text)
+	if !p.identLike() {
+		return "", "", "", fmt.Errorf("tsql: expected table name, got %q", p.peek().text)
 	}
-	parts := []string{t.text}
+	parts := []string{p.peek().text}
 	p.next()
 	for p.peek().kind == tDot {
 		p.next()
-		t = p.peek()
-		if t.kind != tIdent {
-			return "", "", "", fmt.Errorf("tsql: expected name after '.', got %q", t.text)
+		if !p.identLike() {
+			return "", "", "", fmt.Errorf("tsql: expected name after '.', got %q", p.peek().text)
 		}
-		parts = append(parts, t.text)
+		parts = append(parts, p.peek().text)
 		p.next()
 	}
 	table = parts[len(parts)-1]

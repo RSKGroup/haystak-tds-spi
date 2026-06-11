@@ -43,6 +43,12 @@ var keywords = map[string]bool{
 	"ALTER": true, "ADD": true, "COLUMN": true,
 }
 
+// nonReserved keywords also parse as identifiers (e.g. a column named first).
+var nonReserved = map[string]bool{
+	"FIRST": true, "NEXT": true, "ROW": true, "ROWS": true, "ONLY": true,
+	"OFFSET": true, "FETCH": true, "ADD": true, "COLUMN": true, "VALUE": true,
+}
+
 func lex(s string) ([]token, error) {
 	var toks []token
 	i, n := 0, len(s)
@@ -146,7 +152,7 @@ func lex(s string) ([]token, error) {
 			}
 			word := s[i:j]
 			if keywords[strings.ToUpper(word)] {
-				toks = append(toks, token{tKeyword, strings.ToUpper(word)})
+				toks = append(toks, token{tKeyword, word}) // keep original case for keyword-as-identifier
 			} else {
 				toks = append(toks, token{tIdent, word})
 			}
