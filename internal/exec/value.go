@@ -59,6 +59,50 @@ func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, s
 	return newCols, out, newSel, nil
 }
 
+func hasOrderExpr(order []tds.OrderItem) bool {
+	for _, o := range order {
+		if o.Expr != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// materializeOrderExprs computes each expression ORDER BY term into a synthetic appended column and
+// rewrites the term to reference it, so the column-indexed sorter can order by it.
+func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]any, order []tds.OrderItem) ([]catalog.Column, [][]any, map[string]int, []tds.OrderItem, error) {
+	newCols := append([]catalog.Column{}, cols...)
+	newOrder := append([]tds.OrderItem{}, order...)
+	type comp struct {
+		at int
+		ve *tds.ValueExpr
+	}
+	var comps []comp
+	for k := range newOrder {
+		if newOrder[k].Expr == nil {
+			continue
+		}
+		name := fmt.Sprintf("__ord%d", k)
+		newCols = append(newCols, catalog.Column{Name: name, Type: exprType(newOrder[k].Expr, cols, idx)})
+		comps = append(comps, comp{len(newCols) - 1, newOrder[k].Expr})
+		newOrder[k] = tds.OrderItem{Column: name, Desc: newOrder[k].Desc}
+	}
+	out := make([][]any, len(rows))
+	for r, row := range rows {
+		nr := make([]any, len(newCols))
+		copy(nr, row)
+		for _, c := range comps {
+			v, err := evalValue(idx, row, c.ve)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			nr[c.at] = v
+		}
+		out[r] = nr
+	}
+	return newCols, out, indexCols(newCols), newOrder, nil
+}
+
 func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr) (any, error) {
 	switch ve.Kind {
 	case tds.ValLit:

@@ -565,11 +565,16 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 			var args []*tds.ValueExpr
 			if p.peek().kind != tRParen {
 				for {
-					a, err := p.valueExpr()
-					if err != nil {
-						return nil, err
+					if p.peek().kind == tStar {
+						args = append(args, &tds.ValueExpr{Kind: tds.ValCol, Col: "*"})
+						p.next()
+					} else {
+						a, err := p.valueExpr()
+						if err != nil {
+							return nil, err
+						}
+						args = append(args, a)
 					}
-					args = append(args, a)
 					if p.peek().kind == tComma {
 						p.next()
 						continue
@@ -1034,11 +1039,15 @@ func (p *parser) orderList() ([]tds.OrderItem, error) {
 			item.Ordinal = n
 			p.next()
 		} else {
-			name, ok := p.qualifiedName()
-			if !ok {
-				return nil, fmt.Errorf("tsql: expected column in ORDER BY, got %q", p.peek().text)
+			ve, err := p.valueExpr()
+			if err != nil {
+				return nil, err
 			}
-			item.Column = name
+			if ve.Kind == tds.ValCol {
+				item.Column = ve.Col
+			} else {
+				item.Expr = ve
+			}
 		}
 		if p.isKeyword("ASC") {
 			p.next()

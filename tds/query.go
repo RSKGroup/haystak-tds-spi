@@ -100,10 +100,12 @@ type CaseWhen struct {
 	Result *ValueExpr
 }
 
-// OrderItem is one ORDER BY term: a column or a 1-based select-list ordinal, ascending unless Desc.
+// OrderItem is one ORDER BY term: a column, a 1-based select-list ordinal, or an expression
+// (e.g. an aggregate like COUNT(*)), ascending unless Desc.
 type OrderItem struct {
 	Column  string
-	Ordinal int // 1-based select-list position (ORDER BY n); 0 = use Column
+	Ordinal int        // 1-based select-list position (ORDER BY n); 0 = use Column/Expr
+	Expr    *ValueExpr // set when the term is an expression rather than a bare column
 	Desc    bool
 }
 
