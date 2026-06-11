@@ -663,17 +663,25 @@ func materialize(rows tds.Rows) ([]catalog.Column, [][]any, error) {
 }
 
 func joinQuery(ctx context.Context, sc tds.Scanner, q *tds.Query) (tds.Rows, error) {
-	cols, rows, err := scanTable(ctx, sc, q.Schema, q.Table)
+	fromAlias := effAlias(q.FromAlias, q.Table)
+	cols, rows, err := scanTable(ctx, sc, &tds.Query{
+		Database: q.Database, Schema: q.Schema, Table: q.Table,
+		Where: singleTableWhere(q.Where, fromAlias, q.Table),
+	})
 	if err != nil {
 		return nil, err
 	}
-	cols = qualify(cols, effAlias(q.FromAlias, q.Table))
+	cols = qualify(cols, fromAlias)
 	for _, j := range q.Joins {
-		rcols, rrows, err := scanTable(ctx, sc, j.Schema, j.Table)
+		jAlias := effAlias(j.Alias, j.Table)
+		rcols, rrows, err := scanTable(ctx, sc, &tds.Query{
+			Database: j.Database, Schema: j.Schema, Table: j.Table,
+			Where: singleTableWhere(q.Where, jAlias, j.Table),
+		})
 		if err != nil {
 			return nil, err
 		}
-		rcols = qualify(rcols, effAlias(j.Alias, j.Table))
+		rcols = qualify(rcols, jAlias)
 		cols, rows, err = exec.Join(cols, rows, j.Type, rcols, rrows, j.On)
 		if err != nil {
 			return nil, err
@@ -682,12 +690,110 @@ func joinQuery(ctx context.Context, sc tds.Scanner, q *tds.Query) (tds.Rows, err
 	return exec.Apply(cols, rows, q)
 }
 
-func scanTable(ctx context.Context, sc tds.Scanner, schema, table string) ([]catalog.Column, [][]any, error) {
-	raw, err := sc.Scan(ctx, &tds.Query{Schema: schema, Table: table})
+func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Column, [][]any, error) {
+	raw, err := sc.Scan(ctx, q)
 	if err != nil {
 		return nil, nil, err
 	}
 	return materialize(raw)
+}
+
+// singleTableWhere returns the top-level AND conjuncts of `where` whose every column is qualified
+// with the given alias or table — a safe pushdown hint for that table's scan. The full WHERE is
+// still applied after the join, so this only ever narrows. Conjuncts with unqualified or
+// cross-table columns are left for post-join evaluation.
+func singleTableWhere(where *tds.Expr, alias, table string) *tds.Expr {
+	var keep []*tds.Expr
+	for _, c := range flattenAnd(where) {
+		cols := exprCols(c)
+		if len(cols) == 0 {
+			continue
+		}
+		ok := true
+		for _, col := range cols {
+			if !strings.HasPrefix(col, alias+".") && !strings.HasPrefix(col, table+".") {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			keep = append(keep, c)
+		}
+	}
+	switch len(keep) {
+	case 0:
+		return nil
+	case 1:
+		return keep[0]
+	default:
+		return &tds.Expr{And: keep}
+	}
+}
+
+func flattenAnd(e *tds.Expr) []*tds.Expr {
+	if e == nil {
+		return nil
+	}
+	if len(e.And) > 0 {
+		var out []*tds.Expr
+		for _, c := range e.And {
+			out = append(out, flattenAnd(c)...)
+		}
+		return out
+	}
+	return []*tds.Expr{e}
+}
+
+func exprCols(e *tds.Expr) []string {
+	var out []string
+	var walkE func(*tds.Expr)
+	var walkV func(*tds.ValueExpr)
+	walkE = func(e *tds.Expr) {
+		if e == nil {
+			return
+		}
+		if e.Pred != nil {
+			if e.Pred.Column != "" {
+				out = append(out, e.Pred.Column)
+			}
+			walkV(e.Pred.LeftExpr)
+			switch v := e.Pred.Value.(type) {
+			case *tds.ValueExpr:
+				walkV(v)
+			case tds.ColRef:
+				out = append(out, v.Name)
+			}
+		}
+		for _, c := range e.And {
+			walkE(c)
+		}
+		for _, c := range e.Or {
+			walkE(c)
+		}
+		walkE(e.Not)
+	}
+	walkV = func(v *tds.ValueExpr) {
+		if v == nil {
+			return
+		}
+		if v.Col != "" {
+			out = append(out, v.Col)
+		}
+		walkV(v.Left)
+		walkV(v.Right)
+		for _, a := range v.Args {
+			walkV(a)
+		}
+		walkV(v.Operand)
+		for _, c := range v.Whens {
+			walkE(c.Cond)
+			walkV(c.Match)
+			walkV(c.Result)
+		}
+		walkV(v.Else)
+	}
+	walkE(e)
+	return out
 }
 
 func qualify(cols []catalog.Column, alias string) []catalog.Column {

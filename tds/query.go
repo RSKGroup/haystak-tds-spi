@@ -120,11 +120,12 @@ const (
 
 // Join is one joined table in a multi-table FROM.
 type Join struct {
-	Type   JoinType
-	Schema string
-	Table  string
-	Alias  string
-	On     *Expr // nil for CROSS JOIN
+	Type     JoinType
+	Database string
+	Schema   string
+	Table    string
+	Alias    string
+	On       *Expr // nil for CROSS JOIN
 }
 
 // SetOp is the junction between SELECTs in a UNION/INTERSECT/EXCEPT chain.

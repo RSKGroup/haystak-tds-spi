@@ -199,11 +199,11 @@ func (p *parser) optJoin() (*tds.Join, error) {
 	default:
 		return nil, nil
 	}
-	_, sch, tbl, err := p.tableName()
+	db, sch, tbl, err := p.tableName()
 	if err != nil {
 		return nil, err
 	}
-	j := &tds.Join{Type: jt, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
+	j := &tds.Join{Type: jt, Database: db, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
 	if jt != tds.JoinCross {
 		if err := p.expectKeyword("ON"); err != nil {
 			return nil, err
