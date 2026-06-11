@@ -674,9 +674,17 @@ func joinQuery(ctx context.Context, sc tds.Scanner, q *tds.Query) (tds.Rows, err
 	cols = qualify(cols, fromAlias)
 	for _, j := range q.Joins {
 		jAlias := effAlias(j.Alias, j.Table)
+		where := singleTableWhere(q.Where, jAlias, j.Table)
+		// Semi-join: scan the right side only for rows whose join key matches a left key. Safe for INNER/LEFT; unsafe for RIGHT/FULL.
+		if j.Type == tds.JoinInner || j.Type == tds.JoinLeft {
+			if lk, rk, ok := joinKeys(j.On, jAlias, j.Table); ok {
+				if vals := distinctColValues(cols, rows, lk); len(vals) > 0 && len(vals) <= semiJoinCap {
+					where = andExpr(where, &tds.Expr{Pred: &tds.Predicate{Column: rk, Op: tds.OpIn, Value: vals}})
+				}
+			}
+		}
 		rcols, rrows, err := scanTable(ctx, sc, &tds.Query{
-			Database: j.Database, Schema: j.Schema, Table: j.Table,
-			Where: singleTableWhere(q.Where, jAlias, j.Table),
+			Database: j.Database, Schema: j.Schema, Table: j.Table, Where: where,
 		})
 		if err != nil {
 			return nil, err
@@ -699,9 +707,7 @@ func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Col
 }
 
 // singleTableWhere returns the top-level AND conjuncts of `where` whose every column is qualified
-// with the given alias or table — a safe pushdown hint for that table's scan. The full WHERE is
-// still applied after the join, so this only ever narrows. Conjuncts with unqualified or
-// cross-table columns are left for post-join evaluation.
+// with the given alias or table — a safe pushdown hint for that table's scan.
 func singleTableWhere(where *tds.Expr, alias, table string) *tds.Expr {
 	var keep []*tds.Expr
 	for _, c := range flattenAnd(where) {
@@ -794,6 +800,97 @@ func exprCols(e *tds.Expr) []string {
 	}
 	walkE(e)
 	return out
+}
+
+const semiJoinCap = 10000 // max distinct left keys pushed as a right-side IN-filter
+
+// joinKeys extracts a simple equi-join key pair from ON: the left-side column (qualified, to read
+// from the accumulated left rows) and the right-side column (bare, for the right table's scan).
+// Returns ok only for a single `a = b` where exactly one side belongs to the right table.
+func joinKeys(on *tds.Expr, rightAlias, rightTable string) (leftKey, rightKey string, ok bool) {
+	if on == nil || on.Pred == nil || on.Pred.Op != tds.OpEq {
+		return "", "", false
+	}
+	a := on.Pred.Column
+	if a == "" && on.Pred.LeftExpr != nil && on.Pred.LeftExpr.Kind == tds.ValCol {
+		a = on.Pred.LeftExpr.Col
+	}
+	var b string
+	switch v := on.Pred.Value.(type) {
+	case *tds.ValueExpr:
+		if v.Kind == tds.ValCol {
+			b = v.Col
+		}
+	case tds.ColRef:
+		b = v.Name
+	}
+	if a == "" || b == "" {
+		return "", "", false
+	}
+	aRight := isQualified(a, rightAlias, rightTable)
+	bRight := isQualified(b, rightAlias, rightTable)
+	switch {
+	case aRight && !bRight:
+		return b, bareCol(a), true
+	case bRight && !aRight:
+		return a, bareCol(b), true
+	}
+	return "", "", false
+}
+
+func isQualified(col, alias, table string) bool {
+	return strings.HasPrefix(col, alias+".") || strings.HasPrefix(col, table+".")
+}
+
+func bareCol(col string) string {
+	if i := strings.LastIndex(col, "."); i >= 0 {
+		return col[i+1:]
+	}
+	return col
+}
+
+func distinctColValues(cols []catalog.Column, rows [][]any, key string) []any {
+	idx := -1
+	for i, c := range cols {
+		if c.Name == key {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		for i, c := range cols {
+			if bareCol(c.Name) == bareCol(key) {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []any
+	for _, r := range rows {
+		if idx >= len(r) || r[idx] == nil {
+			continue
+		}
+		k := fmt.Sprintf("%v", r[idx])
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, r[idx])
+		}
+	}
+	return out
+}
+
+func andExpr(a, b *tds.Expr) *tds.Expr {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	return &tds.Expr{And: []*tds.Expr{a, b}}
 }
 
 func qualify(cols []catalog.Column, alias string) []catalog.Column {
