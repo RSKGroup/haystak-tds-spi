@@ -17,7 +17,7 @@ const dbName = "haystak"
 
 // Resolve answers a query against sys.* catalog views from a backend's declared schema.
 // Returns handled=false when the query does not target the sys schema.
-func Resolve(schema catalog.Schema, q *tds.Query) (tds.Rows, bool, error) {
+func Resolve(schema catalog.Schema, dbs []string, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
@@ -25,7 +25,7 @@ func Resolve(schema catalog.Schema, q *tds.Query) (tds.Rows, bool, error) {
 	var data [][]any
 	switch strings.ToLower(q.Table) {
 	case "databases":
-		cols, data = databasesRows()
+		cols, data = databasesRows(dbs)
 	case "schemas":
 		cols, data = schemasRows()
 	case "tables", "objects":
@@ -43,7 +43,7 @@ func Resolve(schema catalog.Schema, q *tds.Query) (tds.Rows, bool, error) {
 	return r, true, err
 }
 
-func databasesRows() ([]catalog.Column, [][]any) {
+func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		sname("name"), intc("database_id"), intc("state"), sname("state_desc"),
 		intc("is_read_only"), sname("collation_name"), intc("compatibility_level"),
@@ -51,7 +51,14 @@ func databasesRows() ([]catalog.Column, [][]any) {
 	mk := func(name string, id int64) []any {
 		return []any{name, id, int64(0), "ONLINE", int64(0), "SQL_Latin1_General_CP1_CI_AS", int64(160)}
 	}
-	return cols, [][]any{mk("master", 1), mk("tempdb", 2), mk("model", 3), mk("msdb", 4), mk(dbName, 5)}
+	if len(dbs) == 0 { // single-database backend: keep reporting the default catalog
+		dbs = []string{dbName}
+	}
+	rows := [][]any{mk("master", 1), mk("tempdb", 2), mk("model", 3), mk("msdb", 4)}
+	for i, db := range dbs {
+		rows = append(rows, mk(db, int64(5+i)))
+	}
+	return cols, rows
 }
 
 func schemasRows() ([]catalog.Column, [][]any) {

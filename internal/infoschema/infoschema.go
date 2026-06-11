@@ -80,7 +80,7 @@ func tablesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		rows = append(rows, []any{catalogName, schemaName, t.Name, "BASE TABLE"})
+		rows = append(rows, []any{catalogOf(t), schemaName, t.Name, "BASE TABLE"})
 	}
 	return cols, rows
 }
@@ -96,7 +96,7 @@ func columnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	for _, t := range schema.Tables {
 		for i, c := range t.Columns {
 			rows = append(rows, []any{
-				catalogName, schemaName, t.Name, c.Name, int64(i + 1),
+				catalogOf(t), schemaName, t.Name, c.Name, int64(i + 1),
 				yesNo(c.Type.Nullable), TypeName(c.Type),
 				charLen(c.Type), numPrec(c.Type), numScale(c.Type),
 			})
@@ -113,10 +113,10 @@ func tableConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	var rows [][]any
 	for _, t := range schema.Tables {
 		if len(t.PrimaryKey) > 0 {
-			rows = append(rows, []any{catalogName, schemaName, "PK_" + t.Name, catalogName, schemaName, t.Name, "PRIMARY KEY"})
+			rows = append(rows, []any{catalogOf(t), schemaName, "PK_" + t.Name, catalogOf(t), schemaName, t.Name, "PRIMARY KEY"})
 		}
 		for _, fk := range t.ForeignKeys {
-			rows = append(rows, []any{catalogName, schemaName, "FK_" + t.Name + "_" + fk.RefTable, catalogName, schemaName, t.Name, "FOREIGN KEY"})
+			rows = append(rows, []any{catalogOf(t), schemaName, "FK_" + t.Name + "_" + fk.RefTable, catalogOf(t), schemaName, t.Name, "FOREIGN KEY"})
 		}
 	}
 	return cols, rows
@@ -131,11 +131,11 @@ func keyColumnUsageRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	var rows [][]any
 	for _, t := range schema.Tables {
 		for i, c := range t.PrimaryKey {
-			rows = append(rows, []any{catalogName, schemaName, "PK_" + t.Name, catalogName, schemaName, t.Name, c, int64(i + 1)})
+			rows = append(rows, []any{catalogOf(t), schemaName, "PK_" + t.Name, catalogOf(t), schemaName, t.Name, c, int64(i + 1)})
 		}
 		for _, fk := range t.ForeignKeys {
 			for i, c := range fk.Columns {
-				rows = append(rows, []any{catalogName, schemaName, "FK_" + t.Name + "_" + fk.RefTable, catalogName, schemaName, t.Name, c, int64(i + 1)})
+				rows = append(rows, []any{catalogOf(t), schemaName, "FK_" + t.Name + "_" + fk.RefTable, catalogOf(t), schemaName, t.Name, c, int64(i + 1)})
 			}
 		}
 	}
@@ -152,13 +152,21 @@ func referentialConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]an
 	for _, t := range schema.Tables {
 		for _, fk := range t.ForeignKeys {
 			rows = append(rows, []any{
-				catalogName, schemaName, "FK_" + t.Name + "_" + fk.RefTable,
-				catalogName, schemaName, "PK_" + fk.RefTable,
+				catalogOf(t), schemaName, "FK_" + t.Name + "_" + fk.RefTable,
+				catalogOf(t), schemaName, "PK_" + fk.RefTable,
 				"NONE", "NO ACTION", "NO ACTION",
 			})
 		}
 	}
 	return cols, rows
+}
+
+// catalogOf is the table's database (TABLE_CATALOG), or the default catalog if untagged.
+func catalogOf(t catalog.Table) string {
+	if t.Catalog != "" {
+		return t.Catalog
+	}
+	return catalogName
 }
 
 func strCol(n string) catalog.Column {

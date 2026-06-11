@@ -11,9 +11,10 @@ type Schema struct {
 	Tables []Table
 }
 
-// Table is one table's definition: its columns, primary key, and foreign keys.
+// Table is one table's definition: columns, keys, and (multi-database backends) its Catalog.
 type Table struct {
 	Name        string
+	Catalog     string
 	Columns     []Column
 	PrimaryKey  []string
 	ForeignKeys []ForeignKey

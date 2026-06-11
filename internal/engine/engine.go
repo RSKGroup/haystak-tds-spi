@@ -259,7 +259,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 	if strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") {
-		schema, err := b.Describe(ctx)
+		schema, _, err := introspectSchema(ctx, b, q)
 		if err != nil {
 			return nil, err
 		}
@@ -273,11 +273,11 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	}
 
 	if strings.EqualFold(q.Schema, "sys") {
-		schema, err := b.Describe(ctx)
+		schema, dbs, err := introspectSchema(ctx, b, q)
 		if err != nil {
 			return nil, err
 		}
-		rows, handled, err := sysviews.Resolve(schema, q)
+		rows, handled, err := sysviews.Resolve(schema, dbs, q)
 		if err != nil {
 			return nil, err
 		}
@@ -907,6 +907,38 @@ func effAlias(alias, table string) string {
 		return alias
 	}
 	return table
+}
+
+// introspectSchema is the catalog (all databases, each table catalog-tagged; q.Database narrows) + db list the catalog views report.
+func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog.Schema, []string, error) {
+	d, ok := b.(tds.Databaser)
+	if !ok {
+		s, err := b.Describe(ctx)
+		return s, nil, err
+	}
+	dbs, err := d.Databases(ctx)
+	if err != nil {
+		return catalog.Schema{}, nil, err
+	}
+	want := dbs
+	if q.Database != "" {
+		want = []string{q.Database}
+	}
+	var agg catalog.Schema
+	for _, db := range want {
+		s, err := d.DescribeDatabase(ctx, db)
+		if err != nil {
+			if q.Database != "" {
+				return catalog.Schema{}, nil, err
+			}
+			continue
+		}
+		for i := range s.Tables {
+			s.Tables[i].Catalog = db
+			agg.Tables = append(agg.Tables, s.Tables[i])
+		}
+	}
+	return agg, dbs, nil
 }
 
 const serverVersion = "Microsoft SQL Server 2022 (haystak-tds-spi gateway) - TDS 7.4"
