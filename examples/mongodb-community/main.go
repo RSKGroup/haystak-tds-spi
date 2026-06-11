@@ -7,8 +7,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -20,9 +22,16 @@ import (
 )
 
 func main() {
-	uri := envOr("MONGO_URI", "mongodb://localhost:27017")
-	dbName := envOr("MONGO_DB", "haystakdemo")
+	host := flag.String("host", "", "MongoDB host (url:port or mongodb:// URI); default mongodb://localhost:27017")
+	byoDB := flag.String("db", "", "serve an existing MongoDB database (BYO data, no seeding); blank seeds the demo database")
+	flag.Parse()
+
+	uri := mongoURI(*host)
 	addr := envOr("ADDR", "127.0.0.1:1433")
+	dbName := *byoDB
+	if dbName == "" {
+		dbName = envOr("MONGO_DB", "haystakdemo")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	client, err := mongo.Connect(ctx, clientOpts(uri))
@@ -35,12 +44,15 @@ func main() {
 	}
 	defer client.Disconnect(context.Background())
 
-	if err := seed(context.Background(), client.Database(dbName)); err != nil {
-		log.Fatalf("seed: %v", err)
+	// Blank --db is demo mode: seed our data. A named --db is BYO mode: serve it untouched (nothing to infer up front).
+	if *byoDB == "" {
+		if err := seed(context.Background(), client.Database(dbName)); err != nil {
+			log.Fatalf("seed: %v", err)
+		}
 	}
 
 	gw := &server.Server{Backend: mongobk.New(client, dbName), Database: dbName, Logf: log.Printf}
-	log.Printf("mongodb-community gateway → mongo %s db=%q, listening on %s", uri, dbName, addr)
+	log.Printf("mongodb-community gateway → mongo %s db=%q (inferred catalog), listening on %s", uri, dbName, addr)
 	log.Fatal(gw.ListenAndServe(addr))
 }
 
@@ -86,6 +98,21 @@ func clientOpts(uri string) *options.ClientOptions {
 		})
 	}
 	return o
+}
+
+// mongoURI resolves the effective connection URI: --host, else MONGO_URI, else the localhost default.
+// A bare host:port gets the mongodb:// scheme; a full mongodb:// or mongodb+srv:// URI is used as-is.
+func mongoURI(host string) string {
+	if host == "" {
+		host = os.Getenv("MONGO_URI")
+	}
+	if host == "" {
+		return "mongodb://localhost:27017"
+	}
+	if strings.Contains(host, "://") {
+		return host
+	}
+	return "mongodb://" + host
 }
 
 func envOr(k, d string) string {

@@ -14,8 +14,33 @@ Pure Go, no CGO, permissive dependencies only.
 Status: read and write are complete and live-validated over the wire (plaintext and
 TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` and
 `CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and
-fail-closed when unsupported. The `examples/` directory has working backends, including
-a real MongoDB adapter in three catalog flavors.
+fail-closed when unsupported. Out of the box, the `examples/` directory gives you a
+working MSSQL/TDS interface to **MongoDB, Elasticsearch, and OpenSearch right now** — run
+one, point `sqlcmd`/SSMS/Power BI at it, and query a NoSQL store as if it were SQL Server.
+
+## Ready-to-run backends
+
+These examples are complete, live-validated gateways — `go run` one and a real document
+store answers T-SQL on `:1433` (joins, aggregates, `INSERT`/`UPDATE`/`DELETE`,
+`INFORMATION_SCHEMA`/`sys.*` and all). Each takes an optional `--host <url:port>` (default
+localhost) and `--db <name>` (the database/index scope; blank seeds demo data so it works
+immediately):
+
+| Store | Inferred catalog (zero config) | Declared catalog (real FKs) |
+|---|---|---|
+| MongoDB | [`mongodb-community`](examples/mongodb-community) — fields sampled from documents | [`mongodb-community-2`](examples/mongodb-community-2) — `__haystak_catalog` collection |
+| Elasticsearch | [`elasticsearch-community`](examples/elasticsearch-community) — fields sampled from `_source` | [`elasticsearch-community-2`](examples/elasticsearch-community-2) — columns from `_mapping`, keys from `haystak_catalog` |
+| OpenSearch | [`opensearch-community`](examples/opensearch-community) — fields sampled from `_source` | [`opensearch-community-2`](examples/opensearch-community-2) — columns from `_mapping`, keys from `haystak_catalog` |
+
+```sh
+go run ./examples/elasticsearch-community               # seeds + serves a local ES on :1433
+sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT u.name, o.amount FROM users u JOIN orders o ON u.id = o.user_id"
+```
+
+The *inferred* variants need no schema — point them at a store and they sample documents to
+build the SQL catalog. The *declared* variants add the one thing inference can't recover,
+foreign keys, so cross-table `JOIN`s and `sys.foreign_keys` light up. (`examples/inmem` and
+`examples/gateway` are the dependency-free reference backends.)
 
 ## Install
 

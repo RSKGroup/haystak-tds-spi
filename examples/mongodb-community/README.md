@@ -20,12 +20,17 @@ mongosh --eval 'db.runCommand({ping:1})'   # should print { ok: 1 }
 ```sh
 cd examples/mongodb-community
 go run .                          # connects to localhost:27017, seeds db "haystakdemo", serves :1433
+go run . --db mydata             # serves your existing database "mydata" (no seeding)
 ```
 
+`--db <name>` serves an existing database (bring-your-own data): the inferred-catalog
+backend samples whatever collections are there, so it just works — nothing is built and
+nothing is seeded. With `--db` blank (the default) it seeds the demo database instead.
+
 Environment overrides: `MONGO_URI` (default `mongodb://localhost:27017`), `MONGO_DB`
-(default `haystakdemo`), `ADDR` (default `127.0.0.1:1433`). On start it seeds the demo
-database using Mongo's dynamic create-collection and insert (idempotent, only if
-empty), so there's data to query immediately.
+(the demo database name, default `haystakdemo`), `ADDR` (default `127.0.0.1:1433`). In
+demo mode it seeds using Mongo's dynamic create-collection and insert (idempotent, only
+if empty), so there's data to query immediately.
 
 ```sh
 sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT name FROM users WHERE age > 40"

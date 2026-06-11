@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -315,6 +316,94 @@ func bsonValue(v any) any {
 		return x.UTC()
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// EnsureCatalog bootstraps the declared catalog by inference when it is missing or empty; it never overwrites an existing one. Returns the number of tables written.
+func (b *Backend) EnsureCatalog(ctx context.Context) (int, error) {
+	n, err := b.database().Collection(CatalogCollection).CountDocuments(ctx, bson.D{})
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		return 0, nil
+	}
+	names, err := b.database().ListCollectionNames(ctx, bson.D{})
+	if err != nil {
+		return 0, err
+	}
+	sort.Strings(names)
+	written := 0
+	for _, name := range names {
+		if name == CatalogCollection || strings.HasPrefix(name, "__") || strings.HasPrefix(name, "system.") {
+			continue
+		}
+		doc, err := b.inferCatalogDoc(ctx, name)
+		if err != nil {
+			return written, err
+		}
+		if _, err := b.database().Collection(CatalogCollection).InsertOne(ctx, doc); err != nil {
+			return written, err
+		}
+		written++
+	}
+	return written, nil
+}
+
+// inferCatalogDoc samples a collection into a draft catalog row: inferred columns/types, PK = "id" when present else "_id" (and _id hidden when a business key exists), no FKs.
+func (b *Backend) inferCatalogDoc(ctx context.Context, coll string) (catalogDoc, error) {
+	cur, err := b.database().Collection(coll).Find(ctx, bson.D{}, options.Find().SetLimit(100))
+	if err != nil {
+		return catalogDoc{}, err
+	}
+	defer cur.Close(ctx)
+	var order []string
+	typ := map[string]string{}
+	for cur.Next(ctx) {
+		var doc bson.D
+		if err := cur.Decode(&doc); err != nil {
+			return catalogDoc{}, err
+		}
+		for _, e := range doc {
+			if _, seen := typ[e.Key]; !seen {
+				order = append(order, e.Key)
+				typ[e.Key] = bsonSQLType(e.Value)
+			}
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return catalogDoc{}, err
+	}
+	_, hasID := typ["id"]
+	cols := make([]catalogCol, 0, len(order))
+	for _, name := range order {
+		if name == "_id" && hasID {
+			continue
+		}
+		cols = append(cols, catalogCol{Name: name, Type: typ[name]})
+	}
+	pk := "_id"
+	if hasID {
+		pk = "id"
+	}
+	if len(cols) == 0 {
+		cols = append(cols, catalogCol{Name: "_id", Type: "varchar"})
+	}
+	return catalogDoc{Table: coll, Columns: cols, PrimaryKey: []string{pk}, ForeignKeys: []catalogFK{}}, nil
+}
+
+// bsonSQLType maps a sampled BSON value to a declared SQL type name (one of the names sqlType understands).
+func bsonSQLType(v any) string {
+	switch v.(type) {
+	case int32, int64:
+		return "bigint"
+	case float64:
+		return "float"
+	case bool:
+		return "bit"
+	case primitive.DateTime, time.Time:
+		return "datetime"
+	}
+	return "varchar"
 }
 
 type rows struct {
