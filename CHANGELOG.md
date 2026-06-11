@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.2.0
+
+Additive — no breaking API changes.
+
+- **Multi-database catalog views** — `sys.databases` lists a `Databaser` backend's databases, and
+  `INFORMATION_SCHEMA` / `sys.*` aggregate every database's tables (each tagged with its catalog) so
+  GUI/BI tools can browse the whole server; a database-qualified query (`[db].INFORMATION_SCHEMA.…`)
+  narrows to that database. `catalog.Table` gains a `Catalog` field.
+- **`nvarchar(max)` / PLP** — string columns that are unbounded or longer than 4000 characters are
+  declared `nvarchar(max)` and their values PLP-encoded, so a value larger than 8000 bytes (e.g. a full
+  document's text) no longer overflows the client reader.
+- **Aggregation pushdown** — an optional `Aggregator` interface (gated by `Caps.Aggregate`) lets a
+  backend answer a pure aggregation in its own engine; returning `ErrAggregateUnsupported` falls back to
+  the scan path.
+- **Writable multi-database routing** — `tds.Insert` / `Update` / `Delete` carry the `Database` /
+  `Schema` qualifier so a written `[db].table` routes to the intended database.
+- **`NULL` literal** — `NULL` parses as a literal, so `SET col = NULL` and `INSERT … VALUES (NULL)` work.
+- **Non-reserved keywords as identifiers** — a column or table named like a clause keyword (`first`,
+  `next`, `rows`, `value`, …) parses unquoted; keyword matching is case-insensitive and identifier case
+  is preserved.
+
 ## v1.1.0
 
 Engine and examples, additive — no breaking API changes.
