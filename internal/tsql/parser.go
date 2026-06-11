@@ -990,6 +990,10 @@ func (p *parser) literalList() ([]any, error) {
 }
 
 func (p *parser) literal() (any, error) {
+	if p.isKeyword("NULL") {
+		p.next()
+		return nil, nil
+	}
 	t := p.peek()
 	switch t.kind {
 	case tString:
