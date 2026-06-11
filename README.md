@@ -42,6 +42,13 @@ build the SQL catalog. The *declared* variants add the one thing inference can't
 foreign keys, so cross-table `JOIN`s and `sys.foreign_keys` light up. (`examples/inmem` and
 `examples/gateway` are the dependency-free reference backends.)
 
+Each document-store example is its own Go module (its own `go.mod`, with a `replace` to the
+parent) so the MongoDB / Elasticsearch / OpenSearch drivers never become dependencies of the
+core library. Because of that they aren't published as separate pkg.go.dev pages — browse
+them on GitHub under [`examples/`](https://github.com/RSKGroup/haystak-tds-spi/tree/main/examples),
+each with its own README and runnable code. Only `examples/inmem` and `examples/gateway`
+(which share the root module) appear on pkg.go.dev.
+
 ## Install
 
 ```sh
