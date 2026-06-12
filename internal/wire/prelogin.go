@@ -92,7 +92,7 @@ func BuildPrelogin(entries []PreloginEntry) []byte {
 // level (EncryptNotSup = plaintext; EncryptOn triggers the TLS handshake).
 func ServerPreloginResponse(enc Encryption) []byte {
 	return BuildPrelogin([]PreloginEntry{
-		{PreloginVersion, []byte{0, 0, 0, 0, 0, 0}},
+		{PreloginVersion, []byte{0x10, 0x00, 0x03, 0xE8, 0x00, 0x06}}, // 16.0.1000.6 — ODBC Driver 18 rejects 0.0.0.0 as pre-2005
 		{PreloginEncryption, []byte{byte(enc)}},
 		{PreloginMARS, []byte{0}},
 	})

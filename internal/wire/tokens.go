@@ -33,6 +33,9 @@ const (
 // LOGINACK TDS 7.4: the bytes real SQL Server sends; go-mssqldb reads them big-endian as verTDS74 (0x74000004).
 var tdsVersion74 = [4]byte{0x74, 0x00, 0x00, 0x04}
 
+// LOGINACK server build 16.0.1000 (SQL 2022); 0.0.0.0 makes ODBC Driver 18 reject as "SQL 2000 or earlier".
+var progVersion = [4]byte{0x10, 0x00, 0x03, 0xE8}
+
 type Token struct {
 	Type byte
 	Data []byte
@@ -54,7 +57,7 @@ func loginAck(serverName string) []byte {
 	data = append(data, 0x01)
 	data = append(data, tdsVersion74[:]...)
 	data = append(data, bVarchar(serverName)...)
-	data = append(data, 0x00, 0x00, 0x00, 0x00)
+	data = append(data, progVersion[:]...)
 	return mkToken(tokenLoginAck, data)
 }
 

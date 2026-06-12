@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.3
+
+GUI/driver compatibility — additive, no API changes.
+
+- **Handshake reports a real server version** — PRELOGIN and LOGINACK now advertise a SQL Server
+  build (`16.0.1000.6`) instead of `0.0.0.0`. Microsoft's native stack (ODBC Driver 18, OLE DB,
+  .NET SqlClient — and therefore SSMS, Power BI, Excel) reads the PRELOGIN version and rejects
+  anything it reads as "SQL Server 2000 or earlier" *before* login; go-mssqldb and FreeTDS were
+  lenient and connected regardless. Native-driver clients now connect.
+
 ## v1.2.2
 
 Docs only — no code or API changes.
