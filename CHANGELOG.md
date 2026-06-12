@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.2
+
+Docs only — no code or API changes.
+
+- **"Where it fits"** — a README positioning section describing, by category, how this SPI differs
+  from single-store SQL features, single-database wire shims, proprietary multi-connector gateways,
+  data-virtualization platforms, and distributed query engines.
+
 ## v1.2.1
 
 GUI/driver compatibility — additive, no breaking API changes.
