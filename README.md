@@ -80,6 +80,42 @@ TDS client ──wire──> server ──> engine ──> your Backend (SPI)
   declared catalog (tables, columns, types, foreign keys).
 - `tds` is the SPI you implement.
 
+## Where it fits
+
+There are already ways to put SQL in front of non-SQL data; this sits at a different point than each:
+
+- **SQL built into a single store** — a search engine's or document database's own SQL feature,
+  reachable only through that vendor's driver — ties you to one backend and one client library. This
+  is backend-agnostic and speaks the *native* SQL Server wire, so the tools you already have connect
+  unchanged.
+- **A wire shim in front of one database** (a connector that fronts a single document store on a SQL
+  wire) is likewise single-backend. Here the backend is whatever you implement.
+- **A proprietary gateway over hundreds of prebuilt connectors** trades openness and footprint for
+  breadth: closed source, licensed per source, a service to operate. This is Apache-2.0,
+  dependency-free, and embeds as a library — you own the adapter.
+- **An enterprise data-virtualization platform** (modeling, governance, caching) is a heavyweight
+  deployment in a different cost and operations class.
+- **A distributed query engine** federates many sources but runs as a JVM coordinator/worker cluster
+  and speaks its own protocol with its own driver. This is a single static Go binary that *is* the
+  endpoint — no cluster, no new driver.
+
+In one line: a **lightweight, Apache-2.0, embeddable Go SPI that makes any backend answer the native
+SQL Server (TDS) wire**, so every existing SQL Server client and BI tool connects with zero new
+drivers — one backend (which may federate internally) presented as a SQL Server, in a single binary
+you embed inside your own service.
+
+Differentiators at a glance — **open source** (Apache-2.0, dependency-free core), **lightweight** (one
+binary, no JVM, no cluster, instant start), **backend-agnostic** (any `tds.Backend`), **extensible**
+(implement only what you support; the engine does the SQL for thin backends; authentication is
+backend-owned; conformance-validated), and **Go-based** (no-CGO, cross-compiles everywhere as one
+executable).
+
+**Use it when** you want any backend to answer the native SQL Server wire from a single embeddable Go
+binary — the SQL and BI tools you already have, no new drivers.
+
+**Why it stays this small:** the whole footprint is the adapter you write plus this library, embedded
+inside your own service — which is what lets it ship as one binary and start instantly.
+
 ## Run the demo gateway
 
 ```sh
