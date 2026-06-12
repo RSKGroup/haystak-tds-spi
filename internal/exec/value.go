@@ -316,8 +316,58 @@ func evalFunc(name string, a []any) any {
 		}
 	case "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME":
 		return time.Now().UTC()
+	case "DB_ID":
+		return dbIDOf(argStr(a, 0))
+	case "HAS_DBACCESS":
+		return int64(1)
+	case "SCHEMA_NAME":
+		return "dbo"
+	case "SCHEMA_ID":
+		return int64(1)
+	case "OBJECT_ID":
+		if s := argStr(a, 0); s != "" {
+			return dbIDOf(s) + 100000
+		}
+		return nil
+	case "QUOTENAME":
+		if len(a) >= 1 {
+			return "[" + strings.ReplaceAll(toStr(a[0]), "]", "]]") + "]"
+		}
+		return nil
 	}
 	return nil
+}
+
+// argStr returns the i-th argument as a string, or "" if absent/NULL.
+func argStr(a []any, i int) string {
+	if i < len(a) && a[i] != nil {
+		return toStr(a[i])
+	}
+	return ""
+}
+
+// dbIDOf maps a database name to a stable non-zero id (system dbs keep their canonical ids).
+func dbIDOf(name string) int64 {
+	switch strings.ToLower(name) {
+	case "master":
+		return 1
+	case "tempdb":
+		return 2
+	case "model":
+		return 3
+	case "msdb":
+		return 4
+	case "":
+		return 0
+	}
+	var h int64
+	for _, c := range name {
+		h = h*31 + int64(c)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return h%30000 + 5
 }
 
 func castValue(v any, typ string) any {

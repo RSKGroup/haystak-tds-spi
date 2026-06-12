@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.4
+
+GUI/driver compatibility — additive, no API changes.
+
+- **Catalog scalar functions** — `HAS_DBACCESS`, `DB_ID`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`,
+  and `QUOTENAME` now return real values. After v1.2.3 advertised a SQL Server build, native GUIs
+  (SQLPro Studio, SSMS, Power BI) gate the database/object tree on `HAS_DBACCESS(...) = 1`; the
+  evaluator previously had no answer and the tree came up empty. Clients now browse databases,
+  schemas, and objects.
+
 ## v1.2.3
 
 GUI/driver compatibility — additive, no API changes.
