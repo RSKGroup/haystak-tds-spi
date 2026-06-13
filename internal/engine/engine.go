@@ -126,6 +126,9 @@ func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, 
 	if rs, handled, err := execProc(ctx, b, sql); handled {
 		return rs, -1, err
 	}
+	if handled, err := handleRoutineDDL(ctx, b, sql); handled {
+		return nil, -1, err
+	}
 	if affected, isWrite, err := execWrite(ctx, b, sql); isWrite {
 		return nil, affected, err
 	}
@@ -280,6 +283,12 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 		if handled {
 			return rows, nil
+		}
+	}
+
+	if q.Table != "" && len(q.Joins) == 0 && q.FromSub == nil && !isSystemSchema(q.Schema) {
+		if rs, handled, err := expandViewIfAny(ctx, b, q); handled {
+			return rs, err
 		}
 	}
 

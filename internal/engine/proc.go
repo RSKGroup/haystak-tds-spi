@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -29,7 +30,13 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 	case "sp_columns", "sp_columns_90":
 		return spColumns(ctx, b, args)
 	default:
-		return nil, true, nil
+		if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
+			return rs, true, err
+		}
+		if strings.HasPrefix(strings.ToLower(name), "sp_") {
+			return nil, true, nil
+		}
+		return nil, true, fmt.Errorf("could not find stored procedure %q", name)
 	}
 }
 
@@ -400,8 +407,18 @@ func yesNo(nullable bool) string {
 	return "NO"
 }
 
-func sn(n string) catalog.Column   { return catalog.Column{Name: n, Type: types.Type{Kind: types.String, MaxLen: 128}} }
-func nstr(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.String, Nullable: true}} }
-func str32(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.String, MaxLen: 32}} }
-func in16(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32, Nullable: true}} }
-func in32(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32, Nullable: true}} }
+func sn(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.String, MaxLen: 128}}
+}
+func nstr(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.String, Nullable: true}}
+}
+func str32(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.String, MaxLen: 32}}
+}
+func in16(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32, Nullable: true}}
+}
+func in32(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32, Nullable: true}}
+}

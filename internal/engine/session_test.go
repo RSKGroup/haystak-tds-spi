@@ -32,10 +32,10 @@ func TestApplyDefaultDB(t *testing.T) {
 		q    tds.Query
 		want string
 	}{
-		{tds.Query{Table: "patients"}, "syn"},               // unqualified → defaulted
-		{tds.Query{Table: "patients", Database: "other"}, "other"}, // already qualified → untouched
+		{tds.Query{Table: "patients"}, "syn"},                          // unqualified → defaulted
+		{tds.Query{Table: "patients", Database: "other"}, "other"},     // already qualified → untouched
 		{tds.Query{Table: "tables", Schema: "INFORMATION_SCHEMA"}, ""}, // system schema → untouched
-		{tds.Query{Table: "databases", Schema: "sys"}, ""},  // system schema → untouched
+		{tds.Query{Table: "databases", Schema: "sys"}, ""},             // system schema → untouched
 	}
 	for _, c := range cases {
 		q := c.q

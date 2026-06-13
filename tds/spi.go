@@ -29,6 +29,7 @@ type Caps struct {
 	Writable  bool    // implements Writer (INSERT/UPDATE/DELETE)
 	DDL       bool    // implements DDL and/or DatabaseDDL
 	Aggregate bool    // implements Aggregator (pushes some GROUP BY / aggregate queries)
+	Routines  bool    // implements RoutineStore (CREATE VIEW / PROCEDURE)
 	Tx        TxModel // transaction support level
 }
 
@@ -82,6 +83,40 @@ type DatabaseDDL interface {
 type Databaser interface {
 	Databases(ctx context.Context) ([]string, error)
 	DescribeDatabase(ctx context.Context, db string) (catalog.Schema, error)
+}
+
+// RoutineKind distinguishes a stored view from a stored procedure.
+type RoutineKind int
+
+const (
+	RoutineView RoutineKind = iota + 1
+	RoutineProc
+)
+
+// RoutineParam is one procedure parameter: its @name and declared T-SQL type text.
+type RoutineParam struct {
+	Name string // includes the leading @
+	Type string // declared type as written, e.g. "int", "nvarchar(50)"
+}
+
+// Routine is a stored view or procedure definition. The gateway parses and runs Body (the text after
+// AS) at use time, so the backend only persists and returns it — no SQL knowledge needed in the store.
+type Routine struct {
+	Database string
+	Schema   string // "dbo" when unspecified
+	Name     string
+	Kind     RoutineKind
+	Body     string
+	Params   []RoutineParam // procedures only, in declared order
+}
+
+// RoutineStore is the optional contract for persisting view/procedure definitions, gated by
+// Caps.Routines. Names are matched case-insensitively within a database.
+type RoutineStore interface {
+	PutRoutine(ctx context.Context, r *Routine) error
+	GetRoutine(ctx context.Context, database, name string) (*Routine, bool, error)
+	DropRoutine(ctx context.Context, database, name string) error
+	ListRoutines(ctx context.Context, database string) ([]*Routine, error)
 }
 
 // TxBeginner is the optional transaction contract, gated by Caps.Tx; Begin opens a Tx.

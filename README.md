@@ -78,7 +78,14 @@ TDS client ──wire──> server ──> engine ──> your Backend (SPI)
   backends.
 - `internal/{infoschema,sysviews}` answer `INFORMATION_SCHEMA.*` and `sys.*` from your
   declared catalog (tables, columns, types, foreign keys).
+- `internal/extensions/` is the **feature surface** — views, procedures (and their
+  procedural constructs), and scalar catalog functions — kept separate from the core engine
+  and reached only through a `Runner` seam. This is where new SQL-Server capability is added.
 - `tds` is the SPI you implement.
+
+The core (`wire`/`tsql`/`exec`/`engine`) is stable; new capability lands in `internal/extensions/`,
+one file per construct/function. See [ARCHITECTURE.md](ARCHITECTURE.md) for the layered map and
+[CONTRIBUTING.md](CONTRIBUTING.md) for the "where does my new file go" recipes.
 
 ## Where it fits
 
@@ -115,6 +122,29 @@ binary — the SQL and BI tools you already have, no new drivers.
 
 **Why it stays this small:** the whole footprint is the adapter you write plus this library, embedded
 inside your own service — which is what lets it ship as one binary and start instantly.
+
+## Performance
+
+The win is a full SQL surface over a store that never had one — `JOIN`s, aggregates,
+subqueries, CTEs, `INFORMATION_SCHEMA`/`sys.*`, and every SQL Server client and BI tool
+(Excel, Power BI, SSMS, sqlcmd, JDBC/.NET drivers) connecting with zero new drivers. The
+price of that reach is a translation layer between the TDS wire and your backend: you
+trade a slice of raw throughput for SQL accessibility — almost always a good trade for
+analytics, reporting, and ad-hoc query, where the bottleneck is the human, not the loop.
+
+How small that tax is depends on the path:
+
+- **Thick backend** (`QueryExecutor` / `Caps{FullQuery}`): the query is pushed down to
+  your store's native query language, so reads run at the store's own speed — the TDS
+  handshake and T-SQL parse are per-statement, not per-row. The overhead is marginal.
+- **Thin backend** (`Scanner` / `Pushdown`): the engine pulls the table(s) and evaluates
+  WHERE/JOIN/GROUP BY in-process. Effortless to stand up, but on large tables it
+  materializes rows and won't match an index-backed query — move to `QueryExecutor` once
+  a table outgrows a scan.
+
+It isn't a tuned SQL Server — no cost-based optimizer or index planner — and isn't trying
+to be. For analytics, reporting, catalog browsing, and ad-hoc SQL over your data, that
+convenience is the whole point; for hot-path OLTP, talk to your backend directly.
 
 ## Run the demo gateway
 

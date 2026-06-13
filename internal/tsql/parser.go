@@ -437,21 +437,26 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 		p.next()
 		p.next()
 		arg := ""
+		var argExpr *tds.ValueExpr
 		if p.peek().kind == tStar {
 			arg = "*"
 			p.next()
 		} else {
-			name, ok := p.qualifiedName()
-			if !ok {
-				return tds.SelectItem{}, fmt.Errorf("tsql: expected column or * in aggregate, got %q", p.peek().text)
+			ve, err := p.valueExpr()
+			if err != nil {
+				return tds.SelectItem{}, err
 			}
-			arg = name
+			if ve.Kind == tds.ValCol {
+				arg = ve.Col // simple column — keep the fast column-fold path
+			} else {
+				argExpr = ve // expression argument (e.g. CASE) — evaluated per row before the fold
+			}
 		}
 		if p.peek().kind != tRParen {
 			return tds.SelectItem{}, fmt.Errorf("tsql: expected ')' after aggregate, got %q", p.peek().text)
 		}
 		p.next()
-		return tds.SelectItem{Agg: fn, Arg: arg, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Alias: aliasOr(leadAlias, p.optAlias())}, nil
 	}
 	ve, err := p.valueExpr()
 	if err != nil {
@@ -895,6 +900,19 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		return &tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: op, Value: val}}
 	}
 
+	// `col NOT IN/LIKE/BETWEEN …` — consume the leading NOT and negate the membership predicate.
+	neg := false
+	if p.isKeyword("NOT") {
+		p.next()
+		neg = true
+	}
+	wrap := func(e *tds.Expr) *tds.Expr {
+		if neg {
+			return &tds.Expr{Not: e}
+		}
+		return e
+	}
+
 	switch {
 	case p.isKeyword("IS"):
 		p.next()
@@ -923,7 +941,7 @@ func (p *parser) predicate() (*tds.Expr, error) {
 				return nil, fmt.Errorf("tsql: expected ')' after subquery, got %q", p.peek().text)
 			}
 			p.next()
-			return &tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: tds.OpIn, Sub: sub}}, nil
+			return wrap(&tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: tds.OpIn, Sub: sub}}), nil
 		}
 		vals, err := p.literalList()
 		if err != nil {
@@ -933,7 +951,7 @@ func (p *parser) predicate() (*tds.Expr, error) {
 			return nil, fmt.Errorf("tsql: expected ')' after IN list, got %q", p.peek().text)
 		}
 		p.next()
-		return mk(tds.OpIn, vals), nil
+		return wrap(mk(tds.OpIn, vals)), nil
 
 	case p.isKeyword("LIKE"):
 		p.next()
@@ -942,7 +960,7 @@ func (p *parser) predicate() (*tds.Expr, error) {
 			return nil, fmt.Errorf("tsql: expected string after LIKE, got %q", t.text)
 		}
 		p.next()
-		return mk(tds.OpLike, t.text), nil
+		return wrap(mk(tds.OpLike, t.text)), nil
 
 	case p.isKeyword("BETWEEN"):
 		p.next()
@@ -957,9 +975,12 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &tds.Expr{And: []*tds.Expr{mk(tds.OpGe, lo), mk(tds.OpLe, hi)}}, nil
+		return wrap(&tds.Expr{And: []*tds.Expr{mk(tds.OpGe, lo), mk(tds.OpLe, hi)}}), nil
 	}
 
+	if neg {
+		return nil, fmt.Errorf("tsql: expected IN, LIKE, or BETWEEN after NOT, got %q", p.peek().text)
+	}
 	opTok := p.peek()
 	if opTok.kind != tOp {
 		return nil, fmt.Errorf("tsql: expected operator, got %q", opTok.text)

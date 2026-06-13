@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -42,6 +43,53 @@ func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, s
 		newCols = append(newCols, catalog.Column{Name: name, Type: exprType(it.Expr, cols, idx)})
 		comps = append(comps, comp{len(newCols) - 1, it.Expr})
 		newSel[k] = tds.SelectItem{Column: name, Alias: it.Alias}
+	}
+	out := make([][]any, len(rows))
+	for r, row := range rows {
+		nr := make([]any, len(newCols))
+		copy(nr, row)
+		for _, c := range comps {
+			v, err := evalValue(idx, row, c.ve)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			nr[c.at] = v
+		}
+		out[r] = nr
+	}
+	return newCols, out, newSel, nil
+}
+
+// materializeAggArgs evaluates each aggregate's expression argument (e.g. MAX(CASE …)) into a synthetic
+// appended column and rewrites the item to aggregate that column, so the column-based fold can run.
+func materializeAggArgs(cols []catalog.Column, idx map[string]int, rows [][]any, sel []tds.SelectItem) ([]catalog.Column, [][]any, []tds.SelectItem, error) {
+	has := false
+	for _, it := range sel {
+		if it.Agg != tds.AggNone && it.ArgExpr != nil {
+			has = true
+			break
+		}
+	}
+	if !has {
+		return cols, rows, sel, nil
+	}
+	newCols := append([]catalog.Column{}, cols...)
+	newSel := make([]tds.SelectItem, len(sel))
+	type comp struct {
+		at int
+		ve *tds.ValueExpr
+	}
+	var comps []comp
+	for k, it := range sel {
+		newSel[k] = it
+		if it.Agg == tds.AggNone || it.ArgExpr == nil {
+			continue
+		}
+		name := fmt.Sprintf("__agg%d", k)
+		newCols = append(newCols, catalog.Column{Name: name, Type: exprType(it.ArgExpr, cols, idx)})
+		comps = append(comps, comp{len(newCols) - 1, it.ArgExpr})
+		newSel[k].Arg = name
+		newSel[k].ArgExpr = nil
 	}
 	out := make([][]any, len(rows))
 	for r, row := range rows {
@@ -316,58 +364,11 @@ func evalFunc(name string, a []any) any {
 		}
 	case "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME":
 		return time.Now().UTC()
-	case "DB_ID":
-		return dbIDOf(argStr(a, 0))
-	case "HAS_DBACCESS":
-		return int64(1)
-	case "SCHEMA_NAME":
-		return "dbo"
-	case "SCHEMA_ID":
-		return int64(1)
-	case "OBJECT_ID":
-		if s := argStr(a, 0); s != "" {
-			return dbIDOf(s) + 100000
-		}
-		return nil
-	case "QUOTENAME":
-		if len(a) >= 1 {
-			return "[" + strings.ReplaceAll(toStr(a[0]), "]", "]]") + "]"
-		}
-		return nil
+	}
+	if v, ok := funcs.Eval(name, a); ok {
+		return v
 	}
 	return nil
-}
-
-// argStr returns the i-th argument as a string, or "" if absent/NULL.
-func argStr(a []any, i int) string {
-	if i < len(a) && a[i] != nil {
-		return toStr(a[i])
-	}
-	return ""
-}
-
-// dbIDOf maps a database name to a stable non-zero id (system dbs keep their canonical ids).
-func dbIDOf(name string) int64 {
-	switch strings.ToLower(name) {
-	case "master":
-		return 1
-	case "tempdb":
-		return 2
-	case "model":
-		return 3
-	case "msdb":
-		return 4
-	case "":
-		return 0
-	}
-	var h int64
-	for _, c := range name {
-		h = h*31 + int64(c)
-	}
-	if h < 0 {
-		h = -h
-	}
-	return h%30000 + 5
 }
 
 func castValue(v any, typ string) any {

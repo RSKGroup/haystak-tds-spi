@@ -37,7 +37,13 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (td
 	}
 
 	if isAggregate(q) {
-		return aggregate(cols, idx, filtered, q)
+		mCols, mRows, mSel, err := materializeAggArgs(cols, idx, filtered, q.Select)
+		if err != nil {
+			return nil, err
+		}
+		q2 := *q
+		q2.Select = mSel
+		return aggregate(mCols, indexCols(mCols), mRows, &q2)
 	}
 
 	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, q.Select)

@@ -55,11 +55,12 @@ const (
 
 // SelectItem is one entry in the select list: a plain column, an aggregate, or an expression.
 type SelectItem struct {
-	Column string     // plain column reference
-	Agg    AggFunc    // aggregate function (AggNone for a plain column)
-	Arg    string     // aggregate argument column ("*" for COUNT(*))
-	Expr   *ValueExpr // scalar expression (nil unless this item is computed)
-	Alias  string     // output column name (optional)
+	Column  string     // plain column reference
+	Agg     AggFunc    // aggregate function (AggNone for a plain column)
+	Arg     string     // aggregate argument column ("*" for COUNT(*))
+	ArgExpr *ValueExpr // aggregate argument expression (e.g. MAX(CASE …)); nil for a plain column arg
+	Expr    *ValueExpr // scalar expression (nil unless this item is computed)
+	Alias   string     // output column name (optional)
 }
 
 // ValueKind tags the variant of a ValueExpr scalar expression.
