@@ -40,6 +40,19 @@ func handleRoutineDDL(ctx context.Context, b tds.Backend, sql string) (bool, err
 	return procedures.HandleDDL(ctx, store, db, sql)
 }
 
+// listRoutines returns the stored routines for db, or nil when the backend has no RoutineStore.
+func listRoutines(ctx context.Context, b tds.Backend, db string) []*tds.Routine {
+	store, ok := b.(tds.RoutineStore)
+	if !ok {
+		return nil
+	}
+	rts, err := store.ListRoutines(ctx, db)
+	if err != nil {
+		return nil
+	}
+	return rts
+}
+
 // expandViewIfAny rewrites and runs q if its FROM target is a stored view.
 func expandViewIfAny(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, bool, error) {
 	store, ok := b.(tds.RoutineStore)

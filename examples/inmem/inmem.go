@@ -21,13 +21,15 @@ type table struct {
 }
 
 type Backend struct {
-	mu     sync.Mutex
-	tables map[string]*table
-	order  []string
+	mu           sync.Mutex
+	tables       map[string]*table
+	order        []string
+	routines     map[string]*tds.Routine
+	routineOrder []string
 }
 
 func New() *Backend {
-	b := &Backend{tables: map[string]*table{}}
+	b := &Backend{tables: map[string]*table{}, routines: map[string]*tds.Routine{}}
 	b.add(catalog.Table{
 		Name: "users",
 		Columns: []catalog.Column{
@@ -92,7 +94,84 @@ func New() *Backend {
 		{int64(11), int64(2), "bob"},
 		{int64(12), int64(99), "orphan"},
 	})
+	b.seedRich()
 	return b
+}
+
+// seedRich adds the reference objects that exercise the rest of the "be SQL Server" surface — every
+// value type, IDENTITY / computed / default columns, a composite PK, a self-referencing FK, indexes,
+// CHECK constraints, and one of each routine kind (view, procedure, function, trigger). Most of this
+// metadata has no sys.* view reading it yet; it is seeded ahead of those views deliberately.
+func (b *Backend) seedRich() {
+	b.add(catalog.Table{
+		Name: "products",
+		Columns: []catalog.Column{
+			{Name: "product_id", Type: types.Type{Kind: types.Int32}, Identity: true},
+			{Name: "sku", Type: types.Type{Kind: types.String, MaxLen: 32}},
+			{Name: "name", Type: types.Type{Kind: types.String, MaxLen: 100}},
+			{Name: "price", Type: types.Type{Kind: types.Decimal, Precision: 10, Scale: 2}},
+			{Name: "in_stock", Type: types.Type{Kind: types.Bool}},
+			{Name: "weight", Type: types.Type{Kind: types.Float64, Nullable: true}},
+			{Name: "created", Type: types.Type{Kind: types.Time}, Default: "GETDATE()"},
+			{Name: "margin", Type: types.Type{Kind: types.Decimal, Precision: 12, Scale: 2}, Computed: "([price]*(0.3))"},
+		},
+		PrimaryKey: []string{"product_id"},
+		Indexes: []catalog.Index{
+			{Name: "PK_products", Columns: []string{"product_id"}, Unique: true, Primary: true, Clustered: true},
+			{Name: "UX_products_sku", Columns: []string{"sku"}, Unique: true},
+		},
+		Checks: []catalog.Check{{Name: "CK_products_price", Expression: "([price]>=(0))"}},
+	}, [][]any{
+		{int64(1), "SKU-1", "Widget", 9.99, true, 1.5, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), 3.00},
+		{int64(2), "SKU-2", "Gadget", 19.99, false, 2.0, time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC), 6.00},
+	})
+	b.add(catalog.Table{
+		Name: "product_tags",
+		Columns: []catalog.Column{
+			{Name: "product_id", Type: types.Type{Kind: types.Int32}},
+			{Name: "tag", Type: types.Type{Kind: types.String, MaxLen: 40}},
+		},
+		PrimaryKey:  []string{"product_id", "tag"},
+		ForeignKeys: []catalog.ForeignKey{{Columns: []string{"product_id"}, RefTable: "products", RefColumns: []string{"product_id"}}},
+	}, [][]any{
+		{int64(1), "new"}, {int64(1), "sale"}, {int64(2), "new"},
+	})
+	b.add(catalog.Table{
+		Name: "categories",
+		Columns: []catalog.Column{
+			{Name: "category_id", Type: types.Type{Kind: types.Int32}, Identity: true},
+			{Name: "name", Type: types.Type{Kind: types.String, MaxLen: 60}},
+			{Name: "parent_id", Type: types.Type{Kind: types.Int32, Nullable: true}},
+		},
+		PrimaryKey:  []string{"category_id"},
+		ForeignKeys: []catalog.ForeignKey{{Columns: []string{"parent_id"}, RefTable: "categories", RefColumns: []string{"category_id"}}},
+	}, [][]any{
+		{int64(1), "All", nil}, {int64(2), "Electronics", int64(1)}, {int64(3), "Phones", int64(2)},
+	})
+
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vActiveProducts", Kind: tds.RoutineView,
+		Body: "SELECT product_id, name, price FROM products WHERE in_stock = 1"})
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vOrderTotals", Kind: tds.RoutineView,
+		Body: "SELECT user_id, SUM(amount) AS total FROM orders GROUP BY user_id"})
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vPremiumProducts", Kind: tds.RoutineView,
+		Body: "SELECT name, price FROM vActiveProducts WHERE price > 10"}) // view-on-view dependency chain
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "uspGetUser", Kind: tds.RoutineProc,
+		Params: []tds.RoutineParam{{Name: "@id", Type: "int"}},
+		Body:   "SELECT name FROM users WHERE id = @id"})
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "uspAddOrder", Kind: tds.RoutineProc,
+		Params: []tds.RoutineParam{{Name: "@user_id", Type: "int"}, {Name: "@amount", Type: "int"}},
+		Body:   "INSERT INTO orders (user_id, amount) VALUES (@user_id, @amount)"})
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "ufnPriceWithTax", Kind: tds.RoutineFunc,
+		Params: []tds.RoutineParam{{Name: "@price", Type: "decimal(10,2)"}},
+		Body:   "RETURNS decimal(10,2)\nAS\nBEGIN\n  RETURN @price * 1.08\nEND"})
+	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "trgOrdersAudit", Kind: tds.RoutineTrigger,
+		Body: "ON orders AFTER INSERT\nAS\nBEGIN\n  /* audit hook */\nEND"})
+}
+
+func (b *Backend) addRoutine(r *tds.Routine) {
+	key := routineKey(r.Name)
+	b.routines[key] = r
+	b.routineOrder = append(b.routineOrder, key)
 }
 
 func (b *Backend) add(def catalog.Table, rows [][]any) {
@@ -109,7 +188,62 @@ func (b *Backend) Describe(ctx context.Context) (catalog.Schema, error) {
 }
 
 func (b *Backend) Capabilities() tds.Caps {
-	return tds.Caps{Pushdown: true, Writable: true, DDL: true}
+	return tds.Caps{Pushdown: true, Writable: true, DDL: true, Routines: true}
+}
+
+// PutRoutine / GetRoutine / DropRoutine / ListRoutines implement tds.RoutineStore. inmem is a single
+// database, so the database argument is ignored; names match case-insensitively, schema-stripped.
+func (b *Backend) PutRoutine(ctx context.Context, r *tds.Routine) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := routineKey(r.Name)
+	if _, ok := b.routines[key]; !ok {
+		b.routineOrder = append(b.routineOrder, key)
+	}
+	b.routines[key] = r
+	return nil
+}
+
+func (b *Backend) GetRoutine(ctx context.Context, database, name string) (*tds.Routine, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	r, ok := b.routines[routineKey(name)]
+	return r, ok, nil
+}
+
+func (b *Backend) DropRoutine(ctx context.Context, database, name string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := routineKey(name)
+	if _, ok := b.routines[key]; !ok {
+		return fmt.Errorf("inmem: unknown routine %q", name)
+	}
+	delete(b.routines, key)
+	for i, n := range b.routineOrder {
+		if n == key {
+			b.routineOrder = append(b.routineOrder[:i], b.routineOrder[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (b *Backend) ListRoutines(ctx context.Context, database string) ([]*tds.Routine, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]*tds.Routine, 0, len(b.routineOrder))
+	for _, n := range b.routineOrder {
+		out = append(out, b.routines[n])
+	}
+	return out, nil
+}
+
+func routineKey(name string) string {
+	name = strings.Trim(name, "[]\"`")
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = strings.Trim(name[i+1:], "[]\"`")
+	}
+	return strings.ToLower(name)
 }
 
 // Scan returns a snapshot of the whole table; the gateway core applies WHERE / projection /

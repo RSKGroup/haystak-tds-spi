@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/internal/infoschema"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -29,6 +30,10 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 		return spTables(ctx, b, args)
 	case "sp_columns", "sp_columns_90":
 		return spColumns(ctx, b, args)
+	case "sp_helptext":
+		return spHelptext(ctx, b, args)
+	case "sp_help":
+		return spHelp(ctx, b, args)
 	default:
 		if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
 			return rs, true, err
@@ -249,6 +254,77 @@ func spColumns(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bo
 	}
 	rs, err := exec.Apply(cols, data, &tds.Query{})
 	return rs, true, err
+}
+
+// spHelptext is the classic definition dump: one row per line of the object's reconstructed CREATE text.
+func spHelptext(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	name := unqualifyProc(arg(args, "@objname", 0))
+	cols := []catalog.Column{sn("Text")}
+	var data [][]any
+	if store, ok := b.(tds.RoutineStore); ok && name != "" {
+		if r, found, err := store.GetRoutine(ctx, currentDB(ctx), name); err == nil && found {
+			for _, line := range strings.Split(routines.ScriptDefinition(r), "\n") {
+				data = append(data, []any{line})
+			}
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spHelp summarizes one object (Name/Owner/Type), or with no argument lists every object in the database.
+func spHelp(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	name := unqualifyProc(arg(args, "@objname", 0))
+	if name == "" {
+		return spHelpList(ctx, b)
+	}
+	cols := []catalog.Column{sn("Name"), sn("Owner"), sn("Type"), nstr("Created_datetime")}
+	var data [][]any
+	if store, ok := b.(tds.RoutineStore); ok {
+		if r, found, _ := store.GetRoutine(ctx, currentDB(ctx), name); found {
+			data = append(data, []any{r.Name, "dbo", routineTypeLabel(r.Kind), nil})
+		}
+	}
+	if len(data) == 0 {
+		if schema, _, err := introspectSchema(ctx, b, &tds.Query{Database: currentDB(ctx)}); err == nil {
+			for _, t := range schema.Tables {
+				if strings.EqualFold(t.Name, name) {
+					data = append(data, []any{t.Name, "dbo", "user table", nil})
+					break
+				}
+			}
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+func spHelpList(ctx context.Context, b tds.Backend) (tds.Rows, bool, error) {
+	cols := []catalog.Column{sn("Name"), sn("Owner"), sn("Object_type")}
+	var data [][]any
+	if schema, _, err := introspectSchema(ctx, b, &tds.Query{Database: currentDB(ctx)}); err == nil {
+		for _, t := range schema.Tables {
+			data = append(data, []any{t.Name, "dbo", "user table"})
+		}
+	}
+	for _, r := range listRoutines(ctx, b, currentDB(ctx)) {
+		data = append(data, []any{r.Name, "dbo", routineTypeLabel(r.Kind)})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{OrderBy: []tds.OrderItem{{Column: "Name"}}})
+	return rs, true, err
+}
+
+func routineTypeLabel(k tds.RoutineKind) string {
+	switch k {
+	case tds.RoutineProc:
+		return "stored procedure"
+	case tds.RoutineFunc:
+		return "scalar function"
+	case tds.RoutineTrigger:
+		return "trigger"
+	default:
+		return "view"
+	}
 }
 
 // defaultQualifier uses the explicit @table_qualifier if given, else the session's current database.

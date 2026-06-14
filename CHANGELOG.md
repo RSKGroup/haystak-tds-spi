@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.4.0
+
+Stored routines are now visible and scriptable through the standard catalog — additive, no breaking changes.
+
+- **Routine catalog surface** — `sys.sql_modules` (reconstructed CREATE text), `sys.views`,
+  `sys.procedures`, `sys.parameters`, and `sys.objects` widened to span tables, views, procedures,
+  functions, and triggers (`U`/`V`/`P`/`FN`/`TR`); `INFORMATION_SCHEMA.VIEWS` / `ROUTINES` /
+  `PARAMETERS`; and `sp_helptext` / `sp_help`. A client's *Script as → CREATE* and object tree now read
+  stored views, procedures, functions, and triggers.
+- **Catalog scalar functions** — `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`, backed by a
+  single unified `object_id` / `database_id` scheme so `OBJECT_ID('x')` joins the catalog views and
+  `OBJECT_NAME` reverses it.
+- **API additions** — `tds.RoutineFunc` / `tds.RoutineTrigger` routine kinds; `catalog.Index`,
+  `catalog.Check`, and `catalog.Column.Identity` / `.Computed`, so a backend can declare indexes, check
+  constraints, identity, and computed columns.
+- **Conformance** — `tdstest.RunConformance` now checks `Caps.Routines` ⟺ `RoutineStore` and that a
+  written routine of each kind surfaces through the catalog views.
+- Since v1.2.4 the extension surface also gained the `internal/extensions` package layout, `RoutineStore`
+  persistence with read-time view expansion, batch `DECLARE` / `SET @var`, and `NOT IN` /
+  aggregate-over-expression query support.
+
 ## v1.2.4
 
 GUI/driver compatibility — additive, no API changes.

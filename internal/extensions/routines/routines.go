@@ -131,3 +131,36 @@ func LitSQL(v any) string {
 	}
 	return "NULL"
 }
+
+// ScriptDefinition reconstructs a runnable CREATE statement for r from its stored Body, so
+// sys.sql_modules and sp_helptext can hand back a definition that recreates the object.
+func ScriptDefinition(r *tds.Routine) string {
+	var b strings.Builder
+	switch r.Kind {
+	case tds.RoutineProc:
+		b.WriteString("CREATE PROCEDURE [" + r.Name + "]")
+		writeParams(&b, r.Params)
+		b.WriteString("\nAS\n")
+	case tds.RoutineFunc:
+		b.WriteString("CREATE FUNCTION [" + r.Name + "] (")
+		writeParams(&b, r.Params)
+		b.WriteString(")\n")
+	case tds.RoutineTrigger:
+		b.WriteString("CREATE TRIGGER [" + r.Name + "]\n")
+	default:
+		b.WriteString("CREATE VIEW [" + r.Name + "]\nAS\n")
+	}
+	b.WriteString(r.Body)
+	return b.String()
+}
+
+func writeParams(b *strings.Builder, params []tds.RoutineParam) {
+	for i, p := range params {
+		if i == 0 {
+			b.WriteString(" ")
+		} else {
+			b.WriteString(", ")
+		}
+		b.WriteString(p.Name + " " + p.Type)
+	}
+}

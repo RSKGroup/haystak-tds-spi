@@ -11,20 +11,25 @@ type Schema struct {
 	Tables []Table
 }
 
-// Table is one table's definition: columns, keys, and (multi-database backends) its Catalog.
+// Table is one table's definition: columns, keys, and (multi-database backends) its Catalog. Indexes
+// and Checks are optional metadata a backend may declare to feed sys.indexes/sys.check_constraints etc.
 type Table struct {
 	Name        string
 	Catalog     string
 	Columns     []Column
 	PrimaryKey  []string
 	ForeignKeys []ForeignKey
+	Indexes     []Index
+	Checks      []Check
 }
 
-// Column is one column: its name, type, and optional default expression.
+// Column is one column: its name, type, optional default expression, and identity/computed metadata.
 type Column struct {
-	Name    string
-	Type    types.Type
-	Default string
+	Name     string
+	Type     types.Type
+	Default  string
+	Identity bool   // IDENTITY column (drives sys.identity_columns)
+	Computed string // computed-column expression, empty when not computed (drives sys.computed_columns)
 }
 
 // ForeignKey declares that Columns reference RefColumns in RefTable; it drives sys.foreign_keys and joins.
@@ -32,4 +37,19 @@ type ForeignKey struct {
 	Columns    []string
 	RefTable   string
 	RefColumns []string
+}
+
+// Index is one index on a table; it drives sys.indexes / sys.index_columns.
+type Index struct {
+	Name      string
+	Columns   []string
+	Unique    bool
+	Primary   bool
+	Clustered bool
+}
+
+// Check is one CHECK constraint; it drives sys.check_constraints / INFORMATION_SCHEMA.CHECK_CONSTRAINTS.
+type Check struct {
+	Name       string
+	Expression string
 }

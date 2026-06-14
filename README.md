@@ -4,151 +4,94 @@
 
 > It's a Go library you drop into your own application so that your app can answer SQL queries as if it were Microsoft SQL Server — letting everyday SQL tools like Excel, Power BI, and SSMS talk to whatever data you've got behind it, whether that's Mongo, Elasticsearch, OpenSearch, or whatever you build.
 
-A SQL Server wire-protocol (TDS) gateway, shipped as importable Go modules. It speaks
-TDS (the protocol SQL Server clients talk) on the front, and translates through a
-pluggable backend SPI to whatever store sits behind it. Any TDS client (sqlcmd, SSMS,
-Power BI, the go-mssqldb/.NET/JDBC drivers, MCP SQL tools) can connect, browse the
-catalog, and run real SQL against your backend: rich reads plus INSERT/UPDATE/DELETE
-and CREATE/DROP TABLE.
+## What it means for you
 
-Pure Go, no CGO, permissive dependencies only.
+**If you're deciding whether to adopt it —** your analysts already have the tools (Excel, Power BI, SSMS); your data increasingly doesn't live in a SQL database. This puts a SQL Server face on the stores that don't have one, so the tools and skills you already pay for reach that data directly. Apache-2.0, one binary, nothing licensed per source — no platform to buy, no cluster to run.
 
-Status: read and write are complete and live-validated over the wire (plaintext and
-TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` and
-`CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and
-fail-closed when unsupported. Out of the box, the `examples/` directory gives you a
-working MSSQL/TDS interface to **MongoDB, Elasticsearch, and OpenSearch right now** — run
-one, point `sqlcmd`/SSMS/Power BI at it, and query a NoSQL store as if it were SQL Server.
+**If you're an analyst — or the developer wiring it up for one —** if your tool connects to Microsoft SQL Server, it connects to this: same login dialog, the familiar SQL Server SQL you already write — JOINs, aggregates, pivots — over a backend (Mongo, Elasticsearch, your own store) you never have to think about. Nothing installs on anyone's machine — one Go binary listens on `:1433` and every existing SQL Server client connects unchanged, because the translation lives server-side, in one place, not bolted onto every tool.
+
+**If you're putting your own store behind it —** implement one Go interface (`tds.Backend`) plus a query path, and the library supplies the rest: T-SQL parsing, JOINs, aggregates, CTEs, and the catalog (`INFORMATION_SCHEMA`/`sys.*`). A thin backend returns whole tables and the engine evaluates the query; a thick backend pushes down to your store's native language. Writes, DDL, transactions, and auth are opt-in — advertise what you support via `Caps`, and the engine fails closed on the rest. A built-in conformance suite (`tdstest.RunConformance`) verifies that what you advertise matches what your backend actually does.
+
+**If you work at the wire —** it speaks native TDS (PRELOGIN/LOGIN7, `SQL_BATCH`, RPC `sp_executesql`, TLS-in-TDS), not an ODBC/JDBC *client* spec — so from the client's seat there's no shim, it *is* a SQL Server on `:1433`. Pure Go, no CGO, permissive dependencies only, cross-compiles to one static binary.
 
 ## Ready-to-run backends
 
-These examples are complete, live-validated gateways — `go run` one and a real document
-store answers T-SQL on `:1433` (joins, aggregates, `INSERT`/`UPDATE`/`DELETE`,
-`INFORMATION_SCHEMA`/`sys.*` and all). Each takes an optional `--host <url:port>` (default
-localhost) and `--db <name>` (the database/index scope; blank seeds demo data so it works
-immediately):
+These examples are complete, live-validated gateways — `go run` one and a real document store answers T-SQL on `:1433` (joins, aggregates, `INSERT`/`UPDATE`/`DELETE`, `INFORMATION_SCHEMA`/`sys.*` and all). Each takes an optional `--host <url:port>` (default localhost) and `--db <name>` (the database/index scope; blank seeds demo data so it works immediately):
 
-| Store | Inferred catalog (zero config) | Declared catalog (real FKs) |
-|---|---|---|
-| MongoDB | [`mongodb-community`](examples/mongodb-community) — fields sampled from documents | [`mongodb-community-2`](examples/mongodb-community-2) — `__haystak_catalog` collection |
-| Elasticsearch | [`elasticsearch-community`](examples/elasticsearch-community) — fields sampled from `_source` | [`elasticsearch-community-2`](examples/elasticsearch-community-2) — columns from `_mapping`, keys from `haystak_catalog` |
-| OpenSearch | [`opensearch-community`](examples/opensearch-community) — fields sampled from `_source` | [`opensearch-community-2`](examples/opensearch-community-2) — columns from `_mapping`, keys from `haystak_catalog` |
+| Store        | Inferred catalog (zero config)                                                               | Declared catalog (real FKs)                                                                                             |
+|--------------|---------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
+| MongoDB      | [`mongodb-community`](examples/mongodb-community) — fields sampled from documents            | [`mongodb-community-2`](examples/mongodb-community-2) — `__haystak_catalog` collection                                  |
+| Elasticsearch| [`elasticsearch-community`](examples/elasticsearch-community) — fields sampled from `_source`| [`elasticsearch-community-2`](examples/elasticsearch-community-2) — columns from `_mapping`, keys from `haystak_catalog`|
+| OpenSearch   | [`opensearch-community`](examples/opensearch-community) — fields sampled from `_source`      | [`opensearch-community-2`](examples/opensearch-community-2) — columns from `_mapping`, keys from `haystak_catalog`      |
 
-```sh
+```
 go run ./examples/elasticsearch-community               # seeds + serves a local ES on :1433
 sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT u.name, o.amount FROM users u JOIN orders o ON u.id = o.user_id"
 ```
 
-The *inferred* variants need no schema — point them at a store and they sample documents to
-build the SQL catalog. The *declared* variants add the one thing inference can't recover,
-foreign keys, so cross-table `JOIN`s and `sys.foreign_keys` light up. (`examples/inmem` and
-`examples/gateway` are the dependency-free reference backends.)
+The *inferred* variants need no schema — point them at a store and they sample documents to build the SQL catalog. The *declared* variants add the one thing inference can't recover, foreign keys, so cross-table `JOIN`s and `sys.foreign_keys` light up. (`examples/inmem` and `examples/gateway` are the dependency-free reference backends.)
 
-Each document-store example is its own Go module (its own `go.mod`, with a `replace` to the
-parent) so the MongoDB / Elasticsearch / OpenSearch drivers never become dependencies of the
-core library. Because of that they aren't published as separate pkg.go.dev pages — browse
-them on GitHub under [`examples/`](https://github.com/RSKGroup/haystak-tds-spi/tree/main/examples),
-each with its own README and runnable code. Only `examples/inmem` and `examples/gateway`
-(which share the root module) appear on pkg.go.dev.
+Each document-store example is its own Go module (its own `go.mod`, with a `replace` to the parent) so the MongoDB / Elasticsearch / OpenSearch drivers never become dependencies of the core library. Because of that they aren't published as separate pkg.go.dev pages — browse them on GitHub under [`examples/`](examples), each with its own README and runnable code. Only `examples/inmem` and `examples/gateway` (which share the root module) appear on pkg.go.dev.
+
+## The technical bits
+
+A SQL Server wire-protocol (TDS) gateway, shipped as importable Go modules. It speaks TDS (the protocol SQL Server clients talk) on the front, and translates through a pluggable backend SPI to whatever store sits behind it. Any TDS client (sqlcmd, SSMS, Power BI, the go-mssqldb/.NET/JDBC drivers, MCP SQL tools) can connect, browse the catalog, and run real SQL against your backend: rich reads plus `INSERT`/`UPDATE`/`DELETE` and `CREATE`/`DROP TABLE`.
+
+Pure Go, no CGO, permissive dependencies only.
+
+Status: read and write are complete and live-validated over the wire (plaintext and TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` and `CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and fail-closed when unsupported. Out of the box, the `examples/` directory gives you a working MSSQL/TDS interface to **MongoDB, Elasticsearch, and OpenSearch right now** — run one, point `sqlcmd`/SSMS/Power BI at it, and query a NoSQL store as if it were SQL Server.
 
 ## Install
 
-```sh
+```
 go get github.com/RSKGroup/haystak-tds-spi
 ```
 
-Implement `tds.Backend`, then serve it with `server.ListenAndServe`. See
-[Build a backend](#build-a-backend) below, the runnable examples on
-[pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds#example-package),
-and the complete backends in [`examples/`](examples/) to copy from.
+Implement `tds.Backend`, then serve it with `server.ListenAndServe`. See [Build a backend](#build-a-backend) below, the runnable examples on [pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds#example-package), and the complete backends in [`examples/`](examples) to copy from.
 
 ## Architecture
 
-```text
+```
 TDS client ──wire──> server ──> engine ──> your Backend (SPI)
               │         │          │            implements tds.Backend (+ Scanner/QueryExecutor,
         PRELOGIN/LOGIN7 dispatch   parse T-SQL  optionally Writer/DDL/Databaser/…)
         TLS, SQL_BATCH, RPC        + evaluate
 ```
 
-- `server` listens, runs the TDS handshake (including TLS-in-TDS), decodes `SQL_BATCH`
-  and RPC `sp_executesql`, and streams `COLMETADATA`/`ROW`/`DONE` back.
-- `internal/{tsql,engine,exec}` parse a T-SQL read subset, route by capability, and
-  evaluate it (filter/join/aggregate/set-ops/subqueries/CTEs/expressions) for thin
-  backends.
-- `internal/{infoschema,sysviews}` answer `INFORMATION_SCHEMA.*` and `sys.*` from your
-  declared catalog (tables, columns, types, foreign keys).
-- `internal/extensions/` is the **feature surface** — views, procedures (and their
-  procedural constructs), and scalar catalog functions — kept separate from the core engine
-  and reached only through a `Runner` seam. This is where new SQL-Server capability is added.
+- `server` listens, runs the TDS handshake (including TLS-in-TDS), decodes `SQL_BATCH` and RPC `sp_executesql`, and streams `COLMETADATA`/`ROW`/`DONE` back.
+- `internal/{tsql,engine,exec}` parse a T-SQL read subset, route by capability, and evaluate it (filter/join/aggregate/set-ops/subqueries/CTEs/expressions) for thin backends.
+- `internal/{infoschema,sysviews}` answer `INFORMATION_SCHEMA.*` and `sys.*` from your declared catalog (tables, columns, types, foreign keys).
+- `internal/extensions/` is the **feature surface** — views, procedures (and their procedural constructs), and scalar catalog functions — kept separate from the core engine and reached only through a `Runner` seam. This is where new SQL-Server capability is added.
 - `tds` is the SPI you implement.
 
-The core (`wire`/`tsql`/`exec`/`engine`) is stable; new capability lands in `internal/extensions/`,
-one file per construct/function. See [ARCHITECTURE.md](ARCHITECTURE.md) for the layered map and
-[CONTRIBUTING.md](CONTRIBUTING.md) for the "where does my new file go" recipes.
+The core (`wire`/`tsql`/`exec`/`engine`) is stable; new capability lands in `internal/extensions/`, one file per construct/function. See [ARCHITECTURE.md](ARCHITECTURE.md) for the layered map and [CONTRIBUTING.md](CONTRIBUTING.md) for the "where does my new file go" recipes.
 
 ## Where it fits
 
 There are already ways to put SQL in front of non-SQL data; this sits at a different point than each:
 
-- **SQL built into a single store** — a search engine's or document database's own SQL feature,
-  reachable only through that vendor's driver — ties you to one backend and one client library. This
-  is backend-agnostic and speaks the *native* SQL Server wire, so the tools you already have connect
-  unchanged.
-- **A wire shim in front of one database** (a connector that fronts a single document store on a SQL
-  wire) is likewise single-backend. Here the backend is whatever you implement.
-- **A proprietary gateway over hundreds of prebuilt connectors** trades openness and footprint for
-  breadth: closed source, licensed per source, a service to operate. This is Apache-2.0,
-  dependency-free, and embeds as a library — you own the adapter.
-- **An enterprise data-virtualization platform** (modeling, governance, caching) is a heavyweight
-  deployment in a different cost and operations class.
-- **A distributed query engine** federates many sources but runs as a JVM coordinator/worker cluster
-  and speaks its own protocol with its own driver. This is a single static Go binary that *is* the
-  endpoint — no cluster, no new driver.
+- **SQL built into a single store** — a search engine's or document database's own SQL feature, reachable only through that vendor's driver. This is backend-agnostic and speaks the native SQL Server wire, so existing tools connect unchanged.
+- **A wire shim in front of one database** — a connector that fronts a single document store on a SQL wire. Here the backend is whatever you implement.
+- **A proprietary gateway over hundreds of connectors** — closed source, licensed per source, and operated as a service. This is Apache-2.0, dependency-free, and embeds as a library.
+- **An enterprise data-virtualization platform** — modeling, governance, caching, and operational overhead in a different deployment class.
+- **A distributed query engine** — coordinator/worker architecture with its own protocol and drivers. This is a single Go binary that becomes the endpoint.
 
-In one line: a **lightweight, Apache-2.0, embeddable Go SPI that makes any backend answer the native
-SQL Server (TDS) wire**, so every existing SQL Server client and BI tool connects with zero new
-drivers — one backend (which may federate internally) presented as a SQL Server, in a single binary
-you embed inside your own service.
-
-Differentiators at a glance — **open source** (Apache-2.0, dependency-free core), **lightweight** (one
-binary, no JVM, no cluster, instant start), **backend-agnostic** (any `tds.Backend`), **extensible**
-(implement only what you support; the engine does the SQL for thin backends; authentication is
-backend-owned; conformance-validated), and **Go-based** (no-CGO, cross-compiles everywhere as one
-executable).
-
-**Use it when** you want any backend to answer the native SQL Server wire from a single embeddable Go
-binary — the SQL and BI tools you already have, no new drivers.
-
-**Why it stays this small:** the whole footprint is the adapter you write plus this library, embedded
-inside your own service — which is what lets it ship as one binary and start instantly.
+**Why it stays this small:** the whole footprint is the adapter you write plus this library, embedded inside your own service — which is what lets it ship as one binary and start instantly.
 
 ## Performance
 
-The win is a full SQL surface over a store that never had one — `JOIN`s, aggregates,
-subqueries, CTEs, `INFORMATION_SCHEMA`/`sys.*`, and every SQL Server client and BI tool
-(Excel, Power BI, SSMS, sqlcmd, JDBC/.NET drivers) connecting with zero new drivers. The
-price of that reach is a translation layer between the TDS wire and your backend: you
-trade a slice of raw throughput for SQL accessibility — almost always a good trade for
-analytics, reporting, and ad-hoc query, where the bottleneck is the human, not the loop.
+The win is a full SQL surface over a store that never had one — `JOIN`s, aggregates, subqueries, CTEs, `INFORMATION_SCHEMA`/`sys.*`, and every SQL Server client and BI tool (Excel, Power BI, SSMS, sqlcmd, JDBC/.NET drivers) connecting with zero new drivers. The price of that reach is a translation layer between the TDS wire and your backend: you trade a slice of raw throughput for SQL accessibility — almost always a good trade for analytics, reporting, and ad-hoc query, where the bottleneck is the human, not the loop.
 
 How small that tax is depends on the path:
 
-- **Thick backend** (`QueryExecutor` / `Caps{FullQuery}`): the query is pushed down to
-  your store's native query language, so reads run at the store's own speed — the TDS
-  handshake and T-SQL parse are per-statement, not per-row. The overhead is marginal.
-- **Thin backend** (`Scanner` / `Pushdown`): the engine pulls the table(s) and evaluates
-  WHERE/JOIN/GROUP BY in-process. Effortless to stand up, but on large tables it
-  materializes rows and won't match an index-backed query — move to `QueryExecutor` once
-  a table outgrows a scan.
+- **Thick backend** (`QueryExecutor` / `Caps{FullQuery}`): the query is pushed down to your store's native query language so reads run at the store's own speed — the TDS handshake and T-SQL parse are per-statement, not per-row. The overhead is marginal.
+- **Thin backend** (`Scanner` / `Pushdown`): the engine pulls the table(s) and evaluates WHERE/JOIN/GROUP BY in-process. Easy to stand up, but on large tables it materializes rows and won't match an index-backed query — move to `QueryExecutor` once a table outgrows a scan.
 
-It isn't a tuned SQL Server — no cost-based optimizer or index planner — and isn't trying
-to be. For analytics, reporting, catalog browsing, and ad-hoc SQL over your data, that
-convenience is the whole point; for hot-path OLTP, talk to your backend directly.
+It is not a tuned SQL Server — no cost-based optimizer or index planner — and isn't trying to be. For analytics, reporting, catalog browsing, and ad-hoc SQL over your data, that convenience is the whole point; for hot-path OLTP, talk to your backend directly.
 
 ## Run the demo gateway
 
-```sh
+```
 go run ./examples/gateway 127.0.0.1:1433        # plaintext
 HAYSTAK_TLS=1 go run ./examples/gateway          # self-signed TLS
 sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT name FROM users"
@@ -158,44 +101,33 @@ sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT name FROM users"
 
 Implement `tds.Backend` plus one query path, and advertise it via `Caps`:
 
-```go
+```
 type Backend interface {
     Describe(ctx) (catalog.Schema, error) // your tables/columns/PKs/FKs
     Capabilities() Caps                   // what you support
 }
 ```
 
-The easiest path is a thin backend: implement `Scanner` (`Scan` returns whole tables)
-and set `Caps{Pushdown:true}`. The core engine then does all the WHERE/JOIN/GROUP
-BY/ORDER BY/paging/subqueries/CTEs work for you. For a thick backend, implement
-`QueryExecutor` (`ExecuteQuery` handles a whole logical query) and set
-`Caps{FullQuery:true}` to push down to your store's native query language.
+The easiest way is a thin backend: implement `Scanner` (`Scan` returns whole tables) and set `Caps{Pushdown:true}`. Then the core engine does all the WHERE/JOIN/GROUP BY/ORDER BY/paging/subqueries/CTEs work for you. For a thick backend, implement `QueryExecutor` (`ExecuteQuery` handles a whole logical query) and set `Caps{FullQuery:true}` to push down to your store's native query language.
 
 The rest is optional, advertised via `Caps` and detected by interface assertion:
 
-| Interface | For | Caps |
-|---|---|---|
-| `Writer` | INSERT/UPDATE/DELETE | `Writable` |
-| `DDL` | CREATE/ALTER/DROP TABLE | `DDL` |
-| `DatabaseDDL` | CREATE/DROP DATABASE | `DDL` |
-| `Databaser` | more than one database (→ `sys.databases`, `Query.Database`) | — |
-| `TxBeginner`/`Tx` | transactions | `Tx` |
-| `Authenticator` | authenticate TDS logins (go/no-go) + identity | — |
+| Interface        | For                                                         | Caps      |
+|------------------|------------------------------------------------------------|----------|
+| `Writer`         | INSERT/UPDATE/DELETE                                        | `Writable`|
+| `DDL`            | CREATE/ALTER/DROP TABLE                                     | `DDL`     |
+| `DatabaseDDL`    | CREATE/DROP DATABASE                                        | `DDL`     |
+| `Databaser`      | more than one database (→ `sys.databases`, `Query.Database`)| —         |
+| `TxBeginner`/`Tx`| transactions                                                | `Tx`      |
+| `Authenticator`  | authenticate TDS logins (go/no-go) + identity              | —         |
 
 ### Authentication
 
-The backend owns authentication. Implement `tds.Authenticator` and the gateway hands
-you each LOGIN7 credential set (`tds.Login{Username, Password, Database, …}`); return a
-`tds.Principal` to allow the login, or an error to reject it (a real `18456`
-login-failed reaches the client). The authenticated `Principal` then rides in `ctx` on
-every `Scan`/`Insert`/… call, so you authorize and audit per user with the same
-identity. Operators who'd rather not push auth into the backend can set
-`server.Server.Auth` (for example `server.StaticAuth(map)`) for gateway-level auth
-instead; with neither set, connections are anonymous, which is the demos' default.
+The backend owns authentication. Implement `tds.Authenticator` and the gateway hands you each LOGIN7 credential set (`tds.Login{Username, Password, Database, …}`); return a `tds.Principal` to allow the login, or an error to reject it (a real `18456` login-failed reaches the client). The authenticated `Principal` then rides in `ctx` on every `Scan`/`Insert`/… call, so you authorize and audit per user with the same identity. Operators who don't want to push auth into the backend can set `server.Server.Auth` (for example `server.StaticAuth(map)`) for gateway-level auth instead; with neither set, connections are anonymous, which is the demos' default.
 
 Then run it:
 
-```go
+```
 server.ListenAndServe("127.0.0.1:1433", myBackend)
 // or &server.Server{Backend: myBackend, TLSConfig: cfg, ServerName: "...", Database: "..."}
 ```
@@ -204,12 +136,11 @@ server.ListenAndServe("127.0.0.1:1433", myBackend)
 
 ## Validate your backend
 
-```go
+```
 func TestConformance(t *testing.T) { tdstest.RunConformance(t, myBackend.New()) }
 ```
 
-`tds/tdstest.RunConformance` checks that `Caps` and the implemented interfaces agree,
-then drives real `SELECT` and catalog queries through the engine.
+`tds/tdstest.RunConformance` checks that `Caps` and the implemented interfaces agree, then drives real `SELECT` and catalog queries through the engine.
 
 ## Read surface
 
@@ -257,9 +188,7 @@ Connect-time probes, so real drivers and BI tools finish their handshake:
 
 ## Write surface
 
-Write statements are parsed over the wire and dispatched to the backend's `Writer` /
-`DDL` / `DatabaseDDL` interfaces, each fail-closed: if the backend doesn't implement the
-interface, the client gets a clean error rather than a silent success.
+Write statements are parsed over the wire and dispatched to the backend's `Writer` / `DDL` / `DatabaseDDL` interfaces, each fail-closed: if the backend doesn't implement the interface, the client gets a clean error rather than a silent success.
 
 - `INSERT INTO t [(cols)] VALUES (…)[, (…) …]` — single or multi-row
 - `UPDATE t SET col = val [, …] [WHERE col op val [AND …]]`
@@ -271,19 +200,15 @@ interface, the client gets a clean error rather than a silent success.
 - `DROP TABLE t`
 - `CREATE DATABASE name`, `DROP DATABASE name`
 
-The write `WHERE` is the simple form (`col op value`, joined by `AND`), and `VALUES`/`SET`
-take literals; the rich expression tree from the read path doesn't apply here.
+The write `WHERE` is the simple form (`col op value`, joined by `AND`), and `VALUES`/`SET` take literals; the rich expression tree from the read path doesn't apply here.
 
 ## docs/
 
-Pinned protocol specs: MS-TDS (the wire), MC-SQLR (instance resolution), and MS-BINXML
-(the `xml` type). See [docs/README.md](docs/README.md) for provenance and the licensing
-notice.
+Pinned protocol specs: MS-TDS (the wire), MC-SQLR (instance resolution), and MS-BINXML (the `xml` type). See [docs/README.md](docs/README.md) for provenance and the licensing notice.
 
 ## Documentation
 
-Full API reference and runnable examples are on
-[pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi):
+Full API reference and runnable examples are on [pkg.go.dev](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi):
 
 - [`tds`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/tds) — the SPI: `Backend`, `Scanner`/`QueryExecutor`, `Writer`/`DDL`/`DatabaseDDL`/`Databaser`, `Authenticator`, `Caps`.
 - [`server`](https://pkg.go.dev/github.com/RSKGroup/haystak-tds-spi/server) — `ListenAndServe`, `Server`, `StaticAuth`.
@@ -293,5 +218,4 @@ Full API reference and runnable examples are on
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). "Haystak" is a registered trademark of
-RSKGroup, LLC; the license grants no rights to the name (Apache-2.0 §6).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). "Haystak" is a registered trademark of RSKGroup, LLC; the license grants no rights to the name (Apache-2.0 §6).

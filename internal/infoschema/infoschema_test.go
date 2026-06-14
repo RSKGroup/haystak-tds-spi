@@ -28,7 +28,7 @@ func TestResolveColumns(t *testing.T) {
 		Select: []tds.SelectItem{{Column: "COLUMN_NAME"}, {Column: "DATA_TYPE"}, {Column: "IS_NULLABLE"}, {Column: "CHARACTER_MAXIMUM_LENGTH"}},
 		Where:  &tds.Expr{Pred: &tds.Predicate{Column: "TABLE_NAME", Op: tds.OpEq, Value: "users"}},
 	}
-	rs, handled, err := Resolve(sampleSchema(), q)
+	rs, handled, err := Resolve(sampleSchema(), nil, q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestResolveColumns(t *testing.T) {
 }
 
 func TestResolveNonInfoSchema(t *testing.T) {
-	_, handled, err := Resolve(sampleSchema(), &tds.Query{Table: "users"})
+	_, handled, err := Resolve(sampleSchema(), nil, &tds.Query{Table: "users"})
 	if err != nil {
 		t.Fatal(err)
 	}

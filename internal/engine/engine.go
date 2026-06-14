@@ -260,7 +260,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		rows, handled, err := infoschema.Resolve(schema, q)
+		rows, handled, err := infoschema.Resolve(schema, listRoutines(ctx, b, q.Database), q)
 		if err != nil {
 			return nil, err
 		}
@@ -277,7 +277,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		rows, handled, err := sysviews.Resolve(schema, dbs, q)
+		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, q)
 		if err != nil {
 			return nil, err
 		}
@@ -308,11 +308,11 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		return exec.Apply(cols, data, q)
+		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
 	}
 
 	if q.Table == "" && len(q.Joins) == 0 {
-		return exec.Apply(nil, [][]any{{}}, q)
+		return exec.ApplyWith(nil, [][]any{{}}, q, catalogEnv(ctx, b, q, nil))
 	}
 
 	caps := b.Capabilities()
@@ -345,7 +345,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 			if err != nil {
 				return nil, err
 			}
-			return exec.ApplyWith(cols, data, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
+			return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table)))
 		}
 	}
 	return nil, fmt.Errorf("engine: backend cannot answer query for %q", q.Table)
@@ -470,6 +470,60 @@ func colRefsOuter(col, alias, table string) bool {
 	}
 	q := col[:dot]
 	return strings.EqualFold(q, alias) || strings.EqualFold(q, table)
+}
+
+// catalogEnv builds the exec env for a query: the current db (so DB_NAME() resolves) plus, only when
+// the query actually calls OBJECT_NAME/DB_NAME(id), the id→name resolvers from the live catalog.
+func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn) *exec.Env {
+	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx)}
+	if queryUsesCatalogFn(q) {
+		if schema, dbs, err := introspectSchema(ctx, b, q); err == nil {
+			obj, dbf := exec.CatalogResolvers(schema, listRoutines(ctx, b, currentDB(ctx)), dbs)
+			env.ObjectName, env.DBName = obj, dbf
+		}
+	}
+	return env
+}
+
+// queryUsesCatalogFn reports whether any select item calls OBJECT_NAME or DB_NAME with an argument
+// (DB_NAME() with no argument needs only CurrentDB, which is always set).
+func queryUsesCatalogFn(q *tds.Query) bool {
+	for a := q; a != nil; a = a.Union {
+		for _, it := range a.Select {
+			if valueExprUsesCatalogFn(it.Expr) || valueExprUsesCatalogFn(it.ArgExpr) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
+	if ve == nil {
+		return false
+	}
+	if ve.Kind == tds.ValFunc {
+		switch ve.Func {
+		case "OBJECT_NAME":
+			return true
+		case "DB_NAME":
+			if len(ve.Args) > 0 {
+				return true
+			}
+		}
+	}
+	for _, a := range ve.Args {
+		if valueExprUsesCatalogFn(a) {
+			return true
+		}
+	}
+	for i := range ve.Whens {
+		if valueExprUsesCatalogFn(ve.Whens[i].Match) || valueExprUsesCatalogFn(ve.Whens[i].Result) {
+			return true
+		}
+	}
+	return valueExprUsesCatalogFn(ve.Left) || valueExprUsesCatalogFn(ve.Right) ||
+		valueExprUsesCatalogFn(ve.Operand) || valueExprUsesCatalogFn(ve.Else)
 }
 
 func makeSubFn(ctx context.Context, b tds.Backend, alias, table string) exec.SubFn {

@@ -31,10 +31,10 @@ client expects.
 The surface that already works (each row is ✓ in the detail below). Everything else in this document is
 still owed.
 
-- **`catalog/funcs/`** — `DB_ID`, `HAS_DBACCESS`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`, `QUOTENAME`
-- **`sys.*`** — `sys.databases`, `sys.tables`, `sys.columns`, `sys.schemas`, `sys.types`, `sys.foreign_keys`
-- **`INFORMATION_SCHEMA`** — `TABLES`, `COLUMNS`
-- **catalog procs** — `sp_databases`, `sp_tables`, `sp_columns`
+- **`catalog/funcs/`** — `DB_ID`, `HAS_DBACCESS`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`, `QUOTENAME`, `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`
+- **`sys.*`** — `sys.databases`, `sys.tables`, `sys.columns`, `sys.schemas`, `sys.types`, `sys.foreign_keys`, `sys.objects` (tables + views + procs), `sys.sql_modules`, `sys.views`, `sys.procedures`, `sys.parameters`
+- **`INFORMATION_SCHEMA`** — `TABLES`, `COLUMNS`, `VIEWS`, `ROUTINES`, `PARAMETERS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`, `REFERENTIAL_CONSTRAINTS`
+- **catalog procs** — `sp_databases`, `sp_tables`, `sp_columns`, `sp_helptext`, `sp_help`
 - **`procedures/`** — `CREATE / ALTER / DROP PROCEDURE`, `EXEC proc @a = …` + parameter substitution
 - **`views/`** — `CREATE / ALTER / DROP VIEW` + read-time expansion (body resolves via `QualifyDB`)
 - **`routines/`** — the `Runner` seam + DDL helpers + `tds.RoutineStore` persistence
@@ -46,18 +46,18 @@ still owed.
 
 ---
 
-## Next up (→) — make stored routines visible & scriptable
+## ✓ Shipped — stored routines are visible & scriptable (the script-out slice)
 
-We already *persist* `CREATE VIEW`/`PROCEDURE` via `RoutineStore`, but a client can't see them yet. The
-highest-value next slice is the **script-out surface** — what a client's *Script as → CREATE* and object
-tree read — built in **dependency order**:
+We *persist* `CREATE VIEW`/`PROCEDURE`/`FUNCTION`/`TRIGGER` via `RoutineStore`; this slice makes them
+visible — what a client's *Script as → CREATE* and object tree read — and it is now **complete**:
 
-1. **`OBJECT_NAME()`** (+ `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`) — `catalog/funcs/`. The **hard
-   dependency**: without it the routine views below are unjoinable, so it comes first.
-2. **`sys.sql_modules`** (the verbatim CREATE body — the script-out payload), **`sys.objects`** widened
-   to `V`/`P`/`FN`/`TR`, **`sys.views`**, **`sys.procedures`**, **`sys.parameters`** — `internal/sysviews`.
-3. **`INFORMATION_SCHEMA.VIEWS` / `ROUTINES` / `PARAMETERS`** — `internal/infoschema` (the portable path).
-4. **`sp_helptext`**, **`sp_help`** — `procedures/` catalog procs (the classic definition dump).
+1. ✓ **`OBJECT_NAME()`** (+ `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`) — `catalog/funcs/` + the
+   `exec.Env` id→name resolver seam. One unified `object_id`/`database_id` (`funcs.ObjectID`/`funcs.DBID`)
+   so `OBJECT_ID('x')` joins the views and `OBJECT_NAME` reverses it.
+2. ✓ **`sys.sql_modules`** (reconstructed CREATE body via `routines.ScriptDefinition`), **`sys.objects`**
+   spanning `U`/`V`/`P`/`FN`/`TR`, **`sys.views`**, **`sys.procedures`**, **`sys.parameters`** — `internal/sysviews`.
+3. ✓ **`INFORMATION_SCHEMA.VIEWS` / `ROUTINES` / `PARAMETERS`** — `internal/infoschema` (the portable path).
+4. ✓ **`sp_helptext`**, **`sp_help`** — engine catalog procs (the classic definition dump + object summary).
 
 That turns "we stored the DDL" into "the client shows it and scripts it back out." After it comes the full
 browsable tree + driver metadata (`sys.indexes`/`index_columns`/`key_constraints`/`foreign_key_columns`,
@@ -77,7 +77,7 @@ results with them.
 | Function(s) | Status |
 | --- | --- |
 | `DB_ID`, `HAS_DBACCESS`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`, `QUOTENAME` | ✓ |
-| `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME` | → next |
+| `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME` | ✓ |
 | `COL_NAME`, `COL_LENGTH`, `TYPE_ID` | ◻ |
 | `OBJECTPROPERTY`, `OBJECTPROPERTYEX`, `COLUMNPROPERTY`, `INDEXPROPERTY`, `DATABASEPROPERTYEX`, `SERVERPROPERTY` | ◻ |
 | `USER_NAME`, `USER_ID`, `SUSER_NAME`, `SUSER_SNAME`, `SUSER_ID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `PERMISSIONS` | ◻ |
@@ -89,8 +89,8 @@ results with them.
 | View(s) | Status |
 | --- | --- |
 | `sys.databases`, `sys.tables`, `sys.columns`, `sys.schemas`, `sys.types`, `sys.foreign_keys` | ✓ |
-| `sys.objects` — exists but **tables only**; widen to `V`/`P`/`FN`/`TR` | ✓ partial |
-| `sys.sql_modules` (verbatim CREATE body), `sys.views`, `sys.procedures`, `sys.parameters` | → next |
+| `sys.objects` — tables + views + procs (`V`/`P`); `FN`/`TR` still ◻ | ✓ |
+| `sys.sql_modules` (reconstructed CREATE body), `sys.views`, `sys.procedures`, `sys.parameters` | ✓ |
 | `sys.sql_expression_dependencies` | ◻ |
 | `sys.indexes`, `sys.index_columns`, `sys.key_constraints`, `sys.foreign_key_columns`, `sys.check_constraints`, `sys.default_constraints` | ◻ |
 | `sys.identity_columns`, `sys.computed_columns`, `sys.triggers`, `sys.partitions`, `sys.tables` extended cols, `sys.extended_properties` | ◻ |
@@ -103,7 +103,7 @@ results with them.
 | View(s) | Status |
 | --- | --- |
 | `TABLES`, `COLUMNS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`, `REFERENTIAL_CONSTRAINTS` | ✓ |
-| `VIEWS`, `ROUTINES`, `PARAMETERS` | → next |
+| `VIEWS`, `ROUTINES`, `PARAMETERS` | ✓ |
 | `ROUTINE_COLUMNS`, `CONSTRAINT_COLUMN_USAGE`, `CHECK_CONSTRAINTS`, `SCHEMATA`, `DOMAINS`, `VIEW_COLUMN_USAGE`, `VIEW_TABLE_USAGE` | ◻ |
 
 ### Catalog stored procedures
@@ -111,7 +111,7 @@ results with them.
 | Proc(s) | Status |
 | --- | --- |
 | `sp_databases`, `sp_tables`, `sp_columns` | ✓ |
-| `sp_helptext`, `sp_help` | → next |
+| `sp_helptext`, `sp_help` | ✓ |
 | `sp_helpdb`, `sp_helpindex`, `sp_helpconstraint` | ◻ |
 | `sp_pkeys`, `sp_fkeys`, `sp_special_columns`, `sp_statistics`, `sp_stored_procedures`, `sp_sproc_columns` | ◻ |
 | `sp_server_info`, `sp_datatype_info`, `sp_tables_ex`, `sp_columns_ex`, `sp_table_privileges`, `sp_column_privileges` | ◻ |

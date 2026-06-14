@@ -16,7 +16,7 @@ import (
 )
 
 // materializeExprs computes each ValueExpr select item into a synthetic appended column.
-func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, sel []tds.SelectItem) ([]catalog.Column, [][]any, []tds.SelectItem, error) {
+func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, sel []tds.SelectItem, env *Env) ([]catalog.Column, [][]any, []tds.SelectItem, error) {
 	has := false
 	for _, it := range sel {
 		if it.Expr != nil {
@@ -49,7 +49,7 @@ func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, s
 		nr := make([]any, len(newCols))
 		copy(nr, row)
 		for _, c := range comps {
-			v, err := evalValue(idx, row, c.ve)
+			v, err := evalValue(idx, row, c.ve, env)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -62,7 +62,7 @@ func materializeExprs(cols []catalog.Column, idx map[string]int, rows [][]any, s
 
 // materializeAggArgs evaluates each aggregate's expression argument (e.g. MAX(CASE …)) into a synthetic
 // appended column and rewrites the item to aggregate that column, so the column-based fold can run.
-func materializeAggArgs(cols []catalog.Column, idx map[string]int, rows [][]any, sel []tds.SelectItem) ([]catalog.Column, [][]any, []tds.SelectItem, error) {
+func materializeAggArgs(cols []catalog.Column, idx map[string]int, rows [][]any, sel []tds.SelectItem, env *Env) ([]catalog.Column, [][]any, []tds.SelectItem, error) {
 	has := false
 	for _, it := range sel {
 		if it.Agg != tds.AggNone && it.ArgExpr != nil {
@@ -96,7 +96,7 @@ func materializeAggArgs(cols []catalog.Column, idx map[string]int, rows [][]any,
 		nr := make([]any, len(newCols))
 		copy(nr, row)
 		for _, c := range comps {
-			v, err := evalValue(idx, row, c.ve)
+			v, err := evalValue(idx, row, c.ve, env)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -118,7 +118,7 @@ func hasOrderExpr(order []tds.OrderItem) bool {
 
 // materializeOrderExprs computes each expression ORDER BY term into a synthetic appended column and
 // rewrites the term to reference it, so the column-indexed sorter can order by it.
-func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]any, order []tds.OrderItem) ([]catalog.Column, [][]any, map[string]int, []tds.OrderItem, error) {
+func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]any, order []tds.OrderItem, env *Env) ([]catalog.Column, [][]any, map[string]int, []tds.OrderItem, error) {
 	newCols := append([]catalog.Column{}, cols...)
 	newOrder := append([]tds.OrderItem{}, order...)
 	type comp struct {
@@ -140,7 +140,7 @@ func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]a
 		nr := make([]any, len(newCols))
 		copy(nr, row)
 		for _, c := range comps {
-			v, err := evalValue(idx, row, c.ve)
+			v, err := evalValue(idx, row, c.ve, env)
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
@@ -151,7 +151,7 @@ func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]a
 	return newCols, out, indexCols(newCols), newOrder, nil
 }
 
-func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr) (any, error) {
+func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any, error) {
 	switch ve.Kind {
 	case tds.ValLit:
 		return ve.Lit, nil
@@ -162,11 +162,11 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr) (any, error) {
 		}
 		return row[i], nil
 	case tds.ValBinary:
-		l, err := evalValue(idx, row, ve.Left)
+		l, err := evalValue(idx, row, ve.Left, env)
 		if err != nil {
 			return nil, err
 		}
-		r, err := evalValue(idx, row, ve.Right)
+		r, err := evalValue(idx, row, ve.Right, env)
 		if err != nil {
 			return nil, err
 		}
@@ -174,28 +174,28 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr) (any, error) {
 	case tds.ValFunc:
 		args := make([]any, len(ve.Args))
 		for i, a := range ve.Args {
-			v, err := evalValue(idx, row, a)
+			v, err := evalValue(idx, row, a, env)
 			if err != nil {
 				return nil, err
 			}
 			args[i] = v
 		}
-		return evalFunc(ve.Func, args), nil
+		return evalFunc(ve.Func, args, env), nil
 	case tds.ValCase:
 		for _, w := range ve.Whens {
 			matched := false
 			if w.Cond != nil {
-				ok, err := evalExpr(idx, row, w.Cond, nil)
+				ok, err := evalExpr(idx, row, w.Cond, env.subFn())
 				if err != nil {
 					return nil, err
 				}
 				matched = ok
 			} else {
-				ov, err := evalValue(idx, row, ve.Operand)
+				ov, err := evalValue(idx, row, ve.Operand, env)
 				if err != nil {
 					return nil, err
 				}
-				mv, err := evalValue(idx, row, w.Match)
+				mv, err := evalValue(idx, row, w.Match, env)
 				if err != nil {
 					return nil, err
 				}
@@ -204,15 +204,15 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr) (any, error) {
 				}
 			}
 			if matched {
-				return evalValue(idx, row, w.Result)
+				return evalValue(idx, row, w.Result, env)
 			}
 		}
 		if ve.Else != nil {
-			return evalValue(idx, row, ve.Else)
+			return evalValue(idx, row, ve.Else, env)
 		}
 		return nil, nil
 	case tds.ValCast:
-		v, err := evalValue(idx, row, ve.Left)
+		v, err := evalValue(idx, row, ve.Left, env)
 		if err != nil {
 			return nil, err
 		}
@@ -271,8 +271,32 @@ func evalBinary(op string, l, r any) any {
 	return nil
 }
 
-func evalFunc(name string, a []any) any {
+func evalFunc(name string, a []any, env *Env) any {
 	switch name {
+	case "OBJECT_NAME":
+		if env != nil && env.ObjectName != nil && len(a) >= 1 {
+			if id, ok := toInt(a[0]); ok {
+				if n, ok := env.ObjectName(id); ok {
+					return n
+				}
+			}
+		}
+		return nil
+	case "DB_NAME":
+		if len(a) == 0 || a[0] == nil {
+			if env != nil {
+				return env.CurrentDB
+			}
+			return nil
+		}
+		if env != nil && env.DBName != nil {
+			if id, ok := toInt(a[0]); ok {
+				if n, ok := env.DBName(id); ok {
+					return n
+				}
+			}
+		}
+		return nil
 	case "LEN", "DATALEN":
 		if len(a) == 1 {
 			return int64(len(toStr(a[0])))
@@ -369,6 +393,25 @@ func evalFunc(name string, a []any) any {
 		return v
 	}
 	return nil
+}
+
+// CatalogResolvers builds the OBJECT_NAME/DB_NAME reverse maps from a backend's tables, routines, and
+// database list, so id→name lookups match the ids OBJECT_ID/DB_ID emit.
+func CatalogResolvers(schema catalog.Schema, routines []*tds.Routine, dbs []string) (object, db func(int64) (string, bool)) {
+	objs := map[int64]string{}
+	for _, t := range schema.Tables {
+		objs[funcs.ObjectID(t.Name)] = t.Name
+	}
+	for _, r := range routines {
+		objs[funcs.ObjectID(r.Name)] = r.Name
+	}
+	dbm := map[int64]string{1: "master", 2: "tempdb", 3: "model", 4: "msdb"}
+	for _, d := range dbs {
+		dbm[funcs.DBID(d)] = d
+	}
+	object = func(id int64) (string, bool) { n, ok := objs[id]; return n, ok }
+	db = func(id int64) (string, bool) { n, ok := dbm[id]; return n, ok }
+	return object, db
 }
 
 func castValue(v any, typ string) any {

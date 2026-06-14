@@ -22,12 +22,12 @@ func Apply(cols []catalog.Column, data [][]any, q *tds.Query) (tds.Rows, error) 
 	return ApplyWith(cols, data, q, nil)
 }
 
-func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (tds.Rows, error) {
+func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds.Rows, error) {
 	idx := indexCols(cols)
 
 	var filtered [][]any
 	for _, row := range data {
-		ok, err := evalExpr(idx, row, q.Where, sub)
+		ok, err := evalExpr(idx, row, q.Where, env.subFn())
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +37,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (td
 	}
 
 	if isAggregate(q) {
-		mCols, mRows, mSel, err := materializeAggArgs(cols, idx, filtered, q.Select)
+		mCols, mRows, mSel, err := materializeAggArgs(cols, idx, filtered, q.Select, env)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +46,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (td
 		return aggregate(mCols, indexCols(mCols), mRows, &q2)
 	}
 
-	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, q.Select)
+	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, q.Select, env)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, sub SubFn) (td
 		order := q.OrderBy
 		if hasOrderExpr(order) {
 			var err error
-			cols, filtered, idx, order, err = materializeOrderExprs(cols, idx, filtered, order)
+			cols, filtered, idx, order, err = materializeOrderExprs(cols, idx, filtered, order, env)
 			if err != nil {
 				return nil, err
 			}
@@ -274,7 +274,7 @@ func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, 
 		}
 		return evalBinary(ve.Op, l, r), nil
 	}
-	return evalValue(outIdx, outRow, ve)
+	return evalValue(outIdx, outRow, ve, nil)
 }
 
 func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, e *tds.Expr) (bool, error) {
@@ -660,6 +660,22 @@ func pick(row []any, proj []int) []any {
 // SubFn evaluates a correlated subquery against the current outer row.
 type SubFn func(outerRow []any, idx map[string]int, sub *tds.Query) ([][]any, error)
 
+// Env carries query-time context the pure evaluator can't infer: the correlated-subquery runner plus
+// the catalog id→name resolvers behind OBJECT_NAME/DB_NAME. A nil *Env disables all three.
+type Env struct {
+	Sub        SubFn
+	ObjectName func(int64) (string, bool)
+	DBName     func(int64) (string, bool)
+	CurrentDB  string
+}
+
+func (e *Env) subFn() SubFn {
+	if e == nil {
+		return nil
+	}
+	return e.Sub
+}
+
 func evalExpr(idx map[string]int, row []any, e *tds.Expr, sub SubFn) (bool, error) {
 	switch {
 	case e == nil:
@@ -710,7 +726,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, sub SubFn) (bool,
 	}
 	var v any
 	if p.LeftExpr != nil {
-		lv, err := evalValue(idx, row, p.LeftExpr)
+		lv, err := evalValue(idx, row, p.LeftExpr, nil)
 		if err != nil {
 			return false, err
 		}
@@ -759,7 +775,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, sub SubFn) (bool,
 		rhs := p.Value
 		switch r := rhs.(type) {
 		case *tds.ValueExpr:
-			rv, err := evalValue(idx, row, r)
+			rv, err := evalValue(idx, row, r, nil)
 			if err != nil {
 				return false, err
 			}

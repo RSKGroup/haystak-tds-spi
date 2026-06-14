@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -18,35 +19,36 @@ const (
 	schemaName  = "dbo"
 )
 
-// Resolve answers a query against INFORMATION_SCHEMA.* from a backend's declared schema.
+// Resolve answers a query against INFORMATION_SCHEMA.* from a backend's declared schema and routines.
 // Returns handled=false when the query does not target INFORMATION_SCHEMA.
-func Resolve(schema catalog.Schema, q *tds.Query) (rows tds.Rows, handled bool, err error) {
+func Resolve(schema catalog.Schema, rts []*tds.Routine, q *tds.Query) (rows tds.Rows, handled bool, err error) {
 	if !strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") {
 		return nil, false, nil
 	}
+	var cols []catalog.Column
+	var data [][]any
 	switch strings.ToUpper(q.Table) {
 	case "TABLES":
-		cols, data := tablesRows(schema)
-		r, err := exec.Apply(cols, data, q)
-		return r, true, err
+		cols, data = tablesRows(schema)
 	case "COLUMNS":
-		cols, data := columnsRows(schema)
-		r, err := exec.Apply(cols, data, q)
-		return r, true, err
+		cols, data = columnsRows(schema)
+	case "VIEWS":
+		cols, data = viewsRows(rts)
+	case "ROUTINES":
+		cols, data = routinesRows(rts)
+	case "PARAMETERS":
+		cols, data = parametersRows(rts)
 	case "TABLE_CONSTRAINTS":
-		cols, data := tableConstraintsRows(schema)
-		r, err := exec.Apply(cols, data, q)
-		return r, true, err
+		cols, data = tableConstraintsRows(schema)
 	case "KEY_COLUMN_USAGE":
-		cols, data := keyColumnUsageRows(schema)
-		r, err := exec.Apply(cols, data, q)
-		return r, true, err
+		cols, data = keyColumnUsageRows(schema)
 	case "REFERENTIAL_CONSTRAINTS":
-		cols, data := referentialConstraintsRows(schema)
-		r, err := exec.Apply(cols, data, q)
-		return r, true, err
+		cols, data = referentialConstraintsRows(schema)
+	default:
+		return nil, true, fmt.Errorf("infoschema: INFORMATION_SCHEMA.%s not supported", q.Table)
 	}
-	return nil, true, fmt.Errorf("infoschema: INFORMATION_SCHEMA.%s not supported", q.Table)
+	r, err := exec.Apply(cols, data, q)
+	return r, true, err
 }
 
 // TypeName maps the canonical type model to the T-SQL type name reported by the catalog.
@@ -103,6 +105,76 @@ func columnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 		}
 	}
 	return cols, rows
+}
+
+// viewsRows is INFORMATION_SCHEMA.VIEWS: the portable view-definition read.
+func viewsRows(rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"),
+		strCol("VIEW_DEFINITION"), strCol("CHECK_OPTION"), strCol("IS_UPDATABLE"),
+	}
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind == tds.RoutineView {
+			rows = append(rows, []any{catalogName, schemaName, r.Name, routines.ScriptDefinition(r), "NONE", "NO"})
+		}
+	}
+	return cols, rows
+}
+
+// routinesRows is INFORMATION_SCHEMA.ROUTINES: procedures and functions (views live in VIEWS).
+func routinesRows(rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("SPECIFIC_CATALOG"), strCol("SPECIFIC_SCHEMA"), strCol("SPECIFIC_NAME"),
+		strCol("ROUTINE_CATALOG"), strCol("ROUTINE_SCHEMA"), strCol("ROUTINE_NAME"),
+		strCol("ROUTINE_TYPE"), nstrCol("DATA_TYPE"), strCol("ROUTINE_DEFINITION"),
+	}
+	var rows [][]any
+	for _, r := range rts {
+		var rtype string
+		switch r.Kind {
+		case tds.RoutineProc:
+			rtype = "PROCEDURE"
+		case tds.RoutineFunc:
+			rtype = "FUNCTION"
+		default:
+			continue
+		}
+		rows = append(rows, []any{
+			catalogName, schemaName, r.Name, catalogName, schemaName, r.Name,
+			rtype, nil, routines.ScriptDefinition(r),
+		})
+	}
+	return cols, rows
+}
+
+// parametersRows is INFORMATION_SCHEMA.PARAMETERS: procedure/function parameters in declared order.
+func parametersRows(rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("SPECIFIC_CATALOG"), strCol("SPECIFIC_SCHEMA"), strCol("SPECIFIC_NAME"),
+		intCol("ORDINAL_POSITION"), strCol("PARAMETER_MODE"), strCol("PARAMETER_NAME"), strCol("DATA_TYPE"),
+	}
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind != tds.RoutineProc && r.Kind != tds.RoutineFunc {
+			continue
+		}
+		for i, p := range r.Params {
+			rows = append(rows, []any{
+				catalogName, schemaName, r.Name, int64(i + 1), "IN", p.Name, baseTypeName(p.Type),
+			})
+		}
+	}
+	return cols, rows
+}
+
+// baseTypeName strips a declared parameter type ("decimal(10,2)") down to its base name ("decimal").
+func baseTypeName(decl string) string {
+	s := strings.ToLower(strings.TrimSpace(decl))
+	if i := strings.IndexByte(s, '('); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	return s
 }
 
 func tableConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
@@ -177,6 +249,9 @@ func intCol(n string) catalog.Column {
 }
 func nintCol(n string) catalog.Column {
 	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64, Nullable: true}}
+}
+func nstrCol(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.String, Nullable: true}}
 }
 
 func yesNo(b bool) string {

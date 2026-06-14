@@ -85,12 +85,14 @@ type Databaser interface {
 	DescribeDatabase(ctx context.Context, db string) (catalog.Schema, error)
 }
 
-// RoutineKind distinguishes a stored view from a stored procedure.
+// RoutineKind distinguishes a stored view, procedure, function, or trigger.
 type RoutineKind int
 
 const (
 	RoutineView RoutineKind = iota + 1
 	RoutineProc
+	RoutineFunc
+	RoutineTrigger
 )
 
 // RoutineParam is one procedure parameter: its @name and declared T-SQL type text.
