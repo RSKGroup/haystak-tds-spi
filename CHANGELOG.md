@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased (v1.5.0)
+
+A broad SQL Server surface expansion — additive, no breaking changes. The one public API addition is
+`catalog.Schema.TableTypes` (with `catalog.TableType`), so a backend can declare user-defined table types.
+
+Functions:
+
+- Aggregate: `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`.
+- String: `CHARINDEX`, `PATINDEX`, `LEFT`, `RIGHT`, `REPLICATE`, `STUFF`, `REVERSE`, `SPACE`, `ASCII`, `CHAR`, `UNICODE`, `NCHAR`, `CONCAT_WS`, `TRANSLATE`, `STR`, `STRING_ESCAPE`.
+- Date & time: `DATEADD`, `DATEDIFF`, `DATEDIFF_BIG`, `DATEPART`, `DATENAME`, `DATETRUNC`, `EOMONTH`, `DATEFROMPARTS`, `DATETIMEFROMPARTS`, `ISDATE`, `CURRENT_TIMESTAMP`, `SYSDATETIMEOFFSET` (month-end clamping on date math).
+- Mathematical: `CEILING`, `FLOOR`, `ROUND`, `POWER`, `SQRT`, `SQUARE`, `EXP`, `LOG`, `LOG10`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATN2`, `PI`, `RAND`, `SIGN`, `DEGREES`, `RADIANS`.
+- Logical: `IIF`, `CHOOSE`.
+- Conversion: `TRY_CAST`, `TRY_CONVERT`, `PARSE`, `TRY_PARSE`.
+- JSON: `ISJSON`, `JSON_VALUE`, `JSON_QUERY`.
+- Cryptographic: `HASHBYTES`, `CHECKSUM`, `BINARY_CHECKSUM`.
+- Metadata: `TYPE_ID`, `COL_NAME`, `COL_LENGTH`, `OBJECTPROPERTY`, `OBJECTPROPERTYEX`, `COLUMNPROPERTY`, `OBJECT_DEFINITION`, `STATS_DATE`.
+- Security: `USER_ID`, `SUSER_ID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `IS_ROLEMEMBER`, `ORIGINAL_LOGIN`.
+- System: `NEWID`, `SCOPE_IDENTITY`, `IDENT_CURRENT`, `ERROR_MESSAGE`/`ERROR_NUMBER`/`ERROR_SEVERITY`/`ERROR_STATE`/`ERROR_LINE`/`ERROR_PROCEDURE`.
+- Configuration (`@@`): `@@IDENTITY`, `@@PROCID`, `@@SERVICENAME`, `@@NESTLEVEL`, `@@CURSOR_ROWS`, `@@MAX_PRECISION`, `@@DATEFIRST`, `@@LOCK_TIMEOUT`, `@@OPTIONS`.
+
+Catalog:
+
+- Catalog views (`sys.*`): `indexes`, `index_columns`, `key_constraints`, `foreign_key_columns`, `check_constraints`, `default_constraints`, `identity_columns`, `computed_columns`, `sql_expression_dependencies`, `triggers`, `extended_properties`, `all_objects`, `all_columns`, `sequences`, `synonyms`, `table_types`, `database_principals`, `server_principals`, `database_role_members`, `database_permissions`, `server_permissions`; compatibility views `sysobjects`, `syscolumns`, `systypes`, `sysindexes`, `sysusers`.
+- INFORMATION_SCHEMA: `SCHEMATA`, `CHECK_CONSTRAINTS`, `CONSTRAINT_COLUMN_USAGE`, `CONSTRAINT_TABLE_USAGE`, `VIEW_TABLE_USAGE`, `ROUTINE_COLUMNS`, `DOMAINS`.
+- System stored procedures: `sp_pkeys`, `sp_fkeys`, `sp_statistics`, `sp_special_columns`, `sp_stored_procedures`, `sp_sproc_columns`, `sp_server_info`, `sp_datatype_info`, `sp_helpindex`, `sp_helpconstraint`, `sp_helpdb`, `sp_configure`, `sp_lock`.
+
+Other:
+
+- Parser: reserved-keyword function names (`LEFT`/`RIGHT`), datepart keywords (`DATEADD`/`DATEPART`/…), `IIF` (desugars to `CASE`), and `TRY_CAST`/`TRY_CONVERT`/`PARSE`.
+- Seam-first catalog: views are projections over SPI seams — `sys.table_types` over `catalog.Schema.TableTypes`, the security catalog over the authenticated `tds.Principal` — populating when the backend/identity supplies data and degrading to the correct empty shape otherwise.
+- Known limitation: catalog scalars (`OBJECT_NAME`/`COL_*`/`*PROPERTY`/`OBJECT_DEFINITION`) resolve in the SELECT projection and ORDER BY, not inside WHERE/HAVING predicate clauses.
+
 ## v1.4.0
 
 Stored routines are now visible and scriptable through the standard catalog — additive, no breaking changes.

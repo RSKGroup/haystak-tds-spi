@@ -46,6 +46,11 @@ into one shared helper just because their bodies match today — distinct surfac
 3. The builder reads the backend's `catalog.Schema` + routines and emits the view's columns as rows.
    An empty-but-shaped view (no data yet) still returns its full column set so clients can describe it.
 
+Prefer **seam-first**: a view should *project over an SPI seam*, not hardcode rows — the `catalog.Schema`
+(tables, plus optional `Indexes`/`Checks`/`TableTypes`) or the authenticated `tds.Principal` passed to
+`Resolve` (for identity-aware views like `sys.database_principals`). If the concept isn't modeled yet, add
+an additive field to `catalog` and have backends populate it; the view then lights up by *declared data*.
+
 ## Add a stored-object capability (views / procedures)
 
 Work in `internal/extensions/views` or `internal/extensions/procedures`. These persist definitions through the public

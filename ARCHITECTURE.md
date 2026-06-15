@@ -65,4 +65,9 @@ Views and procedures are persisted by the backend via `tds.RoutineStore` (gated 
 The gateway stores each definition's raw body and parses/runs it at use time, so a backend needs no
 SQL knowledge to support stored objects — it just keeps and returns the text.
 
+**Catalog views are seam projections.** A `sys.*` / `INFORMATION_SCHEMA.*` view renders what the backend
+supplies through an SPI seam — the `catalog.Schema` (tables, plus optional `Indexes`/`Checks`/`TableTypes`)
+and the authenticated `tds.Principal` (identity-aware `sys.database_principals` etc.) — and degrades to the
+correct empty shape otherwise. A backend lights up a view by *declaring data*, not by writing view code.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the step-by-step recipes.
