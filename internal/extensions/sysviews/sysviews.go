@@ -74,7 +74,8 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
 	obj, db := exec.CatalogResolvers(schema, rts, dbs)
-	env := &exec.Env{ObjectName: obj, DBName: db, CurrentDB: q.Database}
+	tbl, kind := exec.CatalogObjects(schema, rts)
+	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, CurrentDB: q.Database}
 	r, err := exec.ApplyWith(cols, data, q, env)
 	return r, true, err
 }
@@ -641,6 +642,7 @@ func sysTypeIDByName(decl string) int64 {
 	return 231
 }
 
+// sysTypeLen is sys.columns.max_length: the storage width in bytes, -1 for max/unbounded.
 func sysTypeLen(t types.Type) int64 {
 	switch t.Kind {
 	case types.Bool:

@@ -217,6 +217,8 @@ type Env struct {
 	Sub        SubFn
 	ObjectName func(int64) (string, bool)
 	DBName     func(int64) (string, bool)
+	Table      func(int64) (catalog.Table, bool) // table by object id (COL_*/OBJECTPROPERTY)
+	ObjectKind func(int64) (string, bool)         // "U"/"V"/"P"/"FN"/"TR" by object id
 	CurrentDB  string
 }
 

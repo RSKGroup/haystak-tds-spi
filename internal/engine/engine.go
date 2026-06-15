@@ -479,8 +479,9 @@ func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn
 	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx)}
 	if queryUsesCatalogFn(q) {
 		if schema, dbs, err := introspectSchema(ctx, b, q); err == nil {
-			obj, dbf := exec.CatalogResolvers(schema, listRoutines(ctx, b, currentDB(ctx)), dbs)
-			env.ObjectName, env.DBName = obj, dbf
+			rts := listRoutines(ctx, b, currentDB(ctx))
+			env.ObjectName, env.DBName = exec.CatalogResolvers(schema, rts, dbs)
+			env.Table, env.ObjectKind = exec.CatalogObjects(schema, rts)
 		}
 	}
 	return env
@@ -489,9 +490,16 @@ func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn
 // queryUsesCatalogFn reports whether any select item calls OBJECT_NAME or DB_NAME with an argument
 // (DB_NAME() with no argument needs only CurrentDB, which is always set).
 func queryUsesCatalogFn(q *tds.Query) bool {
+	// Catalog scalars resolve only where the evaluator threads *Env: the SELECT projection and ORDER BY.
+	// Predicate clauses (WHERE/HAVING/JOIN-ON) evaluate with a nil env, so they see no resolver.
 	for a := q; a != nil; a = a.Union {
 		for _, it := range a.Select {
 			if valueExprUsesCatalogFn(it.Expr) || valueExprUsesCatalogFn(it.ArgExpr) {
+				return true
+			}
+		}
+		for _, oi := range a.OrderBy {
+			if valueExprUsesCatalogFn(oi.Expr) {
 				return true
 			}
 		}
@@ -505,7 +513,7 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 	}
 	if ve.Kind == tds.ValFunc {
 		switch ve.Func {
-		case "OBJECT_NAME":
+		case "OBJECT_NAME", "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX":
 			return true
 		case "DB_NAME":
 			if len(ve.Args) > 0 {

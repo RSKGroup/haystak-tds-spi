@@ -154,13 +154,13 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `SCHEMA_NAME` | `internal/extensions/functions/metadata.go` | Y |
 | `TYPE_NAME` | `internal/extensions/functions/metadata.go` | Y |
 | `HAS_DBACCESS` | `internal/extensions/functions/metadata.go` | Y |
-| `COL_NAME` |  | - |
-| `COL_LENGTH` |  | - |
+| `COL_NAME` | `internal/exec/value.go` | Y |
+| `COL_LENGTH` | `internal/exec/value.go` | Y |
 | `TYPE_ID` | `internal/extensions/functions/metadata.go` | Y |
 | `OBJECT_DEFINITION` |  | - |
-| `OBJECTPROPERTY` |  | - |
-| `OBJECTPROPERTYEX` |  | - |
-| `COLUMNPROPERTY` |  | - |
+| `OBJECTPROPERTY` | `internal/exec/value.go` | Y |
+| `OBJECTPROPERTYEX` | `internal/exec/value.go` | Y |
+| `COLUMNPROPERTY` | `internal/exec/value.go` | Y |
 | `INDEXPROPERTY` |  | - |
 | `INDEXKEY_PROPERTY` |  | - |
 | `STATS_DATE` |  | - |

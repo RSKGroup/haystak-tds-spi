@@ -296,6 +296,53 @@ func evalFunc(name string, a []any, env *Env) any {
 			}
 		}
 		return nil
+	case "COL_NAME":
+		if env != nil && env.Table != nil && len(a) >= 2 {
+			oid, ok1 := toInt(a[0])
+			cid, ok2 := toInt(a[1])
+			if ok1 && ok2 {
+				if t, ok := env.Table(oid); ok && cid >= 1 && int(cid) <= len(t.Columns) {
+					return t.Columns[cid-1].Name
+				}
+			}
+		}
+		return nil
+	case "COL_LENGTH":
+		if env != nil && env.Table != nil && len(a) >= 2 {
+			tbl, _ := a[0].(string)
+			col, _ := a[1].(string)
+			if t, ok := env.Table(functions.ObjectID(tbl)); ok {
+				for _, c := range t.Columns {
+					if strings.EqualFold(c.Name, col) {
+						return colByteLen(c.Type)
+					}
+				}
+			}
+		}
+		return nil
+	case "COLUMNPROPERTY":
+		if env != nil && env.Table != nil && len(a) >= 3 {
+			if oid, ok := toInt(a[0]); ok {
+				col, _ := a[1].(string)
+				prop, _ := a[2].(string)
+				if t, ok := env.Table(oid); ok {
+					for i, c := range t.Columns {
+						if strings.EqualFold(c.Name, col) {
+							return columnProperty(c, i+1, prop)
+						}
+					}
+				}
+			}
+		}
+		return nil
+	case "OBJECTPROPERTY", "OBJECTPROPERTYEX":
+		if env != nil && len(a) >= 2 {
+			if oid, ok := toInt(a[0]); ok {
+				prop, _ := a[1].(string)
+				return objectProperty(env, oid, prop)
+			}
+		}
+		return nil
 	}
 	// Everything else (string / numeric / date / logical / catalog scalars) lives in its family file
 	// under catalog/funcs and resolves through the registry — see that package's *.go.
@@ -322,6 +369,134 @@ func CatalogResolvers(schema catalog.Schema, routines []*tds.Routine, dbs []stri
 	object = func(id int64) (string, bool) { n, ok := objs[id]; return n, ok }
 	db = func(id int64) (string, bool) { n, ok := dbm[id]; return n, ok }
 	return object, db
+}
+
+// CatalogObjects builds the COL_*/OBJECTPROPERTY resolvers: a table-by-object-id lookup plus an
+// object-kind ("U"/"V"/"P"/"FN"/"TR") lookup, keyed by the ids OBJECT_ID emits.
+func CatalogObjects(schema catalog.Schema, routines []*tds.Routine) (table func(int64) (catalog.Table, bool), kind func(int64) (string, bool)) {
+	tbls := map[int64]catalog.Table{}
+	kinds := map[int64]string{}
+	for _, t := range schema.Tables {
+		id := functions.ObjectID(t.Name)
+		tbls[id] = t
+		kinds[id] = "U"
+	}
+	for _, r := range routines {
+		kinds[functions.ObjectID(r.Name)] = routineKindCode(r.Kind)
+	}
+	table = func(id int64) (catalog.Table, bool) { t, ok := tbls[id]; return t, ok }
+	kind = func(id int64) (string, bool) { k, ok := kinds[id]; return k, ok }
+	return table, kind
+}
+
+func routineKindCode(k tds.RoutineKind) string {
+	switch k {
+	case tds.RoutineView:
+		return "V"
+	case tds.RoutineProc:
+		return "P"
+	case tds.RoutineFunc:
+		return "FN"
+	case tds.RoutineTrigger:
+		return "TR"
+	}
+	return ""
+}
+
+// colByteLen is COL_LENGTH's contract: the column's defined storage width in bytes, -1 for max.
+func colByteLen(t types.Type) int64 {
+	switch t.Kind {
+	case types.Bool:
+		return 1
+	case types.Int32:
+		return 4
+	case types.Int64, types.Float64, types.Time:
+		return 8
+	case types.UUID:
+		return 16
+	case types.Decimal:
+		return 17
+	case types.String:
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen * 2)
+		}
+		return -1
+	case types.Bytes:
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen)
+		}
+		return -1
+	}
+	return -1
+}
+
+func columnProperty(c catalog.Column, ordinal int, prop string) any {
+	switch strings.ToLower(prop) {
+	case "allowsnull":
+		return boolToInt(c.Type.Nullable)
+	case "columnid":
+		return int64(ordinal)
+	case "precision":
+		return int64(c.Type.Precision)
+	case "scale":
+		return int64(c.Type.Scale)
+	case "charmaxlen":
+		if (c.Type.Kind == types.String || c.Type.Kind == types.Bytes) && c.Type.MaxLen > 0 {
+			return int64(c.Type.MaxLen)
+		}
+		return int64(-1)
+	case "isidentity":
+		return boolToInt(c.Identity)
+	case "iscomputed":
+		return boolToInt(c.Computed != "")
+	}
+	return nil
+}
+
+func objectProperty(env *Env, oid int64, prop string) any {
+	kind := ""
+	if env.ObjectKind != nil {
+		if k, ok := env.ObjectKind(oid); ok {
+			kind = k
+		}
+	}
+	t, haveTable := catalog.Table{}, false
+	if env.Table != nil {
+		t, haveTable = env.Table(oid)
+	}
+	switch strings.ToLower(prop) {
+	case "istable", "isusertable":
+		return boolToInt(kind == "U")
+	case "isview":
+		return boolToInt(kind == "V")
+	case "isprocedure":
+		return boolToInt(kind == "P")
+	case "isscalarfunction":
+		return boolToInt(kind == "FN")
+	case "istrigger":
+		return boolToInt(kind == "TR")
+	case "tablehasprimarykey":
+		return boolToInt(haveTable && len(t.PrimaryKey) > 0)
+	case "tablehasidentity":
+		if haveTable {
+			for _, c := range t.Columns {
+				if c.Identity {
+					return int64(1)
+				}
+			}
+		}
+		return int64(0)
+	case "ismsshipped":
+		return int64(0)
+	}
+	return nil
+}
+
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func castValue(v any, typ string) any {
