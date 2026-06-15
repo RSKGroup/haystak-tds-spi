@@ -49,6 +49,22 @@ func TestSystemScalars(t *testing.T) {
 	}
 }
 
+func TestJSONFunctions(t *testing.T) {
+	r := qry(t, `SELECT JSON_VALUE('{"name":"Bob","age":30}', '$.name'), JSON_VALUE('{"name":"Bob","age":30}', '$.age'), ISJSON('{"a":1}'), ISJSON('not json'), JSON_QUERY('{"a":[1,2,3]}', '$.a'), JSON_VALUE('{"a":{"b":7}}', '$.a.b')`)[0]
+	if cell(r[0]) != "Bob" || cell(r[1]) != "30" {
+		t.Errorf("JSON_VALUE = %v/%v, want Bob/30", r[0], r[1])
+	}
+	if cell(r[2]) != "1" || cell(r[3]) != "0" {
+		t.Errorf("ISJSON = %v/%v, want 1/0", r[2], r[3])
+	}
+	if cell(r[4]) != "[1,2,3]" {
+		t.Errorf("JSON_QUERY = %v, want [1,2,3]", r[4])
+	}
+	if cell(r[5]) != "7" {
+		t.Errorf("JSON_VALUE nested = %v, want 7", r[5])
+	}
+}
+
 func TestMathFunctions(t *testing.T) {
 	rows := qry(t, "SELECT CEILING(2.1), FLOOR(2.9), ROUND(123.456,2), POWER(2,10), SQRT(16), SQUARE(5), SIGN(-7), ABS(-3)")
 	r := rows[0]
