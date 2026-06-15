@@ -12,6 +12,28 @@ func TestTypeID(t *testing.T) {
 	}
 }
 
+func TestStringFunctions(t *testing.T) {
+	rows := qry(t, "SELECT CHARINDEX('cd','abcdef'), CHARINDEX('x','abc'), CHARINDEX('a','aXaXa',2), LEFT('abcdef',3), RIGHT('abcdef',2), REPLICATE('ab',3), STUFF('abcdef',2,3,'XY'), REVERSE('abc')")
+	r := rows[0]
+	if cell(r[0]) != "3" || cell(r[1]) != "0" || cell(r[2]) != "3" {
+		t.Errorf("CHARINDEX = %v/%v/%v, want 3/0/3", r[0], r[1], r[2])
+	}
+	if cell(r[3]) != "abc" || cell(r[4]) != "ef" || cell(r[5]) != "ababab" || cell(r[6]) != "aXYef" || cell(r[7]) != "cba" {
+		t.Errorf("LEFT/RIGHT/REPLICATE/STUFF/REVERSE = %v", r[3:])
+	}
+}
+
+func TestStringCharFunctions(t *testing.T) {
+	rows := qry(t, "SELECT ASCII('A'), CHAR(65), UNICODE('A'), NCHAR(65), LEN(SPACE(3)), PATINDEX('%cd%','abcdef'), PATINDEX('%xy%','abc')")
+	r := rows[0]
+	if cell(r[0]) != "65" || cell(r[1]) != "A" || cell(r[2]) != "65" || cell(r[3]) != "A" {
+		t.Errorf("ASCII/CHAR/UNICODE/NCHAR = %v", r[0:4])
+	}
+	if cell(r[4]) != "3" || cell(r[5]) != "3" || cell(r[6]) != "0" {
+		t.Errorf("SPACE/PATINDEX = %v/%v/%v, want 3/3/0", r[4], r[5], r[6])
+	}
+}
+
 func TestColNameAndLength(t *testing.T) {
 	// COL_NAME(object_id, column_id) -> name; COL_LENGTH('table','column') -> byte width
 	rows := qry(t, "SELECT COL_NAME(OBJECT_ID('products'), 1), COL_LENGTH('products', 'sku')")

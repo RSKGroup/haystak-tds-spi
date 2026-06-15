@@ -534,6 +534,9 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 	switch {
 	case p.isKeyword("CASE"):
 		return p.caseExpr()
+	case t.kind == tKeyword && p.peekN(1).kind == tLParen:
+		// a reserved keyword that doubles as a function (LEFT/RIGHT/...), disambiguated by the '('
+		return p.funcCall(strings.ToUpper(t.text))
 	case t.kind == tLParen:
 		p.next()
 		if p.isKeyword("SELECT") {
@@ -570,39 +573,44 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 			return p.convertExpr()
 		}
 		if p.peekN(1).kind == tLParen {
-			fn := strings.ToUpper(t.text)
-			p.next()
-			p.next()
-			var args []*tds.ValueExpr
-			if p.peek().kind != tRParen {
-				for {
-					if p.peek().kind == tStar {
-						args = append(args, &tds.ValueExpr{Kind: tds.ValCol, Col: "*"})
-						p.next()
-					} else {
-						a, err := p.valueExpr()
-						if err != nil {
-							return nil, err
-						}
-						args = append(args, a)
-					}
-					if p.peek().kind == tComma {
-						p.next()
-						continue
-					}
-					break
-				}
-			}
-			if p.peek().kind != tRParen {
-				return nil, fmt.Errorf("tsql: expected ')' after function args, got %q", p.peek().text)
-			}
-			p.next()
-			return &tds.ValueExpr{Kind: tds.ValFunc, Func: fn, Args: args}, nil
+			return p.funcCall(strings.ToUpper(t.text))
 		}
 		name, _ := p.qualifiedName()
 		return &tds.ValueExpr{Kind: tds.ValCol, Col: name}, nil
 	}
 	return nil, fmt.Errorf("tsql: unexpected %q in expression", t.text)
+}
+
+// funcCall parses a scalar function call whose name token is current and is followed by '(' (so
+// reserved-keyword functions like LEFT/RIGHT resolve the same way as identifier-named ones).
+func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
+	p.next() // name
+	p.next() // (
+	var args []*tds.ValueExpr
+	if p.peek().kind != tRParen {
+		for {
+			if p.peek().kind == tStar {
+				args = append(args, &tds.ValueExpr{Kind: tds.ValCol, Col: "*"})
+				p.next()
+			} else {
+				a, err := p.valueExpr()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, a)
+			}
+			if p.peek().kind == tComma {
+				p.next()
+				continue
+			}
+			break
+		}
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after function args, got %q", p.peek().text)
+	}
+	p.next()
+	return &tds.ValueExpr{Kind: tds.ValFunc, Func: name, Args: args}, nil
 }
 
 func (p *parser) caseExpr() (*tds.ValueExpr, error) {

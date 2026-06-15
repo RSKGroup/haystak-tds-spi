@@ -43,23 +43,23 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `REPLACE` | `internal/extensions/functions/string.go` | Y |
 | `CONCAT` | `internal/extensions/functions/string.go` | Y |
 | `QUOTENAME` | `internal/extensions/functions/string.go` | Y |
-| `CHARINDEX` |  | - |
-| `PATINDEX` |  | - |
-| `STUFF` |  | - |
-| `LEFT` |  | - |
-| `RIGHT` |  | - |
-| `REPLICATE` |  | - |
-| `SPACE` |  | - |
-| `REVERSE` |  | - |
+| `CHARINDEX` | `internal/extensions/functions/string.go` | Y |
+| `PATINDEX` | `internal/extensions/functions/string.go` | Y |
+| `STUFF` | `internal/extensions/functions/string.go` | Y |
+| `LEFT` | `internal/extensions/functions/string.go` | Y |
+| `RIGHT` | `internal/extensions/functions/string.go` | Y |
+| `REPLICATE` | `internal/extensions/functions/string.go` | Y |
+| `SPACE` | `internal/extensions/functions/string.go` | Y |
+| `REVERSE` | `internal/extensions/functions/string.go` | Y |
 | `CONCAT_WS` |  | - |
 | `STRING_ESCAPE` |  | - |
 | `STRING_SPLIT` |  | - |
 | `TRANSLATE` |  | - |
 | `FORMATMESSAGE` |  | - |
-| `UNICODE` |  | - |
-| `NCHAR` |  | - |
-| `CHAR` |  | - |
-| `ASCII` |  | - |
+| `UNICODE` | `internal/extensions/functions/string.go` | Y |
+| `NCHAR` | `internal/extensions/functions/string.go` | Y |
+| `CHAR` | `internal/extensions/functions/string.go` | Y |
+| `ASCII` | `internal/extensions/functions/string.go` | Y |
 | `SOUNDEX` |  | - |
 | `DIFFERENCE` |  | - |
 | `STR` |  | - |
