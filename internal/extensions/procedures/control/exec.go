@@ -174,10 +174,98 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 				return nil
 			}
 		}
-	case *Try, *Throw, *Raiserror:
-		return fmt.Errorf("control: TRY/CATCH and THROW/RAISERROR are not yet supported")
+	case *Try:
+		if err := execStmt(ctx, n.Body, sc, run, st); err != nil {
+			st.flow = flowNone // the error aborts the TRY body; the CATCH handles it
+			st.last = nil
+			catchCtx := tds.WithError(ctx, errorInfoOf(err))
+			return execStmt(catchCtx, n.Catch, sc, run, st)
+		}
+	case *Throw:
+		args := strings.TrimSpace(n.Args)
+		if args == "" { // bare THROW: re-raise the current error (valid only inside a CATCH)
+			if cur := tds.ErrorFromContext(ctx); cur != nil {
+				return &ctrlError{cur}
+			}
+			return fmt.Errorf("control: THROW with no arguments is only valid in a CATCH block")
+		}
+		info := &tds.ErrorInfo{Number: 50000, Severity: 16, State: 1}
+		parts := splitTopCommas(args)
+		if len(parts) >= 1 {
+			n, err := evalIntArg(ctx, run, parts[0], sc)
+			if err != nil {
+				return err
+			}
+			info.Number = n
+		}
+		if len(parts) >= 2 {
+			m, err := evalStrArg(ctx, run, parts[1], sc)
+			if err != nil {
+				return err
+			}
+			info.Message = m
+		}
+		if len(parts) >= 3 {
+			if v, err := evalIntArg(ctx, run, parts[2], sc); err == nil {
+				info.State = v
+			}
+		}
+		return &ctrlError{info}
+	case *Raiserror:
+		inner := strings.TrimSpace(n.Args)
+		inner = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(inner, "("), ")"))
+		info := &tds.ErrorInfo{Number: 50000, Severity: 16, State: 1}
+		parts := splitTopCommas(inner)
+		if len(parts) >= 1 {
+			m, err := evalStrArg(ctx, run, parts[0], sc)
+			if err != nil {
+				return err
+			}
+			info.Message = m
+		}
+		if len(parts) >= 2 {
+			if v, err := evalIntArg(ctx, run, parts[1], sc); err == nil {
+				info.Severity = v
+			}
+		}
+		if len(parts) >= 3 {
+			if v, err := evalIntArg(ctx, run, parts[2], sc); err == nil {
+				info.State = v
+			}
+		}
+		if info.Severity < 11 { // severities below 11 are informational, like PRINT
+			return nil
+		}
+		return &ctrlError{info}
 	}
 	return nil
+}
+
+type ctrlError struct{ info *tds.ErrorInfo }
+
+func (e *ctrlError) Error() string { return e.info.Message }
+
+func errorInfoOf(err error) *tds.ErrorInfo {
+	if ce, ok := err.(*ctrlError); ok {
+		return ce.info
+	}
+	return &tds.ErrorInfo{Number: 50000, Message: err.Error(), Severity: 16, State: 1}
+}
+
+func evalIntArg(ctx context.Context, run routines.Runner, expr string, sc *scope) (int64, error) {
+	v, err := evalScalar(ctx, run, expr, sc)
+	if err != nil {
+		return 0, err
+	}
+	return toInt(v), nil
+}
+
+func evalStrArg(ctx context.Context, run routines.Runner, expr string, sc *scope) (string, error) {
+	v, err := evalScalar(ctx, run, expr, sc)
+	if err != nil || v == nil {
+		return "", err
+	}
+	return fmt.Sprintf("%v", v), nil
 }
 
 func evalScalar(ctx context.Context, run routines.Runner, expr string, sc *scope) (any, error) {

@@ -277,6 +277,7 @@ var envScalars = []string{
 	"OBJECT_NAME", "DB_NAME", "COL_NAME", "COL_LENGTH",
 	"COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION",
 	"INDEXPROPERTY", "INDEXKEY_PROPERTY",
+	"ERROR_MESSAGE", "ERROR_NUMBER", "ERROR_SEVERITY", "ERROR_STATE", "ERROR_LINE", "ERROR_PROCEDURE",
 }
 
 // EnvScalarNames returns the env-resolved scalar functions, sorted.
@@ -381,6 +382,36 @@ func evalFunc(name string, a []any, env *Env) any {
 					}
 				}
 			}
+		}
+		return nil
+	case "ERROR_MESSAGE":
+		if env != nil && env.Error != nil {
+			return env.Error.Message
+		}
+		return nil
+	case "ERROR_NUMBER":
+		if env != nil && env.Error != nil {
+			return env.Error.Number
+		}
+		return nil
+	case "ERROR_SEVERITY":
+		if env != nil && env.Error != nil {
+			return env.Error.Severity
+		}
+		return nil
+	case "ERROR_STATE":
+		if env != nil && env.Error != nil {
+			return env.Error.State
+		}
+		return nil
+	case "ERROR_LINE":
+		if env != nil && env.Error != nil {
+			return env.Error.Line
+		}
+		return nil
+	case "ERROR_PROCEDURE":
+		if env != nil && env.Error != nil && env.Error.Procedure != "" {
+			return env.Error.Procedure
 		}
 		return nil
 	case "INDEXKEY_PROPERTY":

@@ -531,9 +531,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `RETURN` | `internal/extensions/procedures/control/` | Y |
 | `GOTO` |  | - |
 | `WAITFOR` |  | - |
-| `TRY ... CATCH` |  | - |
-| `THROW` |  | - |
-| `RAISERROR` |  | - |
+| `TRY ... CATCH` | `internal/extensions/procedures/control/` | Y |
+| `THROW` | `internal/extensions/procedures/control/` | Y |
+| `RAISERROR` | `internal/extensions/procedures/control/` | Y |
 | `PRINT` | `internal/extensions/procedures/control/` | Y |
 
 ### Variables & batch

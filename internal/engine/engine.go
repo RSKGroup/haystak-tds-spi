@@ -485,7 +485,7 @@ func colRefsOuter(col, alias, table string) bool {
 // catalogEnv builds the exec env for a query: the current db (so DB_NAME() resolves) plus, only when
 // the query actually calls OBJECT_NAME/DB_NAME(id), the id→name resolvers from the live catalog.
 func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn) *exec.Env {
-	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx)}
+	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx), Error: tds.ErrorFromContext(ctx)}
 	if queryUsesCatalogFn(q) {
 		if schema, dbs, err := introspectSchema(ctx, b, q); err == nil {
 			rts := listRoutines(ctx, b, currentDB(ctx))

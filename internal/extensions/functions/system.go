@@ -13,15 +13,10 @@ func init() {
 	register("SERVERPROPERTY", func(a []any) any { return serverProperty(argStr(a, 0)) })
 	register("DATABASEPROPERTYEX", func([]any) any { return "ON" })
 	register("NEWID", func([]any) any { return newID() })
-	// no identity tracking and no TRY/CATCH context: these are NULL, matching SQL Server outside scope.
+	// no identity tracking: NULL outside scope. The ERROR_* family is env-resolved (it reads the caught
+	// error from the request context inside a CATCH block) -- see internal/exec/value.go.
 	register("SCOPE_IDENTITY", nilFn)
 	register("IDENT_CURRENT", nilFn)
-	register("ERROR_MESSAGE", nilFn)
-	register("ERROR_NUMBER", nilFn)
-	register("ERROR_SEVERITY", nilFn)
-	register("ERROR_STATE", nilFn)
-	register("ERROR_LINE", nilFn)
-	register("ERROR_PROCEDURE", nilFn)
 	register("NEWSEQUENTIALID", func([]any) any { return newID() })
 	register("XACT_STATE", func([]any) any { return int64(0) }) // no active transaction
 	register("CURSOR_STATUS", func([]any) any { return int64(-3) })
