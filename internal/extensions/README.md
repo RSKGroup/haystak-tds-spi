@@ -293,7 +293,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.procedures` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sql_modules` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.parameters` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.triggers` |  | - |
+| `sys.triggers` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.all_objects` |  | - |
 | `sys.system_objects` |  | - |
 | `sys.sequences` |  | - |
@@ -338,7 +338,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.schemas` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.database_files` |  | - |
 | `sys.filegroups` |  | - |
-| `sys.extended_properties` |  | - |
+| `sys.extended_properties` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sql_expression_dependencies` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Security

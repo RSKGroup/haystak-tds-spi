@@ -122,6 +122,22 @@ func TestSysSqlExpressionDependencies(t *testing.T) {
 	}
 }
 
+func TestSysTriggers(t *testing.T) {
+	rows := qry(t, "SELECT name, type_desc, parent_id FROM sys.triggers")
+	if len(rows) != 1 || cell(rows[0][0]) != "trgOrdersAudit" || strings.TrimSpace(cell(rows[0][1])) != "SQL_TRIGGER" {
+		t.Fatalf("sys.triggers = %v, want trgOrdersAudit SQL_TRIGGER", rows)
+	}
+	if cell(rows[0][2]) != cell(objectID(t, "orders")) {
+		t.Errorf("trgOrdersAudit parent_id = %v, want OBJECT_ID(orders)", cell(rows[0][2]))
+	}
+}
+
+func TestSysExtendedProperties(t *testing.T) {
+	if rows := qry(t, "SELECT class, name, value FROM sys.extended_properties"); len(rows) != 0 {
+		t.Errorf("sys.extended_properties = %v, want empty set", rows)
+	}
+}
+
 // objectID resolves OBJECT_ID('name') through the engine so tests compare against the live id scheme.
 func objectID(t *testing.T, name string) any {
 	t.Helper()

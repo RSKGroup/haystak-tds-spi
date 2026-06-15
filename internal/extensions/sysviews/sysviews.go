@@ -66,6 +66,10 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = computedColumnsRows(schema)
 	case "sql_expression_dependencies":
 		cols, data = sqlExpressionDependenciesRows(schema, rts)
+	case "triggers":
+		cols, data = triggersRows(rts)
+	case "extended_properties":
+		cols, data = extendedPropertiesRows()
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -453,6 +457,46 @@ func sqlExpressionDependenciesRows(schema catalog.Schema, rts []*tds.Routine) ([
 		}
 	}
 	return cols, rows
+}
+
+// triggersRows is sys.triggers: one row per trigger, parent_id resolved from the body's ON <table>.
+func triggersRows(rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("object_id"), intc("parent_class"), sname("parent_class_desc"),
+		intc("parent_id"), sname("type"), sname("type_desc"), intc("is_ms_shipped"),
+		intc("is_disabled"), intc("is_instead_of_trigger"),
+	}
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind != tds.RoutineTrigger {
+			continue
+		}
+		rows = append(rows, []any{
+			r.Name, oid(r.Name), int64(1), "OBJECT_OR_COLUMN",
+			oid(triggerParent(r.Body)), "TR", "SQL_TRIGGER", int64(0),
+			int64(0), int64(0),
+		})
+	}
+	return cols, rows
+}
+
+// triggerParent extracts the table a trigger fires on from its body's leading ON <table>.
+func triggerParent(body string) string {
+	tokens := strings.Fields(body)
+	for i := 0; i+1 < len(tokens); i++ {
+		if strings.EqualFold(tokens[i], "ON") {
+			return routines.Unqualify(tokens[i+1])
+		}
+	}
+	return ""
+}
+
+// extendedPropertiesRows is sys.extended_properties: empty, no extended properties are stored.
+func extendedPropertiesRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("class"), sname("class_desc"), intc("major_id"), intc("minor_id"), sname("name"), nsname("value"),
+	}
+	return cols, nil
 }
 
 // referencedNames pulls the object names following FROM/JOIN in a view body (best-effort tokenizer).
