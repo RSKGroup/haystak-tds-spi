@@ -94,6 +94,136 @@ func init() {
 	})
 	register("JSON_VALUE", func(a []any) any { return jsonExtract(a, false) })
 	register("JSON_QUERY", func(a []any) any { return jsonExtract(a, true) })
+	register("JSON_MODIFY", func(a []any) any {
+		if len(a) < 3 || a[0] == nil || a[1] == nil {
+			return nil
+		}
+		js, ok := a[0].(string)
+		path, ok2 := a[1].(string)
+		if !ok || !ok2 {
+			return nil
+		}
+		out, ok := jsonModify(js, path, a[2])
+		if !ok {
+			return nil
+		}
+		return out
+	})
+}
+
+type jsonSeg struct {
+	key   string
+	idx   int
+	isIdx bool
+}
+
+// jsonPathSegs splits a JSON path ($, $.a.b[0]) into navigable segments.
+func jsonPathSegs(path string) ([]jsonSeg, bool) {
+	p := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(path), "lax")), "strict"))
+	if !strings.HasPrefix(p, "$") {
+		return nil, false
+	}
+	p = p[1:]
+	var segs []jsonSeg
+	for i := 0; i < len(p); {
+		switch p[i] {
+		case '.':
+			i++
+			start := i
+			for i < len(p) && p[i] != '.' && p[i] != '[' {
+				i++
+			}
+			segs = append(segs, jsonSeg{key: p[start:i]})
+		case '[':
+			j := strings.IndexByte(p[i:], ']')
+			if j < 0 {
+				return nil, false
+			}
+			n, err := strconv.Atoi(strings.TrimSpace(p[i+1 : i+j]))
+			if err != nil {
+				return nil, false
+			}
+			segs = append(segs, jsonSeg{idx: n, isIdx: true})
+			i += j + 1
+		default:
+			return nil, false
+		}
+	}
+	return segs, true
+}
+
+func jsonChild(parent any, seg jsonSeg) (any, bool) {
+	if seg.isIdx {
+		arr, ok := parent.([]any)
+		if !ok || seg.idx < 0 || seg.idx >= len(arr) {
+			return nil, false
+		}
+		return arr[seg.idx], true
+	}
+	m, ok := parent.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	v, ok := m[seg.key]
+	return v, ok
+}
+
+// jsonModify sets, inserts, deletes (NULL value), or appends ("append $.path") a value at a JSON path.
+func jsonModify(jsonStr, path string, val any) (string, bool) {
+	var root any
+	if json.Unmarshal([]byte(jsonStr), &root) != nil {
+		return "", false
+	}
+	doAppend := false
+	p := strings.TrimSpace(path)
+	if strings.HasPrefix(strings.ToLower(p), "append ") {
+		doAppend = true
+		p = strings.TrimSpace(p[len("append "):])
+	}
+	segs, ok := jsonPathSegs(p)
+	if !ok || len(segs) == 0 {
+		return "", false
+	}
+	parent := root
+	for i := 0; i < len(segs)-1; i++ {
+		if parent, ok = jsonChild(parent, segs[i]); !ok {
+			return "", false
+		}
+	}
+	last := segs[len(segs)-1]
+	switch {
+	case doAppend:
+		m, ok := parent.(map[string]any)
+		if !ok || last.isIdx {
+			return "", false
+		}
+		arr, ok := m[last.key].([]any)
+		if !ok {
+			return "", false
+		}
+		m[last.key] = append(arr, val)
+	case val == nil:
+		if m, ok := parent.(map[string]any); ok && !last.isIdx {
+			delete(m, last.key)
+		}
+	case last.isIdx:
+		arr, ok := parent.([]any)
+		if !ok || last.idx < 0 || last.idx >= len(arr) {
+			return "", false
+		}
+		arr[last.idx] = val
+	default:
+		m, ok := parent.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		m[last.key] = val
+	}
+	b, err := json.Marshal(root)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
 }
 
 func jsonInput(a []any) (string, bool) {

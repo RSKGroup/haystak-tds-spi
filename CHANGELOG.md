@@ -35,6 +35,7 @@ Other:
 - Window functions `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD` with `OVER (PARTITION BY … ORDER BY …)`. (Aggregate windows like `SUM(x) OVER (…)` and frames are not yet supported.)
 - Table-valued functions in `FROM`: `STRING_SPLIT(string, separator)` (one `value` row per part) and `OPENJSON(json [, path])` (`key`/`value`/`type` rows over an array or object).
 - `FORMAT(value, format)`: standard numeric specifiers (`N`/`F`/`D`/`C`/`P`/`X`) and simple custom patterns, plus datetime token mapping (`yyyy`/`MM`/`dd`/`HH`/`mm`/`ss`/`MMMM`/…).
+- `JSON_MODIFY(json, path, value)`: set, insert, delete (NULL value), and `append` at a JSON path.
 
 ## v1.4.0
 
