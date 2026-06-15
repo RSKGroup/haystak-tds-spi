@@ -243,8 +243,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `LEAD` | `internal/exec/window.go` | Y |
 | `FIRST_VALUE` | `internal/exec/window.go` | Y |
 | `LAST_VALUE` | `internal/exec/window.go` | Y |
-| `PERCENT_RANK` |  | - |
-| `CUME_DIST` |  | - |
+| `PERCENT_RANK` | `internal/exec/window.go` | Y |
+| `CUME_DIST` | `internal/exec/window.go` | Y |
 | `PERCENTILE_CONT` |  | - |
 | `PERCENTILE_DISC` |  | - |
 
@@ -472,11 +472,11 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `IS NULL` | `internal/tsql/parser.go + internal/exec` | Y |
 | common table expression (`WITH`) | `internal/tsql/parser.go + internal/exec` | Y |
 | subquery (scalar / `IN` / `EXISTS`) | `internal/tsql/parser.go + internal/exec` | Y |
-| recursive CTE (at depth) |  | - |
+| recursive CTE (at depth) | `internal/engine/engine.go` | Y |
 | `PIVOT` / `UNPIVOT` |  | - |
 | `CROSS APPLY` / `OUTER APPLY` |  | - |
 | `GROUPING SETS` / `ROLLUP` / `CUBE` |  | - |
-| `OVER` (window clause) |  | - |
+| `OVER` (window clause) | `internal/exec/window.go` | Y |
 | `TABLESAMPLE` |  | - |
 | query hints (`OPTION`, `WITH (NOLOCK)`) |  | - |
 

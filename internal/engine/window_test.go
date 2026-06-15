@@ -70,6 +70,17 @@ func TestWindowFirstLastValue(t *testing.T) {
 	}
 }
 
+func TestWindowPercentRankCumeDist(t *testing.T) {
+	// 3 distinct ids: PERCENT_RANK = 0, .5, 1; CUME_DIST = 1/3, 2/3, 1.
+	rows := qry(t, "SELECT id, PERCENT_RANK() OVER (ORDER BY id) AS pr, CUME_DIST() OVER (ORDER BY id) AS cd FROM emps")
+	if cell(rows[0][1]) != "0" || cell(rows[2][1]) != "1" {
+		t.Errorf("PERCENT_RANK ends = %v/%v, want 0/1", rows[0][1], rows[2][1])
+	}
+	if cell(rows[2][2]) != "1" || cell(rows[0][2]) == "1" {
+		t.Errorf("CUME_DIST = %v.., last should be 1", rows[0][2])
+	}
+}
+
 func TestWindowLagLead(t *testing.T) {
 	rows := qry(t, "SELECT id, LAG(id) OVER (ORDER BY id) AS lg, LEAD(id) OVER (ORDER BY id) AS ld FROM emps")
 	// id 10: lag NULL, lead 11; id 11: lag 10, lead 12; id 12: lag 11, lead NULL.

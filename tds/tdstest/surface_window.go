@@ -14,4 +14,6 @@ var windowCases = []Case{
 	{Element: "win:NTILE", SQL: "SELECT MAX(b) AS m FROM (SELECT NTILE(4) OVER (ORDER BY name) AS b FROM sys.types) t", Want: []any{4}},
 	{Element: "win:FIRST_VALUE", SQL: "SELECT DISTINCT fv FROM (SELECT FIRST_VALUE(schema_id) OVER (ORDER BY name) AS fv FROM sys.types) t", Want: []any{4}},
 	{Element: "win:LAST_VALUE", SQL: "SELECT DISTINCT lv FROM (SELECT LAST_VALUE(schema_id) OVER (ORDER BY name) AS lv FROM sys.types) t", Want: []any{4}},
+	{Element: "win:PERCENT_RANK", SQL: "SELECT DISTINCT pr FROM (SELECT PERCENT_RANK() OVER (ORDER BY schema_id) AS pr FROM sys.types) t", Want: []any{approx(0)}},
+	{Element: "win:CUME_DIST", SQL: "SELECT DISTINCT cd FROM (SELECT CUME_DIST() OVER (ORDER BY schema_id) AS cd FROM sys.types) t", Want: []any{approx(1)}},
 }

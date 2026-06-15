@@ -13,7 +13,7 @@ import (
 )
 
 // windowFuncs are the wired window functions; keep in lockstep with the applyWindow switch.
-var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE"}
+var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE"}
 
 // WindowFuncNames returns the wired window-function names, sorted.
 func WindowFuncNames() []string {
@@ -64,6 +64,8 @@ func windowColType(w *tds.WindowSpec, cols []catalog.Column, idx map[string]int)
 	switch w.Func {
 	case "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE":
 		return types.Type{Kind: types.Int64}
+	case "PERCENT_RANK", "CUME_DIST":
+		return types.Type{Kind: types.Float64}
 	case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE":
 		if len(w.Args) > 0 {
 			return exprType(w.Args[0], cols, idx)
@@ -205,6 +207,32 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 				}
 			}
 			out[m] = rank
+		}
+	case "PERCENT_RANK", "CUME_DIST":
+		total := len(members)
+		keys := make([][]any, total)
+		for i, m := range members {
+			k, err := windowOrderKey(rows[m], idx, w.OrderBy, env)
+			if err != nil {
+				return err
+			}
+			keys[i] = k
+		}
+		for i := 0; i < total; {
+			j := i
+			for j+1 < total && keysEqual(keys[j+1], keys[i]) {
+				j++
+			}
+			for t := i; t <= j; t++ {
+				if w.Func == "CUME_DIST" {
+					out[members[t]] = float64(j+1) / float64(total)
+				} else if total <= 1 {
+					out[members[t]] = float64(0)
+				} else {
+					out[members[t]] = float64(i) / float64(total-1)
+				}
+			}
+			i = j + 1
 		}
 	case "NTILE":
 		n := 1
