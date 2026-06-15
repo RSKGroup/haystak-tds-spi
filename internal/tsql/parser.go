@@ -11,6 +11,12 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
+// specialFuncs are the parser-only function-shaped constructs (conversion family + IIF), not in the registry.
+var specialFuncs = []string{"CAST", "CONVERT", "TRY_CAST", "TRY_CONVERT", "PARSE", "TRY_PARSE", "IIF"}
+
+// SpecialFuncs returns the parser-only special-cased function names.
+func SpecialFuncs() []string { return append([]string(nil), specialFuncs...) }
+
 // Parse turns a read-subset T-SQL SELECT into a tds.Query.
 func Parse(sql string) (*tds.Query, error) {
 	toks, err := lex(sql)

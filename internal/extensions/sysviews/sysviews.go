@@ -5,6 +5,7 @@ package sysviews
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
@@ -17,88 +18,73 @@ import (
 
 const dbName = "haystak"
 
+type viewBuilder func() ([]catalog.Column, [][]any)
+
+// viewBuilders is the sys.* dispatch table; its keys are the wired set SupportedViews reports.
+func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal) map[string]viewBuilder {
+	return map[string]viewBuilder{
+		"databases":                   func() ([]catalog.Column, [][]any) { return databasesRows(dbs) },
+		"schemas":                     schemasRows,
+		"tables":                      func() ([]catalog.Column, [][]any) { return tablesRows(schema) },
+		"objects":                     func() ([]catalog.Column, [][]any) { return objectsRows(schema, rts) },
+		"all_objects":                 func() ([]catalog.Column, [][]any) { return objectsRows(schema, rts) },
+		"views":                       func() ([]catalog.Column, [][]any) { return viewsRows(rts) },
+		"procedures":                  func() ([]catalog.Column, [][]any) { return proceduresRows(rts) },
+		"sql_modules":                 func() ([]catalog.Column, [][]any) { return sqlModulesRows(rts) },
+		"parameters":                  func() ([]catalog.Column, [][]any) { return parametersRows(rts) },
+		"columns":                     func() ([]catalog.Column, [][]any) { return columnsRows(schema) },
+		"all_columns":                 func() ([]catalog.Column, [][]any) { return columnsRows(schema) },
+		"types":                       typesRows,
+		"foreign_keys":                func() ([]catalog.Column, [][]any) { return foreignKeysRows(schema) },
+		"indexes":                     func() ([]catalog.Column, [][]any) { return indexesRows(schema) },
+		"index_columns":               func() ([]catalog.Column, [][]any) { return indexColumnsRows(schema) },
+		"key_constraints":             func() ([]catalog.Column, [][]any) { return keyConstraintsRows(schema) },
+		"foreign_key_columns":         func() ([]catalog.Column, [][]any) { return foreignKeyColumnsRows(schema) },
+		"check_constraints":           func() ([]catalog.Column, [][]any) { return checkConstraintsRows(schema) },
+		"default_constraints":         func() ([]catalog.Column, [][]any) { return defaultConstraintsRows(schema) },
+		"identity_columns":            func() ([]catalog.Column, [][]any) { return identityColumnsRows(schema) },
+		"computed_columns":            func() ([]catalog.Column, [][]any) { return computedColumnsRows(schema) },
+		"sql_expression_dependencies": func() ([]catalog.Column, [][]any) { return sqlExpressionDependenciesRows(schema, rts) },
+		"triggers":                    func() ([]catalog.Column, [][]any) { return triggersRows(rts) },
+		"extended_properties":         extendedPropertiesRows,
+		"sequences":                   sequencesRows,
+		"synonyms":                    synonymsRows,
+		"sysobjects":                  func() ([]catalog.Column, [][]any) { return sysobjectsRows(schema, rts) },
+		"syscolumns":                  func() ([]catalog.Column, [][]any) { return syscolumnsRows(schema) },
+		"systypes":                    systypesRows,
+		"table_types":                 func() ([]catalog.Column, [][]any) { return tableTypesRows(schema) },
+		"database_principals":         func() ([]catalog.Column, [][]any) { return databasePrincipalsRows(p) },
+		"server_principals":           func() ([]catalog.Column, [][]any) { return serverPrincipalsRows(p) },
+		"database_role_members":       func() ([]catalog.Column, [][]any) { return databaseRoleMembersRows(p) },
+		"sysusers":                    func() ([]catalog.Column, [][]any) { return sysusersRows(p) },
+		"sysindexes":                  func() ([]catalog.Column, [][]any) { return sysindexesRows(schema) },
+		"database_permissions":        databasePermissionsRows,
+		"server_permissions":          serverPermissionsRows,
+	}
+}
+
+// SupportedViews returns every wired sys.* view name, lower-cased and sorted.
+func SupportedViews() []string {
+	builders := viewBuilders(catalog.Schema{}, nil, nil, tds.Principal{})
+	names := make([]string, 0, len(builders))
+	for name := range builders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // Resolve answers a query against sys.* catalog views from a backend's declared schema and stored
 // routines. Returns handled=false when the query does not target the sys schema.
 func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
-	var cols []catalog.Column
-	var data [][]any
-	switch strings.ToLower(q.Table) {
-	case "databases":
-		cols, data = databasesRows(dbs)
-	case "schemas":
-		cols, data = schemasRows()
-	case "tables":
-		cols, data = tablesRows(schema)
-	case "objects", "all_objects":
-		cols, data = objectsRows(schema, rts)
-	case "views":
-		cols, data = viewsRows(rts)
-	case "procedures":
-		cols, data = proceduresRows(rts)
-	case "sql_modules":
-		cols, data = sqlModulesRows(rts)
-	case "parameters":
-		cols, data = parametersRows(rts)
-	case "columns", "all_columns":
-		cols, data = columnsRows(schema)
-	case "types":
-		cols, data = typesRows()
-	case "foreign_keys":
-		cols, data = foreignKeysRows(schema)
-	case "indexes":
-		cols, data = indexesRows(schema)
-	case "index_columns":
-		cols, data = indexColumnsRows(schema)
-	case "key_constraints":
-		cols, data = keyConstraintsRows(schema)
-	case "foreign_key_columns":
-		cols, data = foreignKeyColumnsRows(schema)
-	case "check_constraints":
-		cols, data = checkConstraintsRows(schema)
-	case "default_constraints":
-		cols, data = defaultConstraintsRows(schema)
-	case "identity_columns":
-		cols, data = identityColumnsRows(schema)
-	case "computed_columns":
-		cols, data = computedColumnsRows(schema)
-	case "sql_expression_dependencies":
-		cols, data = sqlExpressionDependenciesRows(schema, rts)
-	case "triggers":
-		cols, data = triggersRows(rts)
-	case "extended_properties":
-		cols, data = extendedPropertiesRows()
-	case "sequences":
-		cols, data = sequencesRows()
-	case "synonyms":
-		cols, data = synonymsRows()
-	case "sysobjects":
-		cols, data = sysobjectsRows(schema, rts)
-	case "syscolumns":
-		cols, data = syscolumnsRows(schema)
-	case "systypes":
-		cols, data = systypesRows()
-	case "table_types":
-		cols, data = tableTypesRows(schema)
-	case "database_principals":
-		cols, data = databasePrincipalsRows(p)
-	case "server_principals":
-		cols, data = serverPrincipalsRows(p)
-	case "database_role_members":
-		cols, data = databaseRoleMembersRows(p)
-	case "sysusers":
-		cols, data = sysusersRows(p)
-	case "sysindexes":
-		cols, data = sysindexesRows(schema)
-	case "database_permissions":
-		cols, data = databasePermissionsRows()
-	case "server_permissions":
-		cols, data = serverPermissionsRows()
-	default:
+	build, ok := viewBuilders(schema, rts, dbs, p)[strings.ToLower(q.Table)]
+	if !ok {
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
+	cols, data := build()
 	obj, db := exec.CatalogResolvers(schema, rts, dbs)
 	tbl, kind := exec.CatalogObjects(schema, rts)
 	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, RoutineDef: exec.RoutineDefs(rts), CurrentDB: q.Database}

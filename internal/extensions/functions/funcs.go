@@ -9,12 +9,25 @@
 // it doesn't handle itself, so registration is the whole ritual — no engine changes.
 package functions
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // registry maps an upper-cased function name to its implementation.
 var registry = map[string]func([]any) any{}
 
 func register(name string, fn func([]any) any) { registry[strings.ToUpper(name)] = fn }
+
+// RegisteredNames returns every registered function name, upper-cased and sorted.
+func RegisteredNames() []string {
+	names := make([]string, 0, len(registry))
+	for name := range registry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // Eval evaluates a registered function; ok is false when the name isn't one of ours.
 func Eval(name string, args []any) (any, bool) {

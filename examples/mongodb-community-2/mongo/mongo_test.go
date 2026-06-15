@@ -19,6 +19,9 @@ import (
 
 // TestConformance drives the engine against a real MongoDB with a declared catalog; skips if mongod is down.
 func TestConformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires a live backend")
+	}
 	client, dbName := dial(t)
 	db := client.Database(dbName)
 	_ = db.Drop(context.Background())
@@ -26,6 +29,7 @@ func TestConformance(t *testing.T) {
 	defer db.Drop(context.Background())
 
 	tdstest.RunConformance(t, mongobk.New(client, dbName))
+	tdstest.RunSurface(t, mongobk.New(client, dbName))
 }
 
 // TestDeclaredRelationships asserts the backend surfaces the PK/FK declared in the system collection,

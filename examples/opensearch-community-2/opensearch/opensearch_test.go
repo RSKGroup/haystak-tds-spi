@@ -19,6 +19,9 @@ import (
 
 // TestConformance drives the conformance harness against a real OpenSearch (declared model); skips if it is down.
 func TestConformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires a live backend")
+	}
 	url := os.Getenv("OS_URL")
 	if url == "" {
 		url = "http://localhost:9201"
@@ -54,4 +57,5 @@ func TestConformance(t *testing.T) {
 	}
 
 	tdstest.RunConformance(t, bk)
+	tdstest.RunSurface(t, bk)
 }

@@ -5,6 +5,7 @@ package exec
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -269,6 +270,19 @@ func evalBinary(op string, l, r any) any {
 		}
 	}
 	return nil
+}
+
+// envScalars are the catalog scalars resolved against *Env below, not via the registry; keep in lockstep with evalFunc.
+var envScalars = []string{
+	"OBJECT_NAME", "DB_NAME", "COL_NAME", "COL_LENGTH",
+	"COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION",
+}
+
+// EnvScalarNames returns the env-resolved scalar functions, sorted.
+func EnvScalarNames() []string {
+	out := append([]string(nil), envScalars...)
+	sort.Strings(out)
+	return out
 }
 
 func evalFunc(name string, a []any, env *Env) any {
@@ -654,19 +668,4 @@ func toFloatOk(v any) (float64, bool) {
 		return float64(x), true
 	}
 	return 0, false
-}
-
-func substr(s string, start, length int) string {
-	if start < 1 {
-		length += start - 1
-		start = 1
-	}
-	if start > len(s) || length <= 0 {
-		return ""
-	}
-	end := start - 1 + length
-	if end > len(s) {
-		end = len(s)
-	}
-	return s[start-1 : end]
 }

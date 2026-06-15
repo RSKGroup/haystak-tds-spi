@@ -5,6 +5,7 @@ package infoschema
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
@@ -19,48 +20,51 @@ const (
 	schemaName  = "dbo"
 )
 
+type viewBuilder func() ([]catalog.Column, [][]any)
+
+// viewBuilders is the INFORMATION_SCHEMA.* dispatch table; its keys are the wired set SupportedViews reports.
+func viewBuilders(schema catalog.Schema, rts []*tds.Routine) map[string]viewBuilder {
+	return map[string]viewBuilder{
+		"TABLES":                  func() ([]catalog.Column, [][]any) { return tablesRows(schema) },
+		"COLUMNS":                 func() ([]catalog.Column, [][]any) { return columnsRows(schema) },
+		"VIEWS":                   func() ([]catalog.Column, [][]any) { return viewsRows(rts) },
+		"ROUTINES":                func() ([]catalog.Column, [][]any) { return routinesRows(rts) },
+		"PARAMETERS":              func() ([]catalog.Column, [][]any) { return parametersRows(rts) },
+		"TABLE_CONSTRAINTS":       func() ([]catalog.Column, [][]any) { return tableConstraintsRows(schema) },
+		"KEY_COLUMN_USAGE":        func() ([]catalog.Column, [][]any) { return keyColumnUsageRows(schema) },
+		"REFERENTIAL_CONSTRAINTS": func() ([]catalog.Column, [][]any) { return referentialConstraintsRows(schema) },
+		"SCHEMATA":                schemataRows,
+		"CHECK_CONSTRAINTS":       func() ([]catalog.Column, [][]any) { return checkConstraintsRows(schema) },
+		"CONSTRAINT_COLUMN_USAGE": func() ([]catalog.Column, [][]any) { return constraintColumnUsageRows(schema) },
+		"VIEW_TABLE_USAGE":        func() ([]catalog.Column, [][]any) { return viewTableUsageRows(schema, rts) },
+		"ROUTINE_COLUMNS":         routineColumnsRows,
+		"CONSTRAINT_TABLE_USAGE":  func() ([]catalog.Column, [][]any) { return constraintTableUsageRows(schema) },
+		"DOMAINS":                 domainsRows,
+	}
+}
+
+// SupportedViews returns every wired INFORMATION_SCHEMA.* view name, upper-cased and sorted.
+func SupportedViews() []string {
+	builders := viewBuilders(catalog.Schema{}, nil)
+	names := make([]string, 0, len(builders))
+	for name := range builders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // Resolve answers a query against INFORMATION_SCHEMA.* from a backend's declared schema and routines.
 // Returns handled=false when the query does not target INFORMATION_SCHEMA.
 func Resolve(schema catalog.Schema, rts []*tds.Routine, q *tds.Query) (rows tds.Rows, handled bool, err error) {
 	if !strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") {
 		return nil, false, nil
 	}
-	var cols []catalog.Column
-	var data [][]any
-	switch strings.ToUpper(q.Table) {
-	case "TABLES":
-		cols, data = tablesRows(schema)
-	case "COLUMNS":
-		cols, data = columnsRows(schema)
-	case "VIEWS":
-		cols, data = viewsRows(rts)
-	case "ROUTINES":
-		cols, data = routinesRows(rts)
-	case "PARAMETERS":
-		cols, data = parametersRows(rts)
-	case "TABLE_CONSTRAINTS":
-		cols, data = tableConstraintsRows(schema)
-	case "KEY_COLUMN_USAGE":
-		cols, data = keyColumnUsageRows(schema)
-	case "REFERENTIAL_CONSTRAINTS":
-		cols, data = referentialConstraintsRows(schema)
-	case "SCHEMATA":
-		cols, data = schemataRows()
-	case "CHECK_CONSTRAINTS":
-		cols, data = checkConstraintsRows(schema)
-	case "CONSTRAINT_COLUMN_USAGE":
-		cols, data = constraintColumnUsageRows(schema)
-	case "VIEW_TABLE_USAGE":
-		cols, data = viewTableUsageRows(schema, rts)
-	case "ROUTINE_COLUMNS":
-		cols, data = routineColumnsRows()
-	case "CONSTRAINT_TABLE_USAGE":
-		cols, data = constraintTableUsageRows(schema)
-	case "DOMAINS":
-		cols, data = domainsRows()
-	default:
+	build, ok := viewBuilders(schema, rts)[strings.ToUpper(q.Table)]
+	if !ok {
 		return nil, true, fmt.Errorf("infoschema: INFORMATION_SCHEMA.%s not supported", q.Table)
 	}
+	cols, data := build()
 	r, err := exec.Apply(cols, data, q)
 	return r, true, err
 }

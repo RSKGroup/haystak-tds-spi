@@ -156,30 +156,35 @@ func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o 
 	}
 }
 
+// aggByName is the aggregate dispatch table; its keys are the wired set AggregateNames reports.
+var aggByName = map[string]tds.AggFunc{
+	"COUNT":     tds.AggCount,
+	"SUM":       tds.AggSum,
+	"AVG":       tds.AggAvg,
+	"MIN":       tds.AggMin,
+	"MAX":       tds.AggMax,
+	"COUNT_BIG": tds.AggCountBig,
+	"STDEV":     tds.AggStdev,
+	"STDEVP":    tds.AggStdevp,
+	"VAR":       tds.AggVar,
+	"VARP":      tds.AggVarp,
+}
+
 func aggFuncFromName(name string) tds.AggFunc {
-	switch strings.ToUpper(name) {
-	case "COUNT":
-		return tds.AggCount
-	case "SUM":
-		return tds.AggSum
-	case "AVG":
-		return tds.AggAvg
-	case "MIN":
-		return tds.AggMin
-	case "MAX":
-		return tds.AggMax
-	case "COUNT_BIG":
-		return tds.AggCountBig
-	case "STDEV":
-		return tds.AggStdev
-	case "STDEVP":
-		return tds.AggStdevp
-	case "VAR":
-		return tds.AggVar
-	case "VARP":
-		return tds.AggVarp
+	if fn, ok := aggByName[strings.ToUpper(name)]; ok {
+		return fn
 	}
 	return tds.AggNone
+}
+
+// AggregateNames returns every wired aggregate name, upper-cased and sorted.
+func AggregateNames() []string {
+	names := make([]string, 0, len(aggByName))
+	for name := range aggByName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func aggArg(args []*tds.ValueExpr) string {

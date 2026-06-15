@@ -20,6 +20,9 @@ import (
 // TestConformance runs the SPI conformance harness against a real MongoDB. It seeds a temporary
 // database, exercises the backend through the engine, and drops it. Skips if mongod is unreachable.
 func TestConformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires a live backend")
+	}
 	uri := os.Getenv("MONGO_URI")
 	if uri == "" {
 		uri = "mongodb://localhost:27017"
@@ -47,4 +50,5 @@ func TestConformance(t *testing.T) {
 	defer db.Drop(context.Background())
 
 	tdstest.RunConformance(t, mongobk.New(client, dbName))
+	tdstest.RunSurface(t, mongobk.New(client, dbName))
 }

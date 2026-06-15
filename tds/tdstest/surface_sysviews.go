@@ -1,0 +1,46 @@
+// Copyright 2026 RSKGroup, LLC.
+// SPDX-License-Identifier: Apache-2.0
+
+package tdstest
+
+// Each sys.* view asserts its column contract on every backend; data-dependent views leave row count
+// open (empty-degrade), static catalogs pin an exact count, and concept-free views must be empty.
+var sysviewCases = []Case{
+	{Element: "sys:databases", SQL: "SELECT * FROM sys.databases", Check: checks(wantCols("name", "database_id", "state_desc"), atLeastRows(1))},
+	{Element: "sys:schemas", SQL: "SELECT * FROM sys.schemas", Check: checks(wantCols("name", "schema_id"), atLeastRows(1))},
+	{Element: "sys:tables", SQL: "SELECT * FROM sys.tables", Check: wantCols("name", "object_id", "type_desc")},
+	{Element: "sys:objects", SQL: "SELECT * FROM sys.objects", Check: wantCols("name", "object_id", "type_desc")},
+	{Element: "sys:all_objects", SQL: "SELECT * FROM sys.all_objects", Check: wantCols("name", "object_id")},
+	{Element: "sys:views", SQL: "SELECT * FROM sys.views", Check: wantCols("name", "object_id")},
+	{Element: "sys:procedures", SQL: "SELECT * FROM sys.procedures", Check: wantCols("name", "object_id")},
+	{Element: "sys:sql_modules", SQL: "SELECT * FROM sys.sql_modules", Check: wantCols("object_id", "definition")},
+	{Element: "sys:parameters", SQL: "SELECT * FROM sys.parameters", Check: wantCols("object_id", "name", "parameter_id")},
+	{Element: "sys:columns", SQL: "SELECT * FROM sys.columns", Check: wantCols("object_id", "name", "column_id")},
+	{Element: "sys:all_columns", SQL: "SELECT * FROM sys.all_columns", Check: wantCols("object_id", "name", "column_id")},
+	{Element: "sys:types", SQL: "SELECT * FROM sys.types", Check: checks(wantCols("name", "system_type_id", "schema_id"), exactRows(20))},
+	{Element: "sys:foreign_keys", SQL: "SELECT * FROM sys.foreign_keys", Check: wantCols("name", "object_id", "referenced_object_id")},
+	{Element: "sys:indexes", SQL: "SELECT * FROM sys.indexes", Check: wantCols("object_id", "name", "index_id")},
+	{Element: "sys:index_columns", SQL: "SELECT * FROM sys.index_columns", Check: wantCols("object_id", "index_id", "column_id")},
+	{Element: "sys:key_constraints", SQL: "SELECT * FROM sys.key_constraints", Check: wantCols("name", "object_id", "unique_index_id")},
+	{Element: "sys:foreign_key_columns", SQL: "SELECT * FROM sys.foreign_key_columns", Check: wantCols("constraint_object_id", "parent_object_id", "referenced_object_id")},
+	{Element: "sys:check_constraints", SQL: "SELECT * FROM sys.check_constraints", Check: wantCols("name", "definition")},
+	{Element: "sys:default_constraints", SQL: "SELECT * FROM sys.default_constraints", Check: wantCols("name", "definition")},
+	{Element: "sys:identity_columns", SQL: "SELECT * FROM sys.identity_columns", Check: wantCols("object_id", "name", "is_identity")},
+	{Element: "sys:computed_columns", SQL: "SELECT * FROM sys.computed_columns", Check: wantCols("object_id", "name", "definition")},
+	{Element: "sys:sql_expression_dependencies", SQL: "SELECT * FROM sys.sql_expression_dependencies", Check: wantCols("referencing_id", "referenced_entity_name")},
+	{Element: "sys:triggers", SQL: "SELECT * FROM sys.triggers", Check: wantCols("name", "object_id", "parent_id")},
+	{Element: "sys:extended_properties", SQL: "SELECT * FROM sys.extended_properties", Check: checks(wantCols("class", "name"), exactRows(0))},
+	{Element: "sys:sequences", SQL: "SELECT * FROM sys.sequences", Check: checks(wantCols("name", "object_id"), exactRows(0))},
+	{Element: "sys:synonyms", SQL: "SELECT * FROM sys.synonyms", Check: checks(wantCols("name", "base_object_name"), exactRows(0))},
+	{Element: "sys:sysobjects", SQL: "SELECT * FROM sys.sysobjects", Check: wantCols("name", "id", "xtype")},
+	{Element: "sys:syscolumns", SQL: "SELECT * FROM sys.syscolumns", Check: wantCols("name", "id", "colid")},
+	{Element: "sys:systypes", SQL: "SELECT * FROM sys.systypes", Check: checks(wantCols("name", "xtype"), exactRows(20))},
+	{Element: "sys:table_types", SQL: "SELECT * FROM sys.table_types", Check: wantCols("name", "type_table_object_id")},
+	{Element: "sys:database_principals", SQL: "SELECT * FROM sys.database_principals", Check: checks(wantCols("name", "principal_id"), atLeastRows(1))},
+	{Element: "sys:server_principals", SQL: "SELECT * FROM sys.server_principals", Check: checks(wantCols("name", "principal_id"), atLeastRows(1))},
+	{Element: "sys:database_role_members", SQL: "SELECT * FROM sys.database_role_members", Check: checks(wantCols("role_principal_id", "member_principal_id"), exactRows(0))},
+	{Element: "sys:sysusers", SQL: "SELECT * FROM sys.sysusers", Check: checks(wantCols("uid", "name"), atLeastRows(1))},
+	{Element: "sys:sysindexes", SQL: "SELECT * FROM sys.sysindexes", Check: wantCols("id", "name", "indid")},
+	{Element: "sys:database_permissions", SQL: "SELECT * FROM sys.database_permissions", Check: checks(wantCols("permission_name", "state_desc"), exactRows(0))},
+	{Element: "sys:server_permissions", SQL: "SELECT * FROM sys.server_permissions", Check: checks(wantCols("permission_name", "state_desc"), exactRows(0))},
+}

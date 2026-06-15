@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,58 +19,60 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
 )
 
+type procFunc func(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error)
+
+// procDispatch is the built-in sp_* dispatch table; its keys are the wired set SupportedProcs reports.
+var procDispatch = map[string]procFunc{
+	"sp_databases": func(ctx context.Context, b tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+		return spDatabases(ctx, b)
+	},
+	"sp_tables":            spTables,
+	"sp_columns":           spColumns,
+	"sp_columns_90":        spColumns,
+	"sp_helptext":          spHelptext,
+	"sp_help":              spHelp,
+	"sp_pkeys":             spPkeys,
+	"sp_fkeys":             spFkeys,
+	"sp_statistics":        spStatistics,
+	"sp_special_columns":   spSpecialColumns,
+	"sp_stored_procedures": spStoredProcedures,
+	"sp_sproc_columns":     spSprocColumns,
+	"sp_helpindex":         spHelpindex,
+	"sp_helpconstraint":    spHelpconstraint,
+	"sp_helpdb":            spHelpdb,
+	"sp_configure":         spConfigure,
+	"sp_lock":              spLock,
+	"sp_server_info":       spServerInfo,
+	"sp_datatype_info":     spDatatypeInfo,
+	"sp_datatype_info_100": spDatatypeInfo,
+}
+
+// SupportedProcs returns every wired built-in sp_* proc name, lower-cased and sorted (aliases included).
+func SupportedProcs() []string {
+	names := make([]string, 0, len(procDispatch))
+	for name := range procDispatch {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // execProc answers the ODBC catalog procs (sp_databases/sp_tables/sp_columns); other sp_* no-op.
 func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, error) {
 	name, args, ok := parseProcCall(sql)
 	if !ok {
 		return nil, false, nil
 	}
-	switch strings.ToLower(name) {
-	case "sp_databases":
-		return spDatabases(ctx, b)
-	case "sp_tables":
-		return spTables(ctx, b, args)
-	case "sp_columns", "sp_columns_90":
-		return spColumns(ctx, b, args)
-	case "sp_helptext":
-		return spHelptext(ctx, b, args)
-	case "sp_help":
-		return spHelp(ctx, b, args)
-	case "sp_pkeys":
-		return spPkeys(ctx, b, args)
-	case "sp_fkeys":
-		return spFkeys(ctx, b, args)
-	case "sp_statistics":
-		return spStatistics(ctx, b, args)
-	case "sp_special_columns":
-		return spSpecialColumns(ctx, b, args)
-	case "sp_stored_procedures":
-		return spStoredProcedures(ctx, b, args)
-	case "sp_sproc_columns":
-		return spSprocColumns(ctx, b, args)
-	case "sp_helpindex":
-		return spHelpindex(ctx, b, args)
-	case "sp_helpconstraint":
-		return spHelpconstraint(ctx, b, args)
-	case "sp_helpdb":
-		return spHelpdb(ctx, b, args)
-	case "sp_configure":
-		return spConfigure(ctx, b, args)
-	case "sp_lock":
-		return spLock(ctx, b, args)
-	case "sp_server_info":
-		return spServerInfo(ctx, b, args)
-	case "sp_datatype_info", "sp_datatype_info_100":
-		return spDatatypeInfo(ctx, b, args)
-	default:
-		if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
-			return rs, true, err
-		}
-		if strings.HasPrefix(strings.ToLower(name), "sp_") {
-			return nil, true, nil
-		}
-		return nil, true, fmt.Errorf("could not find stored procedure %q", name)
+	if fn, ok := procDispatch[strings.ToLower(name)]; ok {
+		return fn(ctx, b, args)
 	}
+	if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
+		return rs, true, err
+	}
+	if strings.HasPrefix(strings.ToLower(name), "sp_") {
+		return nil, true, nil
+	}
+	return nil, true, fmt.Errorf("could not find stored procedure %q", name)
 }
 
 type procArg struct {

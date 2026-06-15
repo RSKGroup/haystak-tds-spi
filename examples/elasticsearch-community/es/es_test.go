@@ -18,6 +18,9 @@ import (
 // TestConformance runs the SPI conformance harness against a real Elasticsearch. It seeds a temporary
 // index, exercises the backend through the engine, and drops it. Skips if ES is unreachable.
 func TestConformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires a live backend")
+	}
 	url := os.Getenv("ES_URL")
 	if url == "" {
 		url = "http://localhost:9200"
@@ -53,4 +56,5 @@ func TestConformance(t *testing.T) {
 	}
 
 	tdstest.RunConformance(t, esbk.New(es, index))
+	tdstest.RunSurface(t, esbk.New(es, index))
 }

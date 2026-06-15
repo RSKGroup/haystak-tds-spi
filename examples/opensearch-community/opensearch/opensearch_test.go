@@ -18,6 +18,9 @@ import (
 // TestConformance runs the SPI conformance harness against a real OpenSearch. It seeds a temporary
 // index, exercises the backend through the engine, and drops it. Skips if OpenSearch is unreachable.
 func TestConformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires a live backend")
+	}
 	url := os.Getenv("OS_URL")
 	if url == "" {
 		url = "http://localhost:9201"
@@ -53,4 +56,5 @@ func TestConformance(t *testing.T) {
 	}
 
 	tdstest.RunConformance(t, osbk.New(client, index))
+	tdstest.RunSurface(t, osbk.New(client, index))
 }
