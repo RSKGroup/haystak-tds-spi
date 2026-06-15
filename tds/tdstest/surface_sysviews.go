@@ -43,4 +43,10 @@ var sysviewCases = []Case{
 	{Element: "sys:sysindexes", SQL: "SELECT * FROM sys.sysindexes", Check: wantCols("id", "name", "indid")},
 	{Element: "sys:database_permissions", SQL: "SELECT * FROM sys.database_permissions", Check: checks(wantCols("permission_name", "state_desc"), exactRows(0))},
 	{Element: "sys:server_permissions", SQL: "SELECT * FROM sys.server_permissions", Check: checks(wantCols("permission_name", "state_desc"), exactRows(0))},
+	{Element: "sys:system_objects", SQL: "SELECT * FROM sys.system_objects", Check: checks(wantCols("name", "object_id"), exactRows(0))},
+	{Element: "sys:stats", SQL: "SELECT * FROM sys.stats", Check: checks(wantCols("object_id", "stats_id", "name"), exactRows(0))},
+	{Element: "sys:stats_columns", SQL: "SELECT * FROM sys.stats_columns", Check: checks(wantCols("object_id", "stats_id", "column_id"), exactRows(0))},
+	{Element: "sys:partitions", SQL: "SELECT * FROM sys.partitions", Check: wantCols("object_id", "index_id", "partition_number", "rows")},
+	{Element: "sys:database_files", SQL: "SELECT * FROM sys.database_files", Check: checks(wantCols("file_id", "name", "type_desc"), exactRows(1))},
+	{Element: "sys:filegroups", SQL: "SELECT * FROM sys.filegroups", Check: checks(wantCols("name", "is_default"), exactRows(1))},
 }

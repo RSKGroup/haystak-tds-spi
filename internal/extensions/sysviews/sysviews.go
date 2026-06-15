@@ -60,6 +60,12 @@ func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds
 		"sysindexes":                  func() ([]catalog.Column, [][]any) { return sysindexesRows(schema) },
 		"database_permissions":        databasePermissionsRows,
 		"server_permissions":          serverPermissionsRows,
+		"system_objects":              func() ([]catalog.Column, [][]any) { return objectCols(), nil },
+		"stats":                       statsRows,
+		"stats_columns":               statsColumnsRows,
+		"partitions":                  func() ([]catalog.Column, [][]any) { return partitionsRows(schema) },
+		"database_files":              databaseFilesRows,
+		"filegroups":                  filegroupsRows,
 	}
 }
 
@@ -673,6 +679,39 @@ func tableTypesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 }
 
 // sequencesRows is sys.sequences: empty, no sequences are modeled.
+func statsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{
+		intc("object_id"), sname("name"), intc("stats_id"),
+		intc("auto_created"), intc("user_created"), intc("no_recompute"), intc("has_filter"),
+	}, nil
+}
+
+func statsColumnsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{intc("object_id"), intc("stats_id"), intc("stats_column_id"), intc("column_id")}, nil
+}
+
+func partitionsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{intc("partition_id"), intc("object_id"), intc("index_id"), intc("partition_number"), intc("rows")}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		rows = append(rows, []any{oid(t.Name), oid(t.Name), int64(1), int64(1), int64(0)})
+	}
+	return cols, rows
+}
+
+func databaseFilesRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("file_id"), sname("type_desc"), intc("data_space_id"),
+		sname("name"), sname("physical_name"), sname("state_desc"), intc("size"),
+	}
+	return cols, [][]any{{int64(1), "ROWS", int64(1), dbName, dbName + ".mdf", "ONLINE", int64(0)}}
+}
+
+func filegroupsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("data_space_id"), sname("type"), sname("type_desc"), intc("is_default"), intc("is_read_only")}
+	return cols, [][]any{{"PRIMARY", int64(1), "FG", "ROWS_FILEGROUP", int64(1), int64(0)}}
+}
+
 func sequencesRows() ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		sname("name"), intc("object_id"), intc("schema_id"),

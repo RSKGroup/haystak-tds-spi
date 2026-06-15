@@ -25,4 +25,8 @@ var procCases = []Case{
 	{Element: "proc:sp_server_info", SQL: "EXEC sp_server_info", Check: checks(wantCols("attribute_id", "attribute_name", "attribute_value"), atLeastRows(1))},
 	{Element: "proc:sp_datatype_info", SQL: "EXEC sp_datatype_info", Check: checks(wantCols("TYPE_NAME", "DATA_TYPE"), atLeastRows(1))},
 	{Element: "proc:sp_datatype_info_100", SQL: "EXEC sp_datatype_info_100", Check: checks(wantCols("TYPE_NAME", "DATA_TYPE"), atLeastRows(1))},
+	{Element: "proc:sp_table_privileges", SQL: "EXEC sp_table_privileges 'zzz_surface_none'", Check: checks(wantCols("TABLE_NAME", "PRIVILEGE", "GRANTEE"), exactRows(0))},
+	{Element: "proc:sp_column_privileges", SQL: "EXEC sp_column_privileges 'zzz_surface_none'", Check: checks(wantCols("COLUMN_NAME", "PRIVILEGE", "GRANTEE"), exactRows(0))},
+	{Element: "proc:sp_helptrigger", SQL: "EXEC sp_helptrigger 'zzz_surface_none'", Check: checks(wantCols("trigger_name", "isupdate", "isafter"), exactRows(0))},
+	{Element: "proc:sp_depends", SQL: "EXEC sp_depends 'zzz_surface_none'", Check: checks(wantCols("name", "type"), exactRows(0))},
 }

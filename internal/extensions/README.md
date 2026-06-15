@@ -295,7 +295,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.parameters` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.triggers` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.all_objects` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.system_objects` |  | - |
+| `sys.system_objects` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sequences` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.synonyms` | `internal/extensions/sysviews/sysviews.go` | Y |
 
@@ -319,9 +319,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.key_constraints` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.foreign_keys` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.foreign_key_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.stats` |  | - |
-| `sys.stats_columns` |  | - |
-| `sys.partitions` |  | - |
+| `sys.stats` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.stats_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.partitions` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Constraints
 
@@ -336,8 +336,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | --- | --- | --- |
 | `sys.databases` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.schemas` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.database_files` |  | - |
-| `sys.filegroups` |  | - |
+| `sys.database_files` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.filegroups` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.extended_properties` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sql_expression_dependencies` | `internal/extensions/sysviews/sysviews.go` | Y |
 
@@ -413,8 +413,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_sproc_columns` | `internal/engine/proc.go` | Y |
 | `sp_server_info` | `internal/engine/proc.go` | Y |
 | `sp_datatype_info` | `internal/engine/proc.go` | Y |
-| `sp_table_privileges` |  | - |
-| `sp_column_privileges` |  | - |
+| `sp_table_privileges` | `internal/engine/proc.go` | Y |
+| `sp_column_privileges` | `internal/engine/proc.go` | Y |
 
 ### Help & scripting
 
@@ -425,8 +425,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_helpindex` | `internal/engine/proc.go` | Y |
 | `sp_helpconstraint` | `internal/engine/proc.go` | Y |
 | `sp_helpdb` | `internal/engine/proc.go` | Y |
-| `sp_helptrigger` |  | - |
-| `sp_depends` |  | - |
+| `sp_helptrigger` | `internal/engine/proc.go` | Y |
+| `sp_depends` | `internal/engine/proc.go` | Y |
 
 ### Administration
 

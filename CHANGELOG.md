@@ -39,6 +39,7 @@ Other:
 - `JSON_PATH_EXISTS`, `JSON_ARRAY`; string `SOUNDEX`, `DIFFERENCE`, `FORMATMESSAGE`.
 - System/security scalars: `NEWSEQUENTIALID`, `XACT_STATE`, `CURSOR_STATUS`, `CONNECTIONPROPERTY`, `CONTEXT_INFO`, `SESSION_CONTEXT`, `HAS_PERMS_BY_NAME`; crypto `COMPRESS`/`DECOMPRESS` (gzip) and `PWDENCRYPT`/`PWDCOMPARE` (SHA-256).
 - `INDEXPROPERTY`, `INDEXKEY_PROPERTY` (catalog index metadata); `SWITCHOFFSET`, `TODATETIMEOFFSET` (datetimeoffset).
+- More catalog: `sys.partitions` (one per table), `sys.database_files`/`sys.filegroups` (single-DB topology), `sys.system_objects`/`sys.stats`/`sys.stats_columns` (empty-shaped); `sp_helptrigger`/`sp_depends` (project routine data), `sp_table_privileges`/`sp_column_privileges` (empty).
 
 ## v1.4.0
 

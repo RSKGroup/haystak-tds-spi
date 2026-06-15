@@ -45,6 +45,10 @@ var procDispatch = map[string]procFunc{
 	"sp_server_info":       spServerInfo,
 	"sp_datatype_info":     spDatatypeInfo,
 	"sp_datatype_info_100": spDatatypeInfo,
+	"sp_table_privileges":  spTablePrivileges,
+	"sp_column_privileges": spColumnPrivileges,
+	"sp_helptrigger":       spHelptrigger,
+	"sp_depends":           spDepends,
 }
 
 // SupportedProcs returns every wired built-in sp_* proc name, lower-cased and sorted (aliases included).
@@ -998,6 +1002,72 @@ func yesNo(nullable bool) string {
 		return "YES"
 	}
 	return "NO"
+}
+
+func spTablePrivileges(_ context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{
+		sn("TABLE_QUALIFIER"), sn("TABLE_OWNER"), sn("TABLE_NAME"),
+		nstr("GRANTOR"), nstr("GRANTEE"), sn("PRIVILEGE"), nstr("IS_GRANTABLE"),
+	}
+	rs, err := exec.Apply(cols, nil, &tds.Query{}) // no permission model: correct columns, zero rows
+	return rs, true, err
+}
+
+func spColumnPrivileges(_ context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{
+		sn("TABLE_QUALIFIER"), sn("TABLE_OWNER"), sn("TABLE_NAME"), sn("COLUMN_NAME"),
+		nstr("GRANTOR"), nstr("GRANTEE"), sn("PRIVILEGE"), nstr("IS_GRANTABLE"),
+	}
+	rs, err := exec.Apply(cols, nil, &tds.Query{})
+	return rs, true, err
+}
+
+// spHelptrigger projects the trigger routines whose ON-table matches @tabname.
+func spHelptrigger(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@tabname", 0))
+	cols := []catalog.Column{
+		sn("trigger_name"), sn("trigger_owner"), in16("isupdate"), in16("isdelete"),
+		in16("isinsert"), in16("isafter"), in16("isinsteadof"), nstr("trigger_schema"),
+	}
+	var data [][]any
+	for _, r := range listRoutines(ctx, b, defaultQualifier(ctx, "")) {
+		if r.Kind != tds.RoutineTrigger {
+			continue
+		}
+		if table != "" && !strings.EqualFold(triggerOnTable(r.Body), table) {
+			continue
+		}
+		data = append(data, []any{r.Name, "dbo", int64(1), int64(1), int64(1), int64(1), int64(0), "dbo"})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spDepends projects the objects the named routine references (its FROM/JOIN tables).
+func spDepends(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	name := unqualifyProc(arg(args, "@objname", 0))
+	cols := []catalog.Column{sn("name"), sn("type"), sn("updated"), sn("selected"), nstr("column")}
+	var data [][]any
+	for _, r := range listRoutines(ctx, b, defaultQualifier(ctx, "")) {
+		if !strings.EqualFold(routines.Unqualify(r.Name), name) {
+			continue
+		}
+		for _, ref := range routines.ReferencedNames(r.Body) {
+			data = append(data, []any{ref, "user table", "no", "yes", nil})
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+func triggerOnTable(body string) string {
+	tokens := strings.Fields(body)
+	for i := 0; i+1 < len(tokens); i++ {
+		if strings.EqualFold(tokens[i], "ON") {
+			return routines.Unqualify(tokens[i+1])
+		}
+	}
+	return ""
 }
 
 func sn(n string) catalog.Column {
