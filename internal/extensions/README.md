@@ -7,144 +7,121 @@ ODBC Driver 18 and Microsoft JDBC drivers, every BI/ETL tool that "connects to S
 things and assumes all of them are present:
 
 1. **TDS** — the wire protocol (PRELOGIN, LOGIN7, `SQL_BATCH`, RPC, result-set streaming).
-2. **T-SQL** — the dialect (SELECT/JOIN/CTE/window/`MERGE`, plus the procedural language: `DECLARE`,
-   `IF`, `WHILE`, `TRY…CATCH`, cursors, transactions).
+2. **T-SQL** — the dialect (SELECT/JOIN/CTE/window/`MERGE`, plus the procedural language).
 3. **The system catalog** — `sys.*`, `INFORMATION_SCHEMA.*`, and the `sp_*` catalog procedures a GUI
    calls to draw its object tree and a driver calls to describe a result.
-4. **Behaviors** — `@@`-functions, error/`@@ROWCOUNT` conventions, `DB_ID()`/`HAS_DBACCESS()` gating,
-   identifier quoting, default schema = `dbo`, and so on.
-
-"Being SQL Server" means enough of that surface exists that those clients connect and work **unmodified** —
-they enumerate databases/schemas/tables/columns, browse object trees, run queries and stored procedures,
-and never notice they're not talking to Microsoft's server.
+4. **Behaviors** — `@@`-functions, `SERVERPROPERTY`, default schema = `dbo`, identifier quoting, and so on.
 
 The **core** (`internal/wire`, `internal/tsql`, `internal/exec`, `internal/engine`) supplies the wire and a
-generic SQL engine. **This directory supplies the SQL-Server-specific surface** — and it is a long tail.
-What follows is the gap, package by package: **✓ shipped · → next (the script-out slice) · ◻ not yet**.
-The list is deliberately large; the point of "be SQL Server" is that there's always one more thing a
-client expects.
+generic SQL engine. **This directory supplies the SQL-Server-specific surface** — a long tail.
 
----
+## How to read this list
 
-## Shipped today (✓) — the beachhead
-
-The surface that already works (each row is ✓ in the detail below). Everything else in this document is
-still owed.
-
-- **`catalog/funcs/`** — `DB_ID`, `HAS_DBACCESS`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`, `QUOTENAME`, `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`
-- **`sys.*`** — `sys.databases`, `sys.tables`, `sys.columns`, `sys.schemas`, `sys.types`, `sys.foreign_keys`, `sys.objects` (tables + views + procs), `sys.sql_modules`, `sys.views`, `sys.procedures`, `sys.parameters`
-- **`INFORMATION_SCHEMA`** — `TABLES`, `COLUMNS`, `VIEWS`, `ROUTINES`, `PARAMETERS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`, `REFERENTIAL_CONSTRAINTS`
-- **catalog procs** — `sp_databases`, `sp_tables`, `sp_columns`, `sp_helptext`, `sp_help`
-- **`procedures/`** — `CREATE / ALTER / DROP PROCEDURE`, `EXEC proc @a = …` + parameter substitution
-- **`views/`** — `CREATE / ALTER / DROP VIEW` + read-time expansion (body resolves via `QualifyDB`)
-- **`routines/`** — the `Runner` seam + DDL helpers + `tds.RoutineStore` persistence
-- **`batch/`** — `DECLARE @v = …` / `SET @v = …` bind + string-literal-aware substitution
-- **core query** (engine, not this dir) — SELECT, all JOIN kinds + `ON`, chained CTEs, CASE, GROUP BY/
-  HAVING/ORDER BY/DISTINCT/TOP, UNION/INTERSECT/EXCEPT, subqueries/EXISTS, LIKE/BETWEEN/IS NULL, the
-  generic scalar functions, and the latest Q1 bits — **`NOT IN`** and **aggregate-over-expression**
-  (`MAX(CASE …)`)
-
----
-
-## ✓ Shipped — stored routines are visible & scriptable (the script-out slice)
-
-We *persist* `CREATE VIEW`/`PROCEDURE`/`FUNCTION`/`TRIGGER` via `RoutineStore`; this slice makes them
-visible — what a client's *Script as → CREATE* and object tree read — and it is now **complete**:
-
-1. ✓ **`OBJECT_NAME()`** (+ `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`) — `catalog/funcs/` + the
-   `exec.Env` id→name resolver seam. One unified `object_id`/`database_id` (`funcs.ObjectID`/`funcs.DBID`)
-   so `OBJECT_ID('x')` joins the views and `OBJECT_NAME` reverses it.
-2. ✓ **`sys.sql_modules`** (reconstructed CREATE body via `routines.ScriptDefinition`), **`sys.objects`**
-   spanning `U`/`V`/`P`/`FN`/`TR`, **`sys.views`**, **`sys.procedures`**, **`sys.parameters`** — `internal/sysviews`.
-3. ✓ **`INFORMATION_SCHEMA.VIEWS` / `ROUTINES` / `PARAMETERS`** — `internal/infoschema` (the portable path).
-4. ✓ **`sp_helptext`**, **`sp_help`** — engine catalog procs (the classic definition dump + object summary).
-
-That turns "we stored the DDL" into "the client shows it and scripts it back out." After it comes the full
-browsable tree + driver metadata (`sys.indexes`/`index_columns`/`key_constraints`/`foreign_key_columns`,
-`sp_pkeys`/`sp_fkeys`/`sp_stored_procedures`, `@@VERSION`/`SERVERPROPERTY`). *Executing* a captured routine
-(control flow, variables-from-query, cursors, transactions, the scalar/date function library) is a later,
-separate effort — none of it is needed to capture, catalog, or script-out.
+- **✓ shipped · ◻ not yet.** Status is verified against the code, not assumed: the `funcs` registry,
+  `exec.evalFunc`, the engine `probe`/`probeValue`/`serverProperty`, the `sysviews`/`infoschema`
+  dispatches, the `execProc` dispatch, and the `tsql` parser. (Inventory reconciled 2026-06-14.)
+- Organized **per `extensions/<folder>`** (plus a final *Core language* section for things that live in
+  `tsql`/`exec`/`engine`), each broken out **by feature group**. A group with a mix shows a ✓ row and a ◻ row.
+- `→` items in prior versions are folded into ✓/◻ — there is no separate "next" column.
 
 ---
 
 ## `catalog/` — describe & compute like SQL Server
 
-The "what's in this server, and may I see it" surface. GUIs gate their trees on these; drivers describe
-results with them.
+### `funcs/` — scalar functions *(registry + engine `probe`)*
 
-### Scalar system / metadata functions (`catalog/funcs/`)
+| Group | Functions | Status |
+| --- | --- | --- |
+| Catalog & metadata | `DB_ID`, `DB_NAME`, `OBJECT_ID`, `OBJECT_NAME`, `OBJECT_SCHEMA_NAME`, `SCHEMA_ID`, `SCHEMA_NAME`, `TYPE_NAME`, `HAS_DBACCESS`, `QUOTENAME`, `ORIGINAL_DB_NAME` | ✓ |
+| Catalog & metadata | `COL_NAME`, `COL_LENGTH`, `TYPE_ID`, `OBJECT_DEFINITION`, `OBJECTPROPERTY(EX)`, `COLUMNPROPERTY`, `INDEXPROPERTY`, `INDEXKEY_PROPERTY`, `STATS_DATE`, `FILEGROUP_NAME`, `FILE_NAME` | ◻ |
+| Server & database props | `SERVERPROPERTY`, `DATABASEPROPERTYEX` | ✓ |
+| Server & database props | `CONNECTIONPROPERTY`, `ASSEMBLYPROPERTY`, `COLLATIONPROPERTY`, `FILEPROPERTY`, `FULLTEXTSERVICEPROPERTY` | ◻ |
+| Security & session identity | `SYSTEM_USER`, `CURRENT_USER`, `SESSION_USER`, `USER`, `USER_NAME`, `SUSER_NAME`, `SUSER_SNAME`, `HOST_NAME`, `APP_NAME` | ✓ |
+| Security & session identity | `USER_ID`, `SUSER_ID`, `SUSER_SID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `IS_ROLEMEMBER`, `PERMISSIONS`, `HAS_PERMS_BY_NAME`, `ORIGINAL_LOGIN`, `CONTEXT_INFO`, `SESSION_CONTEXT` | ◻ |
+| `@@` config & session | `@@VERSION`, `@@SERVERNAME`, `@@SPID`, `@@LANGUAGE`, `@@ROWCOUNT`, `@@ERROR`, `@@TRANCOUNT`, `@@FETCH_STATUS` | ✓ |
+| `@@` config & session | `@@SERVICENAME`, `@@IDENTITY`, `@@NESTLEVEL`, `@@MAX_PRECISION`, `@@OPTIONS`, `@@DATEFIRST`, `@@LOCK_TIMEOUT`, `@@CURSOR_ROWS`, `@@PROCID`, `@@CONNECTIONS`, `@@CPU_BUSY`, `@@PACK_RECEIVED`, `@@TOTAL_ERRORS` | ◻ |
+| String | `LEN`, `DATALEN`, `UPPER`, `LOWER`, `LTRIM`, `RTRIM`, `TRIM`, `SUBSTRING`, `REPLACE`, `CONCAT` | ✓ |
+| String | `CHARINDEX`, `PATINDEX`, `STUFF`, `LEFT`, `RIGHT`, `REPLICATE`, `SPACE`, `REVERSE`, `CONCAT_WS`, `STRING_AGG`, `STRING_SPLIT`, `STRING_ESCAPE`, `TRANSLATE`, `FORMATMESSAGE`, `UNICODE`, `NCHAR`, `CHAR`, `ASCII`, `SOUNDEX`, `DIFFERENCE`, `STR` | ◻ |
+| Numeric & math | `ABS` | ✓ |
+| Numeric & math | `CEILING`, `FLOOR`, `ROUND`, `POWER`, `SQRT`, `SQUARE`, `EXP`, `LOG`, `LOG10`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATN2`, `PI`, `RAND`, `SIGN`, `DEGREES`, `RADIANS` | ◻ |
+| Date & time | `GETDATE`, `GETUTCDATE`, `SYSDATETIME`, `SYSUTCDATETIME`, `YEAR`, `MONTH`, `DAY` | ✓ |
+| Date & time | `SYSDATETIMEOFFSET`, `CURRENT_TIMESTAMP`, `DATEADD`, `DATEDIFF`, `DATEDIFF_BIG`, `DATEPART`, `DATENAME`, `*FROMPARTS`, `EOMONTH`, `SWITCHOFFSET`, `TODATETIMEOFFSET`, `ISDATE`, `DATETRUNC` | ◻ |
+| Conversion | `CAST`, `CONVERT` (basic — style ignored) | ✓ |
+| Conversion | `TRY_CAST`, `TRY_CONVERT`, `PARSE`, `TRY_PARSE`, `FORMAT`, `CONVERT` styles | ◻ |
+| Logical / NULL | `ISNULL`, `COALESCE`, `NULLIF`, `CASE` (searched + simple) | ✓ |
+| Logical / NULL | `IIF`, `CHOOSE` | ◻ |
+| Aggregate | `COUNT`, `SUM`, `MIN`, `MAX`, `AVG` (+ GROUP BY / HAVING, aggregate-over-expression) | ✓ |
+| Aggregate | `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `GROUPING`, `GROUPING_ID`, `CHECKSUM_AGG`, `STRING_AGG`, `APPROX_COUNT_DISTINCT` | ◻ |
+| Window & ranking | `OVER`/`PARTITION BY`, `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`, `PERCENT_RANK`, `CUME_DIST`, `PERCENTILE_CONT/DISC`, framed/running aggregates (`ROWS`/`RANGE`) | ◻ |
+| JSON | `ISJSON`, `JSON_VALUE`, `JSON_QUERY`, `JSON_MODIFY`, `JSON_PATH_EXISTS`, `JSON_OBJECT`, `JSON_ARRAY`, `OPENJSON`, `FOR JSON` | ◻ |
+| XML | `xml` type, `.value()`/`.query()`/`.nodes()`/`.exist()`/`.modify()`, `FOR XML`, `OPENXML` | ◻ |
+| Crypto & hashing | `HASHBYTES`, `CHECKSUM`, `BINARY_CHECKSUM`, `COMPRESS`, `DECOMPRESS`, `ENCRYPTBYKEY`/`DECRYPTBYKEY`, `PWDENCRYPT`, `PWDCOMPARE` | ◻ |
 
-| Function(s) | Status |
-| --- | --- |
-| `DB_ID`, `HAS_DBACCESS`, `SCHEMA_NAME`, `SCHEMA_ID`, `OBJECT_ID`, `QUOTENAME` | ✓ |
-| `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME` | ✓ |
-| `COL_NAME`, `COL_LENGTH`, `TYPE_ID` | ◻ |
-| `OBJECTPROPERTY`, `OBJECTPROPERTYEX`, `COLUMNPROPERTY`, `INDEXPROPERTY`, `DATABASEPROPERTYEX`, `SERVERPROPERTY` | ◻ |
-| `USER_NAME`, `USER_ID`, `SUSER_NAME`, `SUSER_SNAME`, `SUSER_ID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `PERMISSIONS` | ◻ |
-| `@@VERSION`, `@@SERVERNAME`, `@@SERVICENAME`, `@@SPID`, `@@ROWCOUNT`, `@@ERROR`, `@@IDENTITY`, `@@TRANCOUNT`, `@@NESTLEVEL`, `@@LANGUAGE`, `@@MAX_PRECISION`, `@@OPTIONS` | ◻ |
-| `NEWID`, `NEWSEQUENTIALID`, `HOST_NAME`, `APP_NAME`, `CONNECTIONPROPERTY`, `CONTEXT_INFO`, `ORIGINAL_LOGIN` | ◻ |
+### `sys.*` catalog views *(today in `internal/sysviews`)*
 
-### Catalog views — `sys.*` *(today in `internal/sysviews`; slated under `catalog/`)*
+| Group | Views | Status |
+| --- | --- | --- |
+| Databases, schemas, objects, modules | `sys.databases`, `sys.schemas`, `sys.tables`, `sys.objects` (`U`/`V`/`P`/`FN`/`TR`), `sys.views`, `sys.procedures`, `sys.sql_modules`, `sys.parameters` | ✓ |
+| Databases, schemas, objects, modules | `sys.all_objects`, `sys.all_views`, `sys.system_objects`, `sys.numbered_procedures` | ◻ |
+| Columns & types | `sys.columns`, `sys.types` | ✓ |
+| Columns & types | `sys.all_columns`, `sys.table_types`, `sys.assembly_types` | ◻ |
+| Keys, indexes, constraints | `sys.foreign_keys`, `sys.foreign_key_columns`, `sys.key_constraints`, `sys.indexes`, `sys.index_columns`, `sys.check_constraints`, `sys.default_constraints` | ✓ |
+| Keys, indexes, constraints | `sys.stats`, `sys.stats_columns`, `sys.partitions`, `sys.partition_schemes`, `sys.allocation_units` | ◻ |
+| Identity & computed | `sys.identity_columns`, `sys.computed_columns` | ✓ |
+| Identity & computed | `sys.masked_columns`, `sys.column_encryption_keys` | ◻ |
+| Dependencies | `sys.sql_expression_dependencies`, `sys.sql_dependencies`, `sys.dm_sql_referenced_entities`, `sys.dm_sql_referencing_entities` | ◻ |
+| Security: principals & permissions | `sys.database_principals`, `sys.server_principals`, `sys.database_permissions`, `sys.server_permissions`, `sys.database_role_members`, `sys.server_role_members` | ◻ |
+| Dynamic management views (DMVs) | `sys.dm_exec_sessions`, `sys.dm_exec_connections`, `sys.dm_exec_requests`, `sys.dm_exec_query_stats`, `sys.dm_os_*`, `sys.dm_db_*`, `sys.dm_tran_*` | ◻ |
+| Compatibility (`sys.sys*`) | `sys.sysobjects`, `sys.syscolumns`, `sys.systypes`, `sys.sysindexes`, `sys.sysusers`, `sys.sysdatabases`, `sys.sysprocesses` | ◻ |
+| Other objects | `sys.triggers`, `sys.sequences`, `sys.synonyms`, `sys.extended_properties`, `sys.service_queues`, `sys.filegroups`, `sys.data_spaces` | ◻ |
 
-| View(s) | Status |
-| --- | --- |
-| `sys.databases`, `sys.tables`, `sys.columns`, `sys.schemas`, `sys.types`, `sys.foreign_keys` | ✓ |
-| `sys.objects` — tables + views + procs (`V`/`P`); `FN`/`TR` still ◻ | ✓ |
-| `sys.sql_modules` (reconstructed CREATE body), `sys.views`, `sys.procedures`, `sys.parameters` | ✓ |
-| `sys.sql_expression_dependencies` | ◻ |
-| `sys.indexes`, `sys.index_columns`, `sys.key_constraints`, `sys.foreign_key_columns`, `sys.check_constraints`, `sys.default_constraints` | ✓ |
-| `sys.identity_columns`, `sys.computed_columns` | ✓ |
-| `sys.triggers`, `sys.partitions`, `sys.tables` extended cols, `sys.extended_properties` | ◻ |
-| `sys.database_principals`, `sys.server_principals`, `sys.database_permissions`, `sys.schemas` perms | ◻ |
-| `sys.dm_exec_sessions`, `sys.dm_exec_connections`, `sys.dm_exec_requests`, `sys.dm_os_*` (DMVs) | ◻ |
-| compat views: `sys.sysobjects`, `sys.syscolumns`, `sys.systypes`, `sys.sysindexes`, `sys.sysusers` | ◻ |
+### `INFORMATION_SCHEMA.*` *(today in `internal/infoschema`)*
 
-### `INFORMATION_SCHEMA.*` *(today in `internal/infoschema`; slated under `catalog/`)*
+| Group | Views | Status |
+| --- | --- | --- |
+| Tables, columns, views, routines | `TABLES`, `COLUMNS`, `VIEWS`, `ROUTINES`, `PARAMETERS` | ✓ |
+| Tables, columns, views, routines | `ROUTINE_COLUMNS`, `VIEW_COLUMN_USAGE`, `VIEW_TABLE_USAGE`, `COLUMN_DOMAIN_USAGE` | ◻ |
+| Constraints | `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`, `REFERENTIAL_CONSTRAINTS` | ✓ |
+| Constraints | `CHECK_CONSTRAINTS`, `CONSTRAINT_COLUMN_USAGE`, `CONSTRAINT_TABLE_USAGE` | ◻ |
+| Other | `SCHEMATA`, `DOMAINS`, `DOMAIN_CONSTRAINTS`, `COLUMN_PRIVILEGES`, `TABLE_PRIVILEGES` | ◻ |
 
-| View(s) | Status |
-| --- | --- |
-| `TABLES`, `COLUMNS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`, `REFERENTIAL_CONSTRAINTS` | ✓ |
-| `VIEWS`, `ROUTINES`, `PARAMETERS` | ✓ |
-| `ROUTINE_COLUMNS`, `CONSTRAINT_COLUMN_USAGE`, `CHECK_CONSTRAINTS`, `SCHEMATA`, `DOMAINS`, `VIEW_COLUMN_USAGE`, `VIEW_TABLE_USAGE` | ◻ |
+### Catalog stored procedures *(today in engine `proc.go`)*
 
-### Catalog stored procedures
-
-| Proc(s) | Status |
-| --- | --- |
-| `sp_databases`, `sp_tables`, `sp_columns` | ✓ |
-| `sp_helptext`, `sp_help` | ✓ |
-| `sp_helpindex`, `sp_helpconstraint` | ✓ |
-| `sp_helpdb` | ◻ |
-| `sp_pkeys`, `sp_fkeys`, `sp_special_columns`, `sp_statistics`, `sp_stored_procedures`, `sp_sproc_columns` | ✓ |
-| `sp_server_info`, `sp_datatype_info`, `sp_tables_ex`, `sp_columns_ex`, `sp_table_privileges`, `sp_column_privileges` | ◻ |
+| Group | Procedures | Status |
+| --- | --- | --- |
+| ODBC / driver metadata | `sp_databases`, `sp_tables`, `sp_columns`, `sp_pkeys`, `sp_fkeys`, `sp_statistics`, `sp_special_columns`, `sp_stored_procedures`, `sp_sproc_columns` | ✓ |
+| ODBC / driver metadata | `sp_columns_ex`, `sp_tables_ex`, `sp_column_privileges`, `sp_table_privileges` | ◻ |
+| Help & scripting | `sp_help`, `sp_helptext`, `sp_helpindex`, `sp_helpconstraint` | ✓ |
+| Help & scripting | `sp_helpdb`, `sp_helpuser`, `sp_helprotect`, `sp_helptrigger`, `sp_helpstats`, `sp_depends` | ◻ |
+| Server & type info | `sp_server_info`, `sp_datatype_info`, `sp_server_diagnostics` | ◻ |
+| Admin & object management | `sp_executesql`, `sp_rename`, `sp_addextendedproperty`, `sp_who`, `sp_lock`, `sp_configure`, `sp_addmessage` | ◻ |
 
 ---
 
 ## `procedures/` — stored procedures + the procedural language
 
-| Feature | Status |
-| --- | --- |
-| `CREATE / ALTER / DROP PROCEDURE`, `EXEC proc @a = …` + named/positional parameter substitution | ✓ |
-| `CREATE OR ALTER PROCEDURE`, `WITH RECOMPILE`, `WITH ENCRYPTION`, default/`OUTPUT`/table-valued parameters | ◻ |
-| `sp_executesql`, `EXEC('dynamic sql')`, `EXEC @rc = proc`, return codes | ◻ |
-| **control flow** (`procedures/control/`): `IF … ELSE`, `WHILE`, `BEGIN … END`, `BREAK`, `CONTINUE`, `RETURN`, `GOTO`, `WAITFOR` | ◻ |
-| **error handling**: `TRY … CATCH`, `THROW`, `RAISERROR`, `ERROR_MESSAGE()`/`ERROR_NUMBER()`/… | ◻ |
-| **variables**: `DECLARE @v = …` (✓ via `extensions/batch`), `SET @v = …`, `SELECT @v = col`, table variables `DECLARE @t TABLE(...)` | ◻ (scalar DECLARE/SET ✓ in batch) |
-| **cursors**: `DECLARE … CURSOR`, `OPEN`, `FETCH`, `CLOSE`, `DEALLOCATE` | ◻ |
-| **transactions**: `BEGIN/COMMIT/ROLLBACK TRANSACTION`, `SAVE TRANSACTION`, `SET XACT_ABORT`, `@@TRANCOUNT` | ◻ |
-| **temp tables**: `#local`, `##global`, table-valued parameters | ◻ |
-| triggers (`CREATE TRIGGER`, `INSERTED`/`DELETED`), user-defined functions (`CREATE FUNCTION`, scalar/inline-TVF/multi-statement-TVF) | ◻ |
+| Group | Feature | Status |
+| --- | --- | --- |
+| EXEC & parameters | `CREATE / ALTER / DROP PROCEDURE`, `EXEC proc @a = …` / positional + parameter substitution | ✓ |
+| EXEC & parameters | `CREATE OR ALTER PROCEDURE`, `WITH RECOMPILE`/`ENCRYPTION`/`EXECUTE AS`, default / `OUTPUT` / table-valued params, `EXEC @rc = proc` + return codes | ◻ |
+| control/ — flow | `IF … ELSE`, `WHILE`, `BEGIN … END`, `BREAK`, `CONTINUE`, `RETURN`, `GOTO`, `WAITFOR` | ◻ |
+| control/ — errors | `TRY … CATCH`, `THROW`, `RAISERROR`, `PRINT`, `ERROR_MESSAGE()`/`ERROR_NUMBER()`/…, `XACT_STATE()` | ◻ |
+| Variables | `DECLARE @v = …` (scalar, via `batch/`), `SET @v = …` | ✓ |
+| Variables | `SELECT @v = col`, `DECLARE @t TABLE(...)`, multi-var assignment from query, compound assignment (`+=`) | ◻ |
+| Cursors | `DECLARE … CURSOR`, `OPEN`, `FETCH`, `CLOSE`, `DEALLOCATE`, cursor variables | ◻ |
+| Transactions | `BEGIN`/`COMMIT`/`ROLLBACK TRANSACTION`, `SAVE TRANSACTION`, `SET XACT_ABORT`, isolation levels, `@@TRANCOUNT` semantics | ◻ |
+| Temp tables & table types | `#local` / `##global` temp tables, `CREATE TYPE … AS TABLE`, table-valued parameters | ◻ |
+| Triggers & UDFs (execution) | `CREATE TRIGGER` run (`INSERTED`/`DELETED`), `INSTEAD OF`/DDL triggers; `CREATE FUNCTION` run (scalar / inline-TVF / multi-statement-TVF) — *capture & scripting is ✓; running is ◻* | ◻ |
+| Dynamic SQL | `sp_executesql`, `EXEC('…')`, parameterized dynamic SQL | ◻ |
 
 ---
 
-## `routines/` — the shared base (the seam)
-
-Infrastructure, not a SQL feature — the contract views/procedures build on so they never import the engine.
+## `routines/` — the shared seam (infrastructure, not a SQL feature)
 
 | Piece | Status |
 | --- | --- |
-| `Runner` seam (`Exec` / `RunQuery` / `CurrentDB`); DDL-text helpers; `QualifyDB` (body resolves in the routine's db) | ✓ |
-| Backends persist definitions through the **public** `tds.RoutineStore` (gated by `Caps.Routines`) | ✓ |
+| `Runner` seam (`Exec`/`RunQuery`/`CurrentDB`), DDL-text helpers, `QualifyDB` (body resolves in the routine's db), `ScriptDefinition` (reconstruct CREATE text) | ✓ |
+| Backends persist definitions through the **public** `tds.RoutineStore` (gated by `Caps.Routines`); read-time view expansion | ✓ |
 
 ---
 
@@ -159,30 +136,46 @@ Infrastructure, not a SQL feature — the contract views/procedures build on so 
 
 ---
 
-## Beyond the four packages — core T-SQL the engine still owes
+## `batch/` — batch variables
 
-These are *language* features, not catalog/objects, so they land in the **core** (`tsql`/`exec`/`engine`),
-not here — but a client's idea of "SQL Server" includes them, so they're listed for completeness.
-
-| Area | Have (✓) / Owe (◻) |
+| Feature | Status |
 | --- | --- |
-| query | ✓ SELECT, WHERE, INNER/LEFT/RIGHT/FULL/CROSS JOIN + ON, CTEs (incl. chained), subqueries, EXISTS, `IN`/`NOT IN`, LIKE, BETWEEN, IS [NOT] NULL, GROUP BY, HAVING, ORDER BY, DISTINCT, TOP, OFFSET/FETCH, UNION/INTERSECT/EXCEPT, CASE, aggregate-over-expression |
-| query | ◻ window functions (`OVER`, `PARTITION BY`, `ROW_NUMBER`/`RANK`/`DENSE_RANK`/`NTILE`/`LAG`/`LEAD`, running/framed aggregates), `PIVOT`/`UNPIVOT`, `CROSS`/`OUTER APPLY`, `MERGE`, `TOP … WITH TIES`, `GROUPING SETS`/`ROLLUP`/`CUBE`, recursive CTEs at depth |
-| scalar fns | ✓ LEN, DATALEN, UPPER, LOWER, LTRIM/RTRIM/TRIM, SUBSTRING, REPLACE, CONCAT, ISNULL, COALESCE, NULLIF, ABS, YEAR/MONTH/DAY, GETDATE/GETUTCDATE, CAST |
-| scalar fns | ◻ `CONVERT(… , style)`, `TRY_CAST`/`TRY_CONVERT`, `FORMAT`, `IIF`, `CHOOSE`, `DATEADD`/`DATEDIFF`/`DATEPART`/`DATENAME`/`EOMONTH`, `CHARINDEX`/`PATINDEX`/`STUFF`/`STRING_AGG`/`STRING_SPLIT`/`REPLICATE`/`SPACE`/`LEFT`/`RIGHT`, `ROUND`/`CEILING`/`FLOOR`/`POWER`/`SQRT`, `ISNUMERIC`/`ISDATE` |
-| types | ◻ `uniqueidentifier`, `datetime2`/`datetimeoffset`/`time`, `decimal`/`numeric` scale fidelity, `varbinary`, `sql_variant`, `xml`, `hierarchyid`, `geography`/`geometry`, collations |
-| DML/DDL | ◻ `INSERT … OUTPUT`, `UPDATE … FROM`, `DELETE … FROM`, `MERGE`, `SELECT … INTO`, `CREATE/ALTER TABLE` DDL, computed columns, constraints |
+| `DECLARE @v = …` / `SET @v = …` bind + string-literal-aware substitution (core lexer never sees `@`) | ✓ |
+| `GO` batch separator (+ count), `:setvar` / sqlcmd directives, variable scoping across control flow | ◻ |
+
+---
+
+## Core language (`tsql` / `exec` / `engine`) — not in this dir, listed for completeness
+
+A client's idea of "SQL Server" includes the language itself; these land in the **core**, changed with care.
+
+| Group | Feature | Status |
+| --- | --- | --- |
+| Query — relational | `SELECT`, `WHERE`, INNER/LEFT/RIGHT/FULL/CROSS `JOIN` + `ON`, CTEs (incl. chained), subqueries, `EXISTS`, `IN`/`NOT IN`, `LIKE`, `BETWEEN`, `IS [NOT] NULL`, `GROUP BY`, `HAVING`, `ORDER BY`, `DISTINCT`, `TOP`, `OFFSET`/`FETCH`, `UNION`/`INTERSECT`/`EXCEPT`, `CASE` | ✓ |
+| Query — advanced | window functions, `PIVOT`/`UNPIVOT`, `CROSS`/`OUTER APPLY`, `MERGE`, `TOP … WITH TIES`, `GROUPING SETS`/`ROLLUP`/`CUBE`, recursive CTEs at depth, `TABLESAMPLE`, table hints (`WITH (NOLOCK)`), `OPTION (…)` query hints | ◻ |
+| DML | `INSERT`, `UPDATE`, `DELETE` (+ `WHERE`) | ✓ |
+| DML | `MERGE`, `INSERT … OUTPUT`, `UPDATE … FROM`, `DELETE … FROM`, `SELECT … INTO`, `TRUNCATE TABLE`, `BULK INSERT`, `INSERT … EXEC` | ◻ |
+| DDL — tables & columns | `CREATE / ALTER / DROP TABLE` (add/drop column) | ✓ |
+| DDL — tables & columns | constraints DDL (PK/FK/UNIQUE/CHECK/DEFAULT), `IDENTITY(seed,incr)`, computed columns, `ALTER COLUMN`, `CREATE/ALTER/DROP INDEX`, `CREATE/UPDATE/DROP STATISTICS` | ◻ |
+| DDL — other objects | `CREATE/ALTER/DROP FUNCTION`/`TRIGGER`/`SEQUENCE`/`SYNONYM`/`SCHEMA`/`TYPE`, `NEXT VALUE FOR`, `CREATE OR ALTER` | ◻ |
+| Data types | bit, int, bigint, decimal/numeric, float/real, nvarchar/varchar, varbinary, datetime2, date/time, uniqueidentifier (value model) | ✓ |
+| Data types | datetimeoffset, smalldatetime, money/smallmoney, sql_variant, xml, hierarchyid, geometry/geography, rowversion, image/text/ntext, CLR UDTs, collation & precision/scale edge cases | ◻ |
+| Security DDL | `GRANT`/`REVOKE`/`DENY`, `CREATE/ALTER/DROP USER`/`LOGIN`/`ROLE`, `ALTER ROLE … ADD MEMBER`, `EXECUTE AS`/`REVERT` | ◻ |
+| Temporal & full-text | system-versioned (temporal) tables + `FOR SYSTEM_TIME`; `CONTAINS`/`FREETEXT`/`CONTAINSTABLE`, `CREATE FULLTEXT INDEX` | ◻ |
+| SET options & session | `SET` (no-op parse, e.g. `SET NOCOUNT ON`), `USE [db]` | ✓ |
+| SET options & session | `SET ANSI_NULLS`/`QUOTED_IDENTIFIER`/`ROWCOUNT`/`DATEFIRST`/`IDENTITY_INSERT`/isolation level **with effect** (not just parse) | ◻ |
+| Admin | `DBCC` (CHECKDB / SHRINK / FREEPROCCACHE / …), `BACKUP`/`RESTORE`, linked servers (`OPENROWSET`/`OPENQUERY`), Service Broker, bulk ops, SQL Agent | ◻ |
 
 ---
 
 ### How a row gets checked off
 
 1. Find the owning package above (catalog function → `catalog/funcs/`; procedural construct →
-   `procedures/control/`; batch variable → `extensions/batch`; view option → `views/`).
+   `procedures/control/`; batch variable → `extensions/batch`; view option → `views/`). Core-language rows
+   are filed in `internal/tsql` + `internal/exec`.
 2. Add a file there — it depends *down* on `routines`/`tds`, never up into the engine.
-3. Register it (function registry, keyword dispatch, DDL head-match) and add a test.
-
-Core-language rows (the last table) are filed in `internal/tsql` + `internal/exec`, changed with care.
+3. Register it (function registry, keyword dispatch, DDL head-match), add a test, **and flip the ✓ here in
+   the same change** — the list is only worth anything if it matches the code.
 
 See [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) for the core-vs-extensions map and the `Runner` seam,
 and [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) for the step-by-step recipes.

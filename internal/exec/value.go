@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
@@ -297,98 +296,9 @@ func evalFunc(name string, a []any, env *Env) any {
 			}
 		}
 		return nil
-	case "LEN", "DATALEN":
-		if len(a) == 1 {
-			return int64(len(toStr(a[0])))
-		}
-	case "UPPER":
-		if len(a) == 1 {
-			return strings.ToUpper(toStr(a[0]))
-		}
-	case "LOWER":
-		if len(a) == 1 {
-			return strings.ToLower(toStr(a[0]))
-		}
-	case "LTRIM":
-		if len(a) == 1 {
-			return strings.TrimLeft(toStr(a[0]), " ")
-		}
-	case "RTRIM":
-		if len(a) == 1 {
-			return strings.TrimRight(toStr(a[0]), " ")
-		}
-	case "TRIM":
-		if len(a) == 1 {
-			return strings.TrimSpace(toStr(a[0]))
-		}
-	case "ISNULL", "COALESCE":
-		for _, v := range a {
-			if v != nil {
-				return v
-			}
-		}
-		return nil
-	case "NULLIF":
-		if len(a) == 2 {
-			if c, ok := compare(a[0], a[1]); ok && c == 0 {
-				return nil
-			}
-			return a[0]
-		}
-	case "ABS":
-		if len(a) == 1 {
-			if i, ok := a[0].(int64); ok {
-				if i < 0 {
-					return -i
-				}
-				return i
-			}
-			if f, ok := toFloatOk(a[0]); ok {
-				if f < 0 {
-					return -f
-				}
-				return f
-			}
-		}
-	case "CONCAT":
-		var sb strings.Builder
-		for _, v := range a {
-			if v != nil {
-				sb.WriteString(toStr(v))
-			}
-		}
-		return sb.String()
-	case "REPLACE":
-		if len(a) == 3 {
-			return strings.ReplaceAll(toStr(a[0]), toStr(a[1]), toStr(a[2]))
-		}
-	case "SUBSTRING":
-		if len(a) == 3 {
-			start, _ := toInt(a[1])
-			length, _ := toInt(a[2])
-			return substr(toStr(a[0]), int(start), int(length))
-		}
-	case "YEAR":
-		if len(a) == 1 {
-			if t, ok := a[0].(time.Time); ok {
-				return int64(t.Year())
-			}
-		}
-	case "MONTH":
-		if len(a) == 1 {
-			if t, ok := a[0].(time.Time); ok {
-				return int64(t.Month())
-			}
-		}
-	case "DAY":
-		if len(a) == 1 {
-			if t, ok := a[0].(time.Time); ok {
-				return int64(t.Day())
-			}
-		}
-	case "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME":
-		return time.Now().UTC()
 	}
+	// Everything else (string / numeric / date / logical / catalog scalars) lives in its family file
+	// under catalog/funcs and resolves through the registry — see that package's *.go.
 	if v, ok := funcs.Eval(name, a); ok {
 		return v
 	}

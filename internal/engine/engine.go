@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
 	"github.com/RSKGroup/haystak-tds-spi/internal/infoschema"
 	"github.com/RSKGroup/haystak-tds-spi/internal/sysviews"
 	"github.com/RSKGroup/haystak-tds-spi/internal/tsql"
@@ -1015,7 +1016,6 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 	return agg, dbs, nil
 }
 
-const serverVersion = "Microsoft SQL Server 2022 (haystak-tds-spi gateway) - TDS 7.4"
 
 func probe(sql, db string) (tds.Rows, bool, error) {
 	u := strings.TrimSuffix(strings.TrimSpace(sql), ";")
@@ -1042,61 +1042,50 @@ func probe(sql, db string) (tds.Rows, bool, error) {
 	return rs, true, err
 }
 
+// probeValue answers a bare-SELECT scalar (e.g. `SELECT @@VERSION`). The current-database ones resolve
+// here; every other recognized scalar sources its value from the funcs registry (its family file).
 func probeValue(e, db string) (any, bool) {
 	if db == "" {
 		db = "master"
 	}
 	switch e {
-	case "@@VERSION":
-		return serverVersion, true
-	case "@@SPID":
-		return int64(1), true
-	case "@@SERVERNAME":
-		return "haystak-tds-spi", true
-	case "@@LANGUAGE":
-		return "us_english", true
-	case "@@ROWCOUNT", "@@ERROR", "@@TRANCOUNT", "@@FETCH_STATUS":
-		return int64(0), true
 	case "DB_NAME()", "ORIGINAL_DB_NAME()":
 		return db, true
-	case "SCHEMA_NAME()":
-		return "dbo", true
-	case "SYSTEM_USER", "CURRENT_USER", "SESSION_USER", "SUSER_NAME()", "SUSER_SNAME()", "USER_NAME()", "USER":
-		return "haystak", true
-	case "HOST_NAME()", "APP_NAME()":
-		return "haystak-tds-spi", true
 	}
-	switch {
-	case strings.HasPrefix(e, "SERVERPROPERTY("):
-		return serverProperty(e), true
-	case strings.HasPrefix(e, "DATABASEPROPERTYEX("):
-		return "ON", true
+	name, args := probeCall(e)
+	if !isProbeScalar(name) {
+		return nil, false
 	}
-	return nil, false
+	return funcs.Eval(name, args)
 }
 
-func serverProperty(e string) any {
-	arg := ""
-	if i := strings.Index(e, "'"); i >= 0 {
-		if j := strings.Index(e[i+1:], "'"); j >= 0 {
-			arg = e[i+1 : i+1+j]
-		}
+// probeCall splits a bare scalar into a function name + optional single string argument:
+// `@@VERSION` → (@@VERSION, nil); `USER_NAME()` → (USER_NAME, nil); `SERVERPROPERTY('X')` → (SERVERPROPERTY, [X]).
+func probeCall(e string) (string, []any) {
+	i := strings.IndexByte(e, '(')
+	if i < 0 {
+		return e, nil
 	}
-	switch arg {
-	case "PRODUCTVERSION":
-		return "16.0.1000.6"
-	case "PRODUCTLEVEL":
-		return "RTM"
-	case "EDITION":
-		return "Developer Edition (64-bit)"
-	case "ENGINEEDITION":
-		return int64(3)
-	case "COLLATION":
-		return "SQL_Latin1_General_CP1_CI_AS"
-	case "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY":
-		return int64(0)
+	name := strings.TrimSpace(e[:i])
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(e[i+1:]), ")"))
+	if inner == "" {
+		return name, nil
 	}
-	return ""
+	return name, []any{strings.Trim(inner, "'")}
+}
+
+// isProbeScalar gates probe to the connection-ping scalars it owns, so other registry functions still
+// flow through the normal parser/evaluator (which type their arguments).
+func isProbeScalar(name string) bool {
+	if strings.HasPrefix(name, "@@") {
+		return true
+	}
+	switch name {
+	case "SYSTEM_USER", "CURRENT_USER", "SESSION_USER", "USER", "USER_NAME", "SUSER_NAME", "SUSER_SNAME",
+		"HOST_NAME", "APP_NAME", "SCHEMA_NAME", "SERVERPROPERTY", "DATABASEPROPERTYEX":
+		return true
+	}
+	return false
 }
 
 func scalarRows(name string, t types.Type, val any) (tds.Rows, error) {
