@@ -157,13 +157,13 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `COL_NAME` | `internal/exec/value.go` | Y |
 | `COL_LENGTH` | `internal/exec/value.go` | Y |
 | `TYPE_ID` | `internal/extensions/functions/metadata.go` | Y |
-| `OBJECT_DEFINITION` |  | - |
+| `OBJECT_DEFINITION` | `internal/exec/value.go` | Y |
 | `OBJECTPROPERTY` | `internal/exec/value.go` | Y |
 | `OBJECTPROPERTYEX` | `internal/exec/value.go` | Y |
 | `COLUMNPROPERTY` | `internal/exec/value.go` | Y |
 | `INDEXPROPERTY` |  | - |
 | `INDEXKEY_PROPERTY` |  | - |
-| `STATS_DATE` |  | - |
+| `STATS_DATE` | `internal/extensions/functions/metadata.go` | Y |
 
 ### Configuration (`@@`)
 
@@ -201,14 +201,14 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `HOST_NAME` | `internal/extensions/functions/security.go` | Y |
 | `APP_NAME` | `internal/extensions/functions/security.go` | Y |
 | `ORIGINAL_DB_NAME` | `internal/engine/engine.go` | Y |
-| `USER_ID` |  | - |
-| `SUSER_ID` |  | - |
-| `IS_MEMBER` |  | - |
-| `IS_SRVROLEMEMBER` |  | - |
-| `IS_ROLEMEMBER` |  | - |
+| `USER_ID` | `internal/extensions/functions/security.go` | Y |
+| `SUSER_ID` | `internal/extensions/functions/security.go` | Y |
+| `IS_MEMBER` | `internal/extensions/functions/security.go` | Y |
+| `IS_SRVROLEMEMBER` | `internal/extensions/functions/security.go` | Y |
+| `IS_ROLEMEMBER` | `internal/extensions/functions/security.go` | Y |
 | `PERMISSIONS` |  | - |
 | `HAS_PERMS_BY_NAME` |  | - |
-| `ORIGINAL_LOGIN` |  | - |
+| `ORIGINAL_LOGIN` | `internal/extensions/functions/security.go` | Y |
 | `CONTEXT_INFO` |  | - |
 | `SESSION_CONTEXT` |  | - |
 

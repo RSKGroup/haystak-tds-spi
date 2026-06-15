@@ -38,6 +38,27 @@ func TestAggregateFunctions(t *testing.T) {
 	}
 }
 
+func TestSecurityPredicates(t *testing.T) {
+	r := qry(t, "SELECT USER_ID(), USER_ID('dbo'), SUSER_ID(), IS_MEMBER('public'), IS_MEMBER('sales'), ORIGINAL_LOGIN()")[0]
+	if cell(r[0]) != "1" || cell(r[1]) != "1" || cell(r[2]) != "1" {
+		t.Errorf("USER_ID/SUSER_ID = %v", r[0:3])
+	}
+	if cell(r[3]) != "1" || cell(r[4]) != "<nil>" {
+		t.Errorf("IS_MEMBER = %v/%v, want 1/NULL", r[3], r[4])
+	}
+	if cell(r[5]) != "haystak" {
+		t.Errorf("ORIGINAL_LOGIN = %v, want haystak", r[5])
+	}
+}
+
+func TestObjectDefinition(t *testing.T) {
+	// OBJECT_DEFINITION resolves via Env (SELECT projection), like OBJECT_NAME
+	def := cell(qry(t, "SELECT OBJECT_DEFINITION(OBJECT_ID('uspGetUser'))")[0][0])
+	if !strings.Contains(def, "uspGetUser") || !strings.Contains(def, "SELECT name FROM users") {
+		t.Errorf("OBJECT_DEFINITION = %q, want the uspGetUser body", def)
+	}
+}
+
 func TestSystemScalars(t *testing.T) {
 	id := cell(qry(t, "SELECT NEWID()")[0][0])
 	if len(id) != 36 || strings.Count(id, "-") != 4 {

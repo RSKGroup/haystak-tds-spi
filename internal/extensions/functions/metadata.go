@@ -31,6 +31,7 @@ func init() {
 		}
 		return nil
 	})
+	register("STATS_DATE", func([]any) any { return nil }) // no statistics maintained
 }
 
 // ObjectID maps an object name (bare, schema-qualified, or bracketed) to the stable id SQL Server

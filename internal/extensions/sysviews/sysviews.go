@@ -85,7 +85,7 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 	}
 	obj, db := exec.CatalogResolvers(schema, rts, dbs)
 	tbl, kind := exec.CatalogObjects(schema, rts)
-	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, CurrentDB: q.Database}
+	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, RoutineDef: exec.RoutineDefs(rts), CurrentDB: q.Database}
 	r, err := exec.ApplyWith(cols, data, q, env)
 	return r, true, err
 }

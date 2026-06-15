@@ -483,6 +483,7 @@ func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn
 			rts := listRoutines(ctx, b, currentDB(ctx))
 			env.ObjectName, env.DBName = exec.CatalogResolvers(schema, rts, dbs)
 			env.Table, env.ObjectKind = exec.CatalogObjects(schema, rts)
+			env.RoutineDef = exec.RoutineDefs(rts)
 		}
 	}
 	return env
@@ -514,7 +515,7 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 	}
 	if ve.Kind == tds.ValFunc {
 		switch ve.Func {
-		case "OBJECT_NAME", "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX":
+		case "OBJECT_NAME", "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION":
 			return true
 		case "DB_NAME":
 			if len(ve.Args) > 0 {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -343,6 +344,15 @@ func evalFunc(name string, a []any, env *Env) any {
 			}
 		}
 		return nil
+	case "OBJECT_DEFINITION":
+		if env != nil && env.RoutineDef != nil && len(a) >= 1 {
+			if oid, ok := toInt(a[0]); ok {
+				if def, ok := env.RoutineDef(oid); ok {
+					return def
+				}
+			}
+		}
+		return nil
 	}
 	// Everything else (string / numeric / date / logical / catalog scalars) lives in its family file
 	// under catalog/funcs and resolves through the registry — see that package's *.go.
@@ -387,6 +397,15 @@ func CatalogObjects(schema catalog.Schema, routines []*tds.Routine) (table func(
 	table = func(id int64) (catalog.Table, bool) { t, ok := tbls[id]; return t, ok }
 	kind = func(id int64) (string, bool) { k, ok := kinds[id]; return k, ok }
 	return table, kind
+}
+
+// RoutineDefs builds the OBJECT_DEFINITION resolver: object_id -> reconstructed CREATE text.
+func RoutineDefs(rts []*tds.Routine) func(int64) (string, bool) {
+	defs := map[int64]string{}
+	for _, r := range rts {
+		defs[functions.ObjectID(r.Name)] = routines.ScriptDefinition(r)
+	}
+	return func(id int64) (string, bool) { d, ok := defs[id]; return d, ok }
 }
 
 func routineKindCode(k tds.RoutineKind) string {
