@@ -30,32 +30,72 @@ generic SQL engine. **This directory supplies the SQL-Server-specific surface** 
 
 ### `funcs/` — scalar functions *(registry + engine `probe`)*
 
+Registry-backed scalar functions — **generated from the live registry**, one row per function naming its
+family file. Do not hand-edit between the markers; regenerate with
+`go test ./internal/extensions/catalog/funcs -run Readme -update`. The `inventory_test` Gordon-Ramsay
+check fails the build if this drifts from the code.
+
+<!-- BEGIN GENERATED: scalar-functions (go test ./internal/extensions/catalog/funcs -run Readme -update) -->
+
+**Catalog & metadata** — `catalog.go` · 10/19
+
+- ✓ `DB_ID`, `DB_NAME` *(exec.Env resolver)*, `OBJECT_ID`, `OBJECT_NAME` *(exec.Env resolver)*, `OBJECT_SCHEMA_NAME`, `SCHEMA_ID`, `SCHEMA_NAME`, `TYPE_NAME`, `HAS_DBACCESS`, `QUOTENAME`
+- ◻ `COL_NAME`, `COL_LENGTH`, `TYPE_ID`, `OBJECT_DEFINITION`, `OBJECTPROPERTY`, `OBJECTPROPERTYEX`, `COLUMNPROPERTY`, `INDEXPROPERTY`, `STATS_DATE`
+
+**String** — `string.go` · 10/31
+
+- ✓ `LEN`, `DATALEN`, `UPPER`, `LOWER`, `LTRIM`, `RTRIM`, `TRIM`, `SUBSTRING`, `REPLACE`, `CONCAT`
+- ◻ `CHARINDEX`, `PATINDEX`, `STUFF`, `LEFT`, `RIGHT`, `REPLICATE`, `SPACE`, `REVERSE`, `CONCAT_WS`, `STRING_AGG`, `STRING_SPLIT`, `STRING_ESCAPE`, `TRANSLATE`, `FORMATMESSAGE`, `UNICODE`, `NCHAR`, `CHAR`, `ASCII`, `SOUNDEX`, `DIFFERENCE`, `STR`
+
+**Numeric & math** — `math.go` · 1/23
+
+- ✓ `ABS`
+- ◻ `CEILING`, `FLOOR`, `ROUND`, `POWER`, `SQRT`, `SQUARE`, `EXP`, `LOG`, `LOG10`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATN2`, `PI`, `RAND`, `SIGN`, `DEGREES`, `RADIANS`
+
+**Date & time** — `datetime.go` · 7/21
+
+- ✓ `YEAR`, `MONTH`, `DAY`, `GETDATE`, `GETUTCDATE`, `SYSDATETIME`, `SYSUTCDATETIME`
+- ◻ `SYSDATETIMEOFFSET`, `CURRENT_TIMESTAMP`, `DATEADD`, `DATEDIFF`, `DATEDIFF_BIG`, `DATEPART`, `DATENAME`, `EOMONTH`, `DATEFROMPARTS`, `DATETIMEFROMPARTS`, `SWITCHOFFSET`, `TODATETIMEOFFSET`, `ISDATE`, `DATETRUNC`
+
+**Conversion** — `conversion.go` · 2/8
+
+- ✓ `CAST` *(tsql parser (ValCast))*, `CONVERT` *(tsql parser (ValCast))*
+- ◻ `TRY_CAST`, `TRY_CONVERT`, `PARSE`, `TRY_PARSE`, `FORMAT`, `STR`
+
+**Logical / NULL** — `logical.go` · 3/5
+
+- ✓ `ISNULL`, `COALESCE`, `NULLIF`
+- ◻ `IIF`, `CHOOSE`
+
+**Security & session identity** — `security.go` · 10/20
+
+- ✓ `SYSTEM_USER`, `CURRENT_USER`, `SESSION_USER`, `USER`, `USER_NAME`, `SUSER_NAME`, `SUSER_SNAME`, `HOST_NAME`, `APP_NAME`, `ORIGINAL_DB_NAME` *(engine probe (current database))*
+- ◻ `USER_ID`, `SUSER_ID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `IS_ROLEMEMBER`, `PERMISSIONS`, `HAS_PERMS_BY_NAME`, `ORIGINAL_LOGIN`, `CONTEXT_INFO`, `SESSION_CONTEXT`
+
+**Server & config** — `server.go` · 10/20
+
+- ✓ `@@VERSION`, `@@SERVERNAME`, `@@SPID`, `@@LANGUAGE`, `@@ROWCOUNT`, `@@ERROR`, `@@TRANCOUNT`, `@@FETCH_STATUS`, `SERVERPROPERTY`, `DATABASEPROPERTYEX`
+- ◻ `@@SERVICENAME`, `@@IDENTITY`, `@@NESTLEVEL`, `@@MAX_PRECISION`, `@@OPTIONS`, `@@DATEFIRST`, `@@LOCK_TIMEOUT`, `@@CURSOR_ROWS`, `@@PROCID`, `CONNECTIONPROPERTY`
+
+**JSON** — `json.go` · 0/7
+
+- ◻ `ISJSON`, `JSON_VALUE`, `JSON_QUERY`, `JSON_MODIFY`, `JSON_PATH_EXISTS`, `JSON_OBJECT`, `JSON_ARRAY`
+
+**Crypto & hashing** — `crypto.go` · 0/7
+
+- ◻ `HASHBYTES`, `CHECKSUM`, `BINARY_CHECKSUM`, `COMPRESS`, `DECOMPRESS`, `PWDENCRYPT`, `PWDCOMPARE`
+
+<!-- END GENERATED: scalar-functions -->
+
+Aggregate and window functions evaluate in the **core** (`exec/aggregate.go`, the parser), not the funcs
+registry, so they are tracked here by hand:
+
 | Group | Functions | Status |
 | --- | --- | --- |
-| Catalog & metadata | `DB_ID`, `DB_NAME`, `OBJECT_ID`, `OBJECT_NAME`, `OBJECT_SCHEMA_NAME`, `SCHEMA_ID`, `SCHEMA_NAME`, `TYPE_NAME`, `HAS_DBACCESS`, `QUOTENAME`, `ORIGINAL_DB_NAME` | ✓ |
-| Catalog & metadata | `COL_NAME`, `COL_LENGTH`, `TYPE_ID`, `OBJECT_DEFINITION`, `OBJECTPROPERTY(EX)`, `COLUMNPROPERTY`, `INDEXPROPERTY`, `INDEXKEY_PROPERTY`, `STATS_DATE`, `FILEGROUP_NAME`, `FILE_NAME` | ◻ |
-| Server & database props | `SERVERPROPERTY`, `DATABASEPROPERTYEX` | ✓ |
-| Server & database props | `CONNECTIONPROPERTY`, `ASSEMBLYPROPERTY`, `COLLATIONPROPERTY`, `FILEPROPERTY`, `FULLTEXTSERVICEPROPERTY` | ◻ |
-| Security & session identity | `SYSTEM_USER`, `CURRENT_USER`, `SESSION_USER`, `USER`, `USER_NAME`, `SUSER_NAME`, `SUSER_SNAME`, `HOST_NAME`, `APP_NAME` | ✓ |
-| Security & session identity | `USER_ID`, `SUSER_ID`, `SUSER_SID`, `IS_MEMBER`, `IS_SRVROLEMEMBER`, `IS_ROLEMEMBER`, `PERMISSIONS`, `HAS_PERMS_BY_NAME`, `ORIGINAL_LOGIN`, `CONTEXT_INFO`, `SESSION_CONTEXT` | ◻ |
-| `@@` config & session | `@@VERSION`, `@@SERVERNAME`, `@@SPID`, `@@LANGUAGE`, `@@ROWCOUNT`, `@@ERROR`, `@@TRANCOUNT`, `@@FETCH_STATUS` | ✓ |
-| `@@` config & session | `@@SERVICENAME`, `@@IDENTITY`, `@@NESTLEVEL`, `@@MAX_PRECISION`, `@@OPTIONS`, `@@DATEFIRST`, `@@LOCK_TIMEOUT`, `@@CURSOR_ROWS`, `@@PROCID`, `@@CONNECTIONS`, `@@CPU_BUSY`, `@@PACK_RECEIVED`, `@@TOTAL_ERRORS` | ◻ |
-| String | `LEN`, `DATALEN`, `UPPER`, `LOWER`, `LTRIM`, `RTRIM`, `TRIM`, `SUBSTRING`, `REPLACE`, `CONCAT` | ✓ |
-| String | `CHARINDEX`, `PATINDEX`, `STUFF`, `LEFT`, `RIGHT`, `REPLICATE`, `SPACE`, `REVERSE`, `CONCAT_WS`, `STRING_AGG`, `STRING_SPLIT`, `STRING_ESCAPE`, `TRANSLATE`, `FORMATMESSAGE`, `UNICODE`, `NCHAR`, `CHAR`, `ASCII`, `SOUNDEX`, `DIFFERENCE`, `STR` | ◻ |
-| Numeric & math | `ABS` | ✓ |
-| Numeric & math | `CEILING`, `FLOOR`, `ROUND`, `POWER`, `SQRT`, `SQUARE`, `EXP`, `LOG`, `LOG10`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATN2`, `PI`, `RAND`, `SIGN`, `DEGREES`, `RADIANS` | ◻ |
-| Date & time | `GETDATE`, `GETUTCDATE`, `SYSDATETIME`, `SYSUTCDATETIME`, `YEAR`, `MONTH`, `DAY` | ✓ |
-| Date & time | `SYSDATETIMEOFFSET`, `CURRENT_TIMESTAMP`, `DATEADD`, `DATEDIFF`, `DATEDIFF_BIG`, `DATEPART`, `DATENAME`, `*FROMPARTS`, `EOMONTH`, `SWITCHOFFSET`, `TODATETIMEOFFSET`, `ISDATE`, `DATETRUNC` | ◻ |
-| Conversion | `CAST`, `CONVERT` (basic — style ignored) | ✓ |
-| Conversion | `TRY_CAST`, `TRY_CONVERT`, `PARSE`, `TRY_PARSE`, `FORMAT`, `CONVERT` styles | ◻ |
-| Logical / NULL | `ISNULL`, `COALESCE`, `NULLIF`, `CASE` (searched + simple) | ✓ |
-| Logical / NULL | `IIF`, `CHOOSE` | ◻ |
-| Aggregate | `COUNT`, `SUM`, `MIN`, `MAX`, `AVG` (+ GROUP BY / HAVING, aggregate-over-expression) | ✓ |
-| Aggregate | `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `GROUPING`, `GROUPING_ID`, `CHECKSUM_AGG`, `STRING_AGG`, `APPROX_COUNT_DISTINCT` | ◻ |
-| Window & ranking | `OVER`/`PARTITION BY`, `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`, `PERCENT_RANK`, `CUME_DIST`, `PERCENTILE_CONT/DISC`, framed/running aggregates (`ROWS`/`RANGE`) | ◻ |
-| JSON | `ISJSON`, `JSON_VALUE`, `JSON_QUERY`, `JSON_MODIFY`, `JSON_PATH_EXISTS`, `JSON_OBJECT`, `JSON_ARRAY`, `OPENJSON`, `FOR JSON` | ◻ |
-| XML | `xml` type, `.value()`/`.query()`/`.nodes()`/`.exist()`/`.modify()`, `FOR XML`, `OPENXML` | ◻ |
-| Crypto & hashing | `HASHBYTES`, `CHECKSUM`, `BINARY_CHECKSUM`, `COMPRESS`, `DECOMPRESS`, `ENCRYPTBYKEY`/`DECRYPTBYKEY`, `PWDENCRYPT`, `PWDCOMPARE` | ◻ |
+| Aggregate — `exec/aggregate.go` | `COUNT`, `SUM`, `MIN`, `MAX`, `AVG` (+ GROUP BY / HAVING, aggregate-over-expression) | ✓ |
+| Aggregate — `exec/aggregate.go` | `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `GROUPING`, `GROUPING_ID`, `CHECKSUM_AGG`, `STRING_AGG`, `APPROX_COUNT_DISTINCT` | ◻ |
+| Window & ranking — `tsql`/`exec` | `OVER`/`PARTITION BY`, `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, `FIRST_VALUE`, `LAST_VALUE`, `PERCENT_RANK`, `CUME_DIST`, `PERCENTILE_CONT/DISC` | ◻ |
+| XML — `tsql`/`exec` | `xml` type, `.value()`/`.query()`/`.nodes()`/`.exist()`/`.modify()`, `FOR XML`, `OPENXML` | ◻ |
 
 ### `sys.*` catalog views *(today in `internal/sysviews`)*
 
