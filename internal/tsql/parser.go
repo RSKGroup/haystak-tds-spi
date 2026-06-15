@@ -891,7 +891,7 @@ func (p *parser) optAlias() string {
 
 func isAggName(s string) bool {
 	switch strings.ToUpper(s) {
-	case "COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_BIG", "STDEV", "STDEVP", "VAR", "VARP", "STRING_AGG":
+	case "COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_BIG", "STDEV", "STDEVP", "VAR", "VARP", "STRING_AGG", "CHECKSUM_AGG", "APPROX_COUNT_DISTINCT":
 		return true
 	}
 	return false
@@ -921,6 +921,10 @@ func aggOf(s string) tds.AggFunc {
 		return tds.AggVarp
 	case "STRING_AGG":
 		return tds.AggStringAgg
+	case "CHECKSUM_AGG":
+		return tds.AggChecksumAgg
+	case "APPROX_COUNT_DISTINCT":
+		return tds.AggApproxCountDistinct
 	}
 	return tds.AggNone
 }

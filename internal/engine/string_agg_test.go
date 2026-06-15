@@ -25,6 +25,17 @@ func TestStringAggGrouped(t *testing.T) {
 	}
 }
 
+func TestChecksumAggAndApproxCountDistinct(t *testing.T) {
+	// orders amounts 100,200,50 -> CHECKSUM_AGG XOR = 158; user_ids {1,2,2} -> 2 distinct.
+	r := qry(t, "SELECT CHECKSUM_AGG(amount), APPROX_COUNT_DISTINCT(user_id) FROM orders")[0]
+	if cell(r[0]) != "158" {
+		t.Errorf("CHECKSUM_AGG = %v, want 158", r[0])
+	}
+	if cell(r[1]) != "2" {
+		t.Errorf("APPROX_COUNT_DISTINCT = %v, want 2", r[1])
+	}
+}
+
 func TestStringAggSeparatorRequired(t *testing.T) {
 	if _, err := engine.Query(context.Background(), inmem.New(), "SELECT STRING_AGG(amount) FROM orders"); err == nil {
 		t.Fatal("STRING_AGG without a separator should be a parse error")

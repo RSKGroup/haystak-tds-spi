@@ -7,7 +7,7 @@ A broad SQL Server surface expansion — additive, no breaking changes. The one 
 
 Functions:
 
-- Aggregate: `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `STRING_AGG` (with separator; `WITHIN GROUP` ordering not yet supported).
+- Aggregate: `COUNT_BIG`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `STRING_AGG`, `CHECKSUM_AGG`, `APPROX_COUNT_DISTINCT` (with separator; `WITHIN GROUP` ordering not yet supported).
 - String: `CHARINDEX`, `PATINDEX`, `LEFT`, `RIGHT`, `REPLICATE`, `STUFF`, `REVERSE`, `SPACE`, `ASCII`, `CHAR`, `UNICODE`, `NCHAR`, `CONCAT_WS`, `TRANSLATE`, `STR`, `STRING_ESCAPE`.
 - Date & time: `DATEADD`, `DATEDIFF`, `DATEDIFF_BIG`, `DATEPART`, `DATENAME`, `DATETRUNC`, `EOMONTH`, `DATEFROMPARTS`, `DATETIMEFROMPARTS`, `ISDATE`, `CURRENT_TIMESTAMP`, `SYSDATETIMEOFFSET` (month-end clamping on date math).
 - Mathematical: `CEILING`, `FLOOR`, `ROUND`, `POWER`, `SQRT`, `SQUARE`, `EXP`, `LOG`, `LOG10`, `SIN`, `COS`, `TAN`, `COT`, `ASIN`, `ACOS`, `ATAN`, `ATN2`, `PI`, `RAND`, `SIGN`, `DEGREES`, `RADIANS`.

@@ -57,6 +57,8 @@ const (
 	AggVar
 	AggVarp
 	AggStringAgg
+	AggChecksumAgg
+	AggApproxCountDistinct
 )
 
 // SelectItem is one entry in the select list: a plain column, an aggregate, an expression, or a window.

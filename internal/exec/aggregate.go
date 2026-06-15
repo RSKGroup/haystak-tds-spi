@@ -158,17 +158,19 @@ func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o 
 
 // aggByName is the aggregate dispatch table; its keys are the wired set AggregateNames reports.
 var aggByName = map[string]tds.AggFunc{
-	"COUNT":      tds.AggCount,
-	"SUM":        tds.AggSum,
-	"AVG":        tds.AggAvg,
-	"MIN":        tds.AggMin,
-	"MAX":        tds.AggMax,
-	"COUNT_BIG":  tds.AggCountBig,
-	"STDEV":      tds.AggStdev,
-	"STDEVP":     tds.AggStdevp,
-	"VAR":        tds.AggVar,
-	"VARP":       tds.AggVarp,
-	"STRING_AGG": tds.AggStringAgg,
+	"COUNT":                 tds.AggCount,
+	"SUM":                   tds.AggSum,
+	"AVG":                   tds.AggAvg,
+	"MIN":                   tds.AggMin,
+	"MAX":                   tds.AggMax,
+	"COUNT_BIG":             tds.AggCountBig,
+	"STDEV":                 tds.AggStdev,
+	"STDEVP":                tds.AggStdevp,
+	"VAR":                   tds.AggVar,
+	"VARP":                  tds.AggVarp,
+	"STRING_AGG":            tds.AggStringAgg,
+	"CHECKSUM_AGG":          tds.AggChecksumAgg,
+	"APPROX_COUNT_DISTINCT": tds.AggApproxCountDistinct,
 }
 
 func aggFuncFromName(name string) tds.AggFunc {
@@ -361,6 +363,11 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 			if name == "" {
 				name = "agg"
 			}
+		case tds.AggChecksumAgg, tds.AggApproxCountDistinct:
+			typ = types.Type{Kind: types.Int64}
+			if name == "" {
+				name = "agg"
+			}
 		}
 		out = append(out, catalog.Column{Name: name, Type: typ})
 	}
@@ -389,6 +396,30 @@ func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, erro
 // "" for COUNT-all); idx is the pre-aggregation column index.
 func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]any) (any, error) {
 	switch fn {
+	case tds.AggChecksumAgg:
+		i, ok := resolveCol(idx, arg)
+		if !ok {
+			return nil, fmt.Errorf("exec: unknown column %q in CHECKSUM_AGG", arg)
+		}
+		var acc int64 // XOR is order-independent, matching CHECKSUM_AGG semantics
+		for _, r := range rows {
+			if n, ok := toInt(r[i]); ok {
+				acc ^= n
+			}
+		}
+		return acc, nil
+	case tds.AggApproxCountDistinct:
+		i, ok := resolveCol(idx, arg)
+		if !ok {
+			return nil, fmt.Errorf("exec: unknown column %q in APPROX_COUNT_DISTINCT", arg)
+		}
+		seen := map[string]bool{}
+		for _, r := range rows {
+			if r[i] != nil {
+				seen[fmt.Sprintf("%v", r[i])] = true
+			}
+		}
+		return int64(len(seen)), nil
 	case tds.AggStringAgg:
 		i, ok := resolveCol(idx, arg)
 		if !ok {

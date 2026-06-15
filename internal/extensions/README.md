@@ -24,9 +24,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `VARP` | `internal/exec/aggregate.go` | Y |
 | `GROUPING` |  | - |
 | `GROUPING_ID` |  | - |
-| `CHECKSUM_AGG` |  | - |
+| `CHECKSUM_AGG` | `internal/exec/aggregate.go` | Y |
 | `STRING_AGG` | `internal/exec/aggregate.go` | Y |
-| `APPROX_COUNT_DISTINCT` |  | - |
+| `APPROX_COUNT_DISTINCT` | `internal/exec/aggregate.go` | Y |
 
 ### String
 
