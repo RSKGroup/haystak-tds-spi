@@ -92,8 +92,9 @@ results with them.
 | `sys.objects` — tables + views + procs (`V`/`P`); `FN`/`TR` still ◻ | ✓ |
 | `sys.sql_modules` (reconstructed CREATE body), `sys.views`, `sys.procedures`, `sys.parameters` | ✓ |
 | `sys.sql_expression_dependencies` | ◻ |
-| `sys.indexes`, `sys.index_columns`, `sys.key_constraints`, `sys.foreign_key_columns`, `sys.check_constraints`, `sys.default_constraints` | ◻ |
-| `sys.identity_columns`, `sys.computed_columns`, `sys.triggers`, `sys.partitions`, `sys.tables` extended cols, `sys.extended_properties` | ◻ |
+| `sys.indexes`, `sys.index_columns`, `sys.key_constraints`, `sys.foreign_key_columns`, `sys.check_constraints`, `sys.default_constraints` | ✓ |
+| `sys.identity_columns`, `sys.computed_columns` | ✓ |
+| `sys.triggers`, `sys.partitions`, `sys.tables` extended cols, `sys.extended_properties` | ◻ |
 | `sys.database_principals`, `sys.server_principals`, `sys.database_permissions`, `sys.schemas` perms | ◻ |
 | `sys.dm_exec_sessions`, `sys.dm_exec_connections`, `sys.dm_exec_requests`, `sys.dm_os_*` (DMVs) | ◻ |
 | compat views: `sys.sysobjects`, `sys.syscolumns`, `sys.systypes`, `sys.sysindexes`, `sys.sysusers` | ◻ |

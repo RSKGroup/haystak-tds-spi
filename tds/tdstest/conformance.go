@@ -70,6 +70,20 @@ func RunConformance(t testing.TB, b tds.Backend) {
 	mustQuery(t, b, "SELECT * FROM "+first)
 	mustQuery(t, b, "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
 
+	// Relational metadata views must resolve against any backend's declared schema (keys/indexes/columns).
+	for _, sql := range []string{
+		"SELECT object_id, name, index_id, type_desc FROM sys.indexes",
+		"SELECT object_id, index_id, column_id, key_ordinal FROM sys.index_columns",
+		"SELECT name, object_id, parent_object_id, type FROM sys.key_constraints",
+		"SELECT constraint_object_id, parent_object_id, referenced_object_id FROM sys.foreign_key_columns",
+		"SELECT name, parent_object_id, definition FROM sys.check_constraints",
+		"SELECT name, parent_object_id, definition FROM sys.default_constraints",
+		"SELECT object_id, name, column_id, is_identity FROM sys.identity_columns",
+		"SELECT object_id, name, column_id, definition FROM sys.computed_columns",
+	} {
+		mustQuery(t, b, sql)
+	}
+
 	if caps.Routines {
 		conformRoutines(t, b)
 	}

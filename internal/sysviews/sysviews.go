@@ -48,6 +48,22 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = typesRows()
 	case "foreign_keys":
 		cols, data = foreignKeysRows(schema)
+	case "indexes":
+		cols, data = indexesRows(schema)
+	case "index_columns":
+		cols, data = indexColumnsRows(schema)
+	case "key_constraints":
+		cols, data = keyConstraintsRows(schema)
+	case "foreign_key_columns":
+		cols, data = foreignKeyColumnsRows(schema)
+	case "check_constraints":
+		cols, data = checkConstraintsRows(schema)
+	case "default_constraints":
+		cols, data = defaultConstraintsRows(schema)
+	case "identity_columns":
+		cols, data = identityColumnsRows(schema)
+	case "computed_columns":
+		cols, data = computedColumnsRows(schema)
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -240,6 +256,190 @@ func foreignKeysRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	return cols, rows
 }
 
+// tableIndexes returns a table's declared indexes, synthesizing the clustered PK index from PrimaryKey
+// when no explicit primary index was declared (SQL Server always backs a PK with an index).
+func tableIndexes(t catalog.Table) []catalog.Index {
+	idxs := append([]catalog.Index{}, t.Indexes...)
+	for _, ix := range idxs {
+		if ix.Primary {
+			return idxs
+		}
+	}
+	if len(t.PrimaryKey) > 0 {
+		pk := catalog.Index{Name: "PK_" + t.Name, Columns: t.PrimaryKey, Unique: true, Primary: true, Clustered: true}
+		idxs = append([]catalog.Index{pk}, idxs...)
+	}
+	return idxs
+}
+
+func indexesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("object_id"), sname("name"), intc("index_id"), intc("type"), sname("type_desc"),
+		intc("is_unique"), intc("is_primary_key"), intc("is_unique_constraint"), intc("is_disabled"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for i, ix := range tableIndexes(t) {
+			typ, desc := int64(2), "NONCLUSTERED"
+			if ix.Clustered {
+				typ, desc = 1, "CLUSTERED"
+			}
+			rows = append(rows, []any{
+				oid(t.Name), ix.Name, int64(i + 1), typ, desc,
+				boolInt(ix.Unique), boolInt(ix.Primary), boolInt(ix.Unique && !ix.Primary), int64(0),
+			})
+		}
+	}
+	return cols, rows
+}
+
+func indexColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("object_id"), intc("index_id"), intc("index_column_id"), intc("column_id"),
+		intc("key_ordinal"), intc("is_descending_key"), intc("is_included_column"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for i, ix := range tableIndexes(t) {
+			for j, c := range ix.Columns {
+				rows = append(rows, []any{
+					oid(t.Name), int64(i + 1), int64(j + 1), colID(t, c), int64(j + 1), int64(0), int64(0),
+				})
+			}
+		}
+	}
+	return cols, rows
+}
+
+func keyConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("object_id"), intc("parent_object_id"), intc("schema_id"),
+		sname("type"), sname("type_desc"), intc("unique_index_id"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for i, ix := range tableIndexes(t) {
+			switch {
+			case ix.Primary:
+				rows = append(rows, []any{ix.Name, oid(ix.Name), oid(t.Name), int64(1), "PK", "PRIMARY_KEY_CONSTRAINT", int64(i + 1)})
+			case ix.Unique:
+				rows = append(rows, []any{ix.Name, oid(ix.Name), oid(t.Name), int64(1), "UQ", "UNIQUE_CONSTRAINT", int64(i + 1)})
+			}
+		}
+	}
+	return cols, rows
+}
+
+func foreignKeyColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("constraint_object_id"), intc("constraint_column_id"), intc("parent_object_id"),
+		intc("parent_column_id"), intc("referenced_object_id"), intc("referenced_column_id"),
+	}
+	byName := tableByName(schema)
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for _, fk := range t.ForeignKeys {
+			cname := "FK_" + t.Name + "_" + fk.RefTable
+			ref := byName[strings.ToLower(fk.RefTable)]
+			for k, c := range fk.Columns {
+				var refOID, refColID int64
+				if ref != nil {
+					refOID = oid(ref.Name)
+					if k < len(fk.RefColumns) {
+						refColID = colID(*ref, fk.RefColumns[k])
+					}
+				}
+				rows = append(rows, []any{oid(cname), int64(k + 1), oid(t.Name), colID(t, c), refOID, refColID})
+			}
+		}
+	}
+	return cols, rows
+}
+
+func checkConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("object_id"), intc("parent_object_id"), intc("schema_id"),
+		sname("type"), sname("type_desc"), sname("definition"), intc("is_disabled"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for _, ck := range t.Checks {
+			rows = append(rows, []any{ck.Name, oid(ck.Name), oid(t.Name), int64(1), "C", "CHECK_CONSTRAINT", ck.Expression, int64(0)})
+		}
+	}
+	return cols, rows
+}
+
+func defaultConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("object_id"), intc("parent_object_id"), intc("parent_column_id"),
+		intc("schema_id"), sname("type"), sname("type_desc"), sname("definition"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for j, c := range t.Columns {
+			if c.Default == "" {
+				continue
+			}
+			name := "DF_" + t.Name + "_" + c.Name
+			rows = append(rows, []any{name, oid(name), oid(t.Name), int64(j + 1), int64(1), "D", "DEFAULT_CONSTRAINT", c.Default})
+		}
+	}
+	return cols, rows
+}
+
+func identityColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("object_id"), sname("name"), intc("column_id"), intc("system_type_id"),
+		intc("is_identity"), intc("seed_value"), intc("increment_value"), nintc("last_value"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for j, c := range t.Columns {
+			if !c.Identity {
+				continue
+			}
+			rows = append(rows, []any{oid(t.Name), c.Name, int64(j + 1), sysTypeID(c.Type), int64(1), int64(1), int64(1), nil})
+		}
+	}
+	return cols, rows
+}
+
+func computedColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("object_id"), sname("name"), intc("column_id"), sname("definition"),
+		intc("is_persisted"), intc("is_computed"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for j, c := range t.Columns {
+			if c.Computed == "" {
+				continue
+			}
+			rows = append(rows, []any{oid(t.Name), c.Name, int64(j + 1), c.Computed, int64(0), int64(1)})
+		}
+	}
+	return cols, rows
+}
+
+// colID is a column's 1-based ordinal within its table (the column_id the catalog reports).
+func colID(t catalog.Table, name string) int64 {
+	for i, c := range t.Columns {
+		if strings.EqualFold(c.Name, name) {
+			return int64(i + 1)
+		}
+	}
+	return 0
+}
+
+func tableByName(schema catalog.Schema) map[string]*catalog.Table {
+	m := map[string]*catalog.Table{}
+	for i := range schema.Tables {
+		m[strings.ToLower(schema.Tables[i].Name)] = &schema.Tables[i]
+	}
+	return m
+}
+
 // oid is the one object_id scheme, shared with OBJECT_ID/OBJECT_NAME so the catalog views join.
 func oid(name string) int64 { return funcs.ObjectID(name) }
 
@@ -260,6 +460,9 @@ func sname(n string) catalog.Column {
 }
 func intc(n string) catalog.Column {
 	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64}}
+}
+func nintc(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64, Nullable: true}}
 }
 
 func sysTypeID(t types.Type) int64 {
