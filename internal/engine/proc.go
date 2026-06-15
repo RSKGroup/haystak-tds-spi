@@ -53,6 +53,10 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 		return spHelpconstraint(ctx, b, args)
 	case "sp_helpdb":
 		return spHelpdb(ctx, b, args)
+	case "sp_configure":
+		return spConfigure(ctx, b, args)
+	case "sp_lock":
+		return spLock(ctx, b, args)
 	case "sp_server_info":
 		return spServerInfo(ctx, b, args)
 	case "sp_datatype_info", "sp_datatype_info_100":
@@ -688,6 +692,38 @@ var datatypeInfoRows = []datatypeRow{
 	{name: "time", dataType: 92, prec: 16, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 41},
 	{name: "datetime", dataType: 93, prec: 23, prefix: "'", suffix: "'", money: 0, minScale: int64(3), maxScale: int64(3), userType: 61},
 	{name: "datetime2", dataType: 93, prec: 27, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 42},
+}
+
+// spConfigure lists server configuration options (no-argument form): name + min/max/config/run values.
+func spConfigure(_ context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{sn("name"), in32("minimum"), in32("maximum"), in32("config_value"), in32("run_value")}
+	opts := []struct {
+		name          string
+		min, max, val int64
+	}{
+		{"cost threshold for parallelism", 0, 32767, 5},
+		{"fill factor (%)", 0, 100, 0},
+		{"max degree of parallelism", 0, 32767, 0},
+		{"max server memory (MB)", 16, 2147483647, 2147483647},
+		{"min server memory (MB)", 0, 2147483647, 0},
+		{"optimize for ad hoc workloads", 0, 1, 0},
+	}
+	var data [][]any
+	for _, o := range opts {
+		data = append(data, []any{o.name, o.min, o.max, o.val, o.val})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spLock is the legacy lock report: empty, no lock manager exists.
+func spLock(_ context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{
+		in16("spid"), in16("dbid"), in32("ObjId"), in16("IndId"), str32("Type"),
+		nstr("Resource"), str32("Mode"), str32("Status"),
+	}
+	rs, err := exec.Apply(cols, nil, &tds.Query{})
+	return rs, true, err
 }
 
 // spHelpdb lists the databases (no-argument form): name, size, owner, dbid, status, compat level.

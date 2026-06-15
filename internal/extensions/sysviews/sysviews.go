@@ -90,6 +90,12 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Prin
 		cols, data = databaseRoleMembersRows(p)
 	case "sysusers":
 		cols, data = sysusersRows(p)
+	case "sysindexes":
+		cols, data = sysindexesRows(schema)
+	case "database_permissions":
+		cols, data = databasePermissionsRows()
+	case "server_permissions":
+		cols, data = serverPermissionsRows()
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -636,6 +642,36 @@ func sysusersRows(p tds.Principal) ([]catalog.Column, [][]any) {
 }
 
 func isWellKnownName(name string) bool { _, ok := wellKnownID(name); return ok }
+
+// sysindexesRows is the legacy sys.sysindexes compatibility view over the declared indexes.
+func sysindexesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{intc("id"), sname("name"), intc("indid")}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for i, ix := range TableIndexes(t) {
+			rows = append(rows, []any{oid(t.Name), ix.Name, int64(i + 1)})
+		}
+	}
+	return cols, rows
+}
+
+// databasePermissionsRows is sys.database_permissions: empty, no grants are tracked.
+func databasePermissionsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("class"), sname("class_desc"), intc("major_id"), intc("minor_id"),
+		intc("grantee_principal_id"), sname("permission_name"), sname("state"), sname("state_desc"),
+	}
+	return cols, nil
+}
+
+// serverPermissionsRows is sys.server_permissions: empty, no grants are tracked.
+func serverPermissionsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("class"), sname("class_desc"), intc("major_id"),
+		intc("grantee_principal_id"), sname("permission_name"), sname("state_desc"),
+	}
+	return cols, nil
+}
 
 // tableTypesRows is sys.table_types: a projection over the backend's declared table types (empty if none).
 func tableTypesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {

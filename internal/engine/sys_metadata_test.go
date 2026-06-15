@@ -198,6 +198,35 @@ func TestSysTableTypes(t *testing.T) {
 	}
 }
 
+func TestSysIndexesCompatAndPermissionsEmpty(t *testing.T) {
+	got := map[string]bool{}
+	for _, r := range qry(t, "SELECT name FROM sys.sysindexes WHERE id = OBJECT_ID('products')") {
+		got[cell(r[0])] = true
+	}
+	if !got["PK_products"] || !got["UX_products_sku"] {
+		t.Errorf("sys.sysindexes = %v, want PK_products + UX_products_sku", got)
+	}
+	if rows := qry(t, "SELECT permission_name FROM sys.database_permissions"); len(rows) != 0 {
+		t.Errorf("sys.database_permissions = %v, want empty", rows)
+	}
+	if rows := qry(t, "SELECT permission_name FROM sys.server_permissions"); len(rows) != 0 {
+		t.Errorf("sys.server_permissions = %v, want empty", rows)
+	}
+}
+
+func TestSpConfigureAndLock(t *testing.T) {
+	cfg := map[string]bool{}
+	for _, r := range qry(t, "EXEC sp_configure") {
+		cfg[cell(r[0])] = true
+	}
+	if !cfg["max degree of parallelism"] || !cfg["max server memory (MB)"] {
+		t.Errorf("sp_configure = %v, want MAXDOP + max memory options", cfg)
+	}
+	if rows := qry(t, "EXEC sp_lock"); len(rows) != 0 {
+		t.Errorf("sp_lock = %v, want empty", rows)
+	}
+}
+
 func TestSpHelpdb(t *testing.T) {
 	names := map[string]bool{}
 	for _, r := range qry(t, "EXEC sp_helpdb") {

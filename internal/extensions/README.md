@@ -347,8 +347,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | --- | --- | --- |
 | `sys.database_principals` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.server_principals` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.database_permissions` |  | - |
-| `sys.server_permissions` |  | - |
+| `sys.database_permissions` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.server_permissions` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.database_role_members` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Dynamic management views
@@ -368,7 +368,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.sysobjects` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.syscolumns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.systypes` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.sysindexes` |  | - |
+| `sys.sysindexes` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sysusers` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ---
@@ -436,8 +436,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_rename` |  | - |
 | `sp_addextendedproperty` |  | - |
 | `sp_who` |  | - |
-| `sp_lock` |  | - |
-| `sp_configure` |  | - |
+| `sp_lock` | `internal/engine/proc.go` | Y |
+| `sp_configure` | `internal/engine/proc.go` | Y |
 
 ---
 
