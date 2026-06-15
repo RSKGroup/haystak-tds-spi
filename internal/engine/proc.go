@@ -51,6 +51,8 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 		return spHelpindex(ctx, b, args)
 	case "sp_helpconstraint":
 		return spHelpconstraint(ctx, b, args)
+	case "sp_helpdb":
+		return spHelpdb(ctx, b, args)
 	case "sp_server_info":
 		return spServerInfo(ctx, b, args)
 	case "sp_datatype_info", "sp_datatype_info_100":
@@ -686,6 +688,28 @@ var datatypeInfoRows = []datatypeRow{
 	{name: "time", dataType: 92, prec: 16, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 41},
 	{name: "datetime", dataType: 93, prec: 23, prefix: "'", suffix: "'", money: 0, minScale: int64(3), maxScale: int64(3), userType: 61},
 	{name: "datetime2", dataType: 93, prec: 27, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 42},
+}
+
+// spHelpdb lists the databases (no-argument form): name, size, owner, dbid, status, compat level.
+func spHelpdb(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	_, dbs, err := introspectSchema(ctx, b, &tds.Query{})
+	if err != nil {
+		return nil, true, err
+	}
+	cols := []catalog.Column{
+		sn("name"), str32("db_size"), sn("owner"), in16("dbid"), nstr("created"), nstr("status"), in16("compatibility_level"),
+	}
+	id := int64(0)
+	row := func(name string) []any {
+		id++
+		return []any{name, "       16.00 MB", "sa", id, nil, "Status=ONLINE", int64(160)}
+	}
+	data := [][]any{row("master"), row("tempdb"), row("model"), row("msdb")}
+	for _, db := range dbs {
+		data = append(data, row(db))
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{OrderBy: []tds.OrderItem{{Column: "name"}}})
+	return rs, true, err
 }
 
 // findTable looks up one table by name in a database. introspectSchema returns an empty schema for a

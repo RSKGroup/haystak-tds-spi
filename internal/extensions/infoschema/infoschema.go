@@ -54,6 +54,10 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, q *tds.Query) (rows tds.
 		cols, data = viewTableUsageRows(schema, rts)
 	case "ROUTINE_COLUMNS":
 		cols, data = routineColumnsRows()
+	case "CONSTRAINT_TABLE_USAGE":
+		cols, data = constraintTableUsageRows(schema)
+	case "DOMAINS":
+		cols, data = domainsRows()
 	default:
 		return nil, true, fmt.Errorf("infoschema: INFORMATION_SCHEMA.%s not supported", q.Table)
 	}
@@ -330,6 +334,35 @@ func routineColumnsRows() ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"), strCol("COLUMN_NAME"),
 		intCol("ORDINAL_POSITION"), strCol("IS_NULLABLE"), strCol("DATA_TYPE"),
+		nintCol("CHARACTER_MAXIMUM_LENGTH"), nintCol("NUMERIC_PRECISION"), nintCol("NUMERIC_SCALE"),
+	}
+	return cols, nil
+}
+
+// constraintTableUsageRows is INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE: one row per (table, constraint),
+// the PK on its own table and each FK on its referenced table.
+func constraintTableUsageRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"),
+		strCol("CONSTRAINT_CATALOG"), strCol("CONSTRAINT_SCHEMA"), strCol("CONSTRAINT_NAME"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		cat := catalogOf(t)
+		if len(t.PrimaryKey) > 0 {
+			rows = append(rows, []any{cat, schemaName, t.Name, cat, schemaName, "PK_" + t.Name})
+		}
+		for _, fk := range t.ForeignKeys {
+			rows = append(rows, []any{cat, schemaName, fk.RefTable, cat, schemaName, "FK_" + t.Name + "_" + fk.RefTable})
+		}
+	}
+	return cols, rows
+}
+
+// domainsRows is INFORMATION_SCHEMA.DOMAINS: empty, no user-defined domains exist.
+func domainsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("DOMAIN_CATALOG"), strCol("DOMAIN_SCHEMA"), strCol("DOMAIN_NAME"), strCol("DATA_TYPE"),
 		nintCol("CHARACTER_MAXIMUM_LENGTH"), nintCol("NUMERIC_PRECISION"), nintCol("NUMERIC_SCALE"),
 	}
 	return cols, nil

@@ -32,7 +32,7 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = schemasRows()
 	case "tables":
 		cols, data = tablesRows(schema)
-	case "objects":
+	case "objects", "all_objects":
 		cols, data = objectsRows(schema, rts)
 	case "views":
 		cols, data = viewsRows(rts)
@@ -42,7 +42,7 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = sqlModulesRows(rts)
 	case "parameters":
 		cols, data = parametersRows(rts)
-	case "columns":
+	case "columns", "all_columns":
 		cols, data = columnsRows(schema)
 	case "types":
 		cols, data = typesRows()
@@ -70,6 +70,16 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = triggersRows(rts)
 	case "extended_properties":
 		cols, data = extendedPropertiesRows()
+	case "sequences":
+		cols, data = sequencesRows()
+	case "synonyms":
+		cols, data = synonymsRows()
+	case "sysobjects":
+		cols, data = sysobjectsRows(schema, rts)
+	case "syscolumns":
+		cols, data = syscolumnsRows(schema)
+	case "systypes":
+		cols, data = systypesRows()
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -509,6 +519,58 @@ func objectNameSet(schema catalog.Schema, rts []*tds.Routine) map[string]bool {
 		m[strings.ToLower(r.Name)] = true
 	}
 	return m
+}
+
+// sequencesRows is sys.sequences: empty, no sequences are modeled.
+func sequencesRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("object_id"), intc("schema_id"),
+		intc("start_value"), intc("increment"), intc("current_value"), intc("is_cycling"),
+	}
+	return cols, nil
+}
+
+// synonymsRows is sys.synonyms: empty, no synonyms are modeled.
+func synonymsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("object_id"), intc("schema_id"), sname("base_object_name")}
+	return cols, nil
+}
+
+// sysobjectsRows is the legacy sys.sysobjects compatibility view (id/xtype/uid naming).
+func sysobjectsRows(schema catalog.Schema, rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("id"), sname("xtype"), intc("uid")}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		rows = append(rows, []any{t.Name, oid(t.Name), "U", int64(1)})
+	}
+	for _, r := range rts {
+		x, _ := routineTypeCodes(r.Kind)
+		rows = append(rows, []any{r.Name, oid(r.Name), strings.TrimSpace(x), int64(1)})
+	}
+	return cols, rows
+}
+
+// syscolumnsRows is the legacy sys.syscolumns compatibility view (id/colid/xtype naming).
+func syscolumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("id"), intc("colid"), intc("xtype"), intc("length"), intc("isnullable")}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for j, c := range t.Columns {
+			rows = append(rows, []any{c.Name, oid(t.Name), int64(j + 1), sysTypeID(c.Type), sysTypeLen(c.Type), boolInt(c.Type.Nullable)})
+		}
+	}
+	return cols, rows
+}
+
+// systypesRows is the legacy sys.systypes compatibility view, reusing the modern sys.types data.
+func systypesRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("xtype"), intc("xusertype"), intc("length")}
+	_, src := typesRows()
+	var rows [][]any
+	for _, r := range src {
+		rows = append(rows, []any{r[0], r[1], r[2], r[4]}) // name, system_type_id, user_type_id, max_length
+	}
+	return cols, rows
 }
 
 // colID is a column's 1-based ordinal within its table (the column_id the catalog reports).

@@ -138,6 +138,65 @@ func TestSysExtendedProperties(t *testing.T) {
 	}
 }
 
+func TestSysAllObjectsAndColumns(t *testing.T) {
+	objs := nameSet(t, "SELECT name FROM sys.all_objects")
+	if !objs["products"] || !objs["vActiveProducts"] {
+		t.Errorf("sys.all_objects = %v, want products + vActiveProducts", objs)
+	}
+	cols := qry(t, "SELECT name FROM sys.all_columns WHERE object_id = OBJECT_ID('products')")
+	if len(cols) == 0 {
+		t.Error("sys.all_columns returned no products columns")
+	}
+}
+
+func TestSysSequencesSynonymsEmpty(t *testing.T) {
+	if rows := qry(t, "SELECT name FROM sys.sequences"); len(rows) != 0 {
+		t.Errorf("sys.sequences = %v, want empty", rows)
+	}
+	if rows := qry(t, "SELECT name FROM sys.synonyms"); len(rows) != 0 {
+		t.Errorf("sys.synonyms = %v, want empty", rows)
+	}
+}
+
+func TestSysLegacyCompatViews(t *testing.T) {
+	got := map[string]string{}
+	for _, r := range qry(t, "SELECT name, xtype FROM sys.sysobjects") {
+		got[cell(r[0])] = cell(r[1])
+	}
+	if got["products"] != "U" || got["vActiveProducts"] != "V" {
+		t.Errorf("sys.sysobjects = %v, want products=U, vActiveProducts=V", got)
+	}
+	if cols := qry(t, "SELECT name FROM sys.syscolumns WHERE id = OBJECT_ID('products')"); len(cols) == 0 {
+		t.Error("sys.syscolumns returned no products columns")
+	}
+	if types := nameSet(t, "SELECT name FROM sys.systypes"); !types["int"] || !types["nvarchar"] {
+		t.Errorf("sys.systypes = %v, want int + nvarchar", types)
+	}
+}
+
+func TestInfoSchemaConstraintTableUsageAndDomains(t *testing.T) {
+	got := map[string]bool{}
+	for _, r := range qry(t, "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE") {
+		got[cell(r[1])+":"+cell(r[0])] = true
+	}
+	if !got["PK_products:products"] || !got["FK_product_tags_products:products"] {
+		t.Errorf("CONSTRAINT_TABLE_USAGE = %v", got)
+	}
+	if rows := qry(t, "SELECT DOMAIN_NAME FROM INFORMATION_SCHEMA.DOMAINS"); len(rows) != 0 {
+		t.Errorf("DOMAINS = %v, want empty", rows)
+	}
+}
+
+func TestSpHelpdb(t *testing.T) {
+	names := map[string]bool{}
+	for _, r := range qry(t, "EXEC sp_helpdb") {
+		names[cell(r[0])] = true
+	}
+	if !names["master"] || !names["model"] {
+		t.Errorf("sp_helpdb = %v, want master + model", names)
+	}
+}
+
 // objectID resolves OBJECT_ID('name') through the engine so tests compare against the live id scheme.
 func objectID(t *testing.T, name string) any {
 	t.Helper()

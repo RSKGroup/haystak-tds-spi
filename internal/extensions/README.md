@@ -294,10 +294,10 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.sql_modules` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.parameters` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.triggers` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.all_objects` |  | - |
+| `sys.all_objects` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.system_objects` |  | - |
-| `sys.sequences` |  | - |
-| `sys.synonyms` |  | - |
+| `sys.sequences` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.synonyms` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Columns & types
 
@@ -307,7 +307,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.types` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.identity_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.computed_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.all_columns` |  | - |
+| `sys.all_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.table_types` |  | - |
 
 ### Indexes & keys
@@ -365,9 +365,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `sys.sysobjects` |  | - |
-| `sys.syscolumns` |  | - |
-| `sys.systypes` |  | - |
+| `sys.sysobjects` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.syscolumns` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.systypes` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sysindexes` |  | - |
 | `sys.sysusers` |  | - |
 
@@ -387,9 +387,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.CHECK_CONSTRAINTS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
-| `INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE` |  | - |
+| `INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.SCHEMATA` | `internal/extensions/infoschema/infoschema.go` | Y |
-| `INFORMATION_SCHEMA.DOMAINS` |  | - |
+| `INFORMATION_SCHEMA.DOMAINS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.ROUTINE_COLUMNS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.VIEW_TABLE_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE` |  | - |
@@ -424,7 +424,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_helptext` | `internal/engine/proc.go` | Y |
 | `sp_helpindex` | `internal/engine/proc.go` | Y |
 | `sp_helpconstraint` | `internal/engine/proc.go` | Y |
-| `sp_helpdb` |  | - |
+| `sp_helpdb` | `internal/engine/proc.go` | Y |
 | `sp_helptrigger` |  | - |
 | `sp_depends` |  | - |
 
