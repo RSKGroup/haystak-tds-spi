@@ -70,7 +70,19 @@ func RunConformance(t testing.TB, b tds.Backend) {
 	mustQuery(t, b, "SELECT * FROM "+first)
 	mustQuery(t, b, "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
 
-	// Relational metadata views must resolve against any backend's declared schema (keys/indexes/columns).
+	// Exercise the metadata views and driver procs under a database that actually has tables — multi-db
+	// backends keep user tables out of master, so we scope to a real one to hit real keys and indexes.
+	metaCtx, metaTable := ctx, first
+	if d, ok := b.(tds.Databaser); ok {
+		if dbs, err := d.Databases(ctx); err == nil {
+			for _, db := range dbs {
+				if s, derr := d.DescribeDatabase(ctx, db); derr == nil && len(s.Tables) > 0 {
+					metaCtx, metaTable = engine.WithDatabase(ctx, db), s.Tables[0].Name
+					break
+				}
+			}
+		}
+	}
 	for _, sql := range []string{
 		"SELECT object_id, name, index_id, type_desc FROM sys.indexes",
 		"SELECT object_id, index_id, column_id, key_ordinal FROM sys.index_columns",
@@ -80,8 +92,16 @@ func RunConformance(t testing.TB, b tds.Backend) {
 		"SELECT name, parent_object_id, definition FROM sys.default_constraints",
 		"SELECT object_id, name, column_id, is_identity FROM sys.identity_columns",
 		"SELECT object_id, name, column_id, definition FROM sys.computed_columns",
+		"EXEC sp_pkeys '" + metaTable + "'",
+		"EXEC sp_fkeys @fktable_name = '" + metaTable + "'",
+		"EXEC sp_statistics '" + metaTable + "'",
+		"EXEC sp_special_columns '" + metaTable + "'",
+		"EXEC sp_stored_procedures",
+		"EXEC sp_sproc_columns '" + metaTable + "'",
+		"EXEC sp_helpindex '" + metaTable + "'",
+		"EXEC sp_helpconstraint '" + metaTable + "'",
 	} {
-		mustQuery(t, b, sql)
+		mustQueryCtx(t, metaCtx, b, sql)
 	}
 
 	if caps.Routines {
@@ -207,8 +227,13 @@ func rowsOf(t testing.TB, ctx context.Context, b tds.Backend, sql string) [][]an
 
 // mustQuery drives the real gateway engine end-to-end and drains the result.
 func mustQuery(t testing.TB, b tds.Backend, sql string) {
+	mustQueryCtx(t, context.Background(), b, sql)
+}
+
+// mustQueryCtx is mustQuery under a chosen context (so the session's current database can be set).
+func mustQueryCtx(t testing.TB, ctx context.Context, b tds.Backend, sql string) {
 	t.Helper()
-	rs, err := engine.Query(context.Background(), b, sql)
+	rs, err := engine.Query(ctx, b, sql)
 	if err != nil {
 		t.Fatalf("engine.Query(%q): %v", sql, err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/internal/infoschema"
+	"github.com/RSKGroup/haystak-tds-spi/internal/sysviews"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -34,6 +35,22 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 		return spHelptext(ctx, b, args)
 	case "sp_help":
 		return spHelp(ctx, b, args)
+	case "sp_pkeys":
+		return spPkeys(ctx, b, args)
+	case "sp_fkeys":
+		return spFkeys(ctx, b, args)
+	case "sp_statistics":
+		return spStatistics(ctx, b, args)
+	case "sp_special_columns":
+		return spSpecialColumns(ctx, b, args)
+	case "sp_stored_procedures":
+		return spStoredProcedures(ctx, b, args)
+	case "sp_sproc_columns":
+		return spSprocColumns(ctx, b, args)
+	case "sp_helpindex":
+		return spHelpindex(ctx, b, args)
+	case "sp_helpconstraint":
+		return spHelpconstraint(ctx, b, args)
 	default:
 		if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
 			return rs, true, err
@@ -325,6 +342,313 @@ func routineTypeLabel(k tds.RoutineKind) string {
 	default:
 		return "view"
 	}
+}
+
+// spPkeys is the ODBC/JDBC getPrimaryKeys backing proc: the PK columns of a table, in key order.
+func spPkeys(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@table_name", 0))
+	qualifier := defaultQualifier(ctx, arg(args, "@table_qualifier", 2))
+	cols := []catalog.Column{sn("TABLE_QUALIFIER"), sn("TABLE_OWNER"), sn("TABLE_NAME"), sn("COLUMN_NAME"), in16("KEY_SEQ"), sn("PK_NAME")}
+	var data [][]any
+	if t, ok, err := findTable(ctx, b, qualifier, table); err != nil {
+		return nil, true, err
+	} else if ok {
+		for i, c := range t.PrimaryKey {
+			data = append(data, []any{catOf(t, qualifier), "dbo", t.Name, c, int64(i + 1), "PK_" + t.Name})
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spFkeys is the getImportedKeys/getExportedKeys backing proc: FK column pairs, filtered by the PK
+// and/or FK table name.
+func spFkeys(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	pktable := unqualifyProc(arg(args, "@pktable_name", 0))
+	fktable := unqualifyProc(arg(args, "@fktable_name", 3))
+	qualifier := defaultQualifier(ctx, arg(args, "@fktable_qualifier", 5))
+	cols := []catalog.Column{
+		sn("PKTABLE_QUALIFIER"), sn("PKTABLE_OWNER"), sn("PKTABLE_NAME"), sn("PKCOLUMN_NAME"),
+		sn("FKTABLE_QUALIFIER"), sn("FKTABLE_OWNER"), sn("FKTABLE_NAME"), sn("FKCOLUMN_NAME"),
+		in16("KEY_SEQ"), in16("UPDATE_RULE"), in16("DELETE_RULE"), sn("FK_NAME"), sn("PK_NAME"), in16("DEFERRABILITY"),
+	}
+	var data [][]any
+	schema, _, err := introspectSchema(ctx, b, &tds.Query{Database: qualifier})
+	if err != nil {
+		return nil, true, err
+	}
+	for _, t := range schema.Tables {
+		if fktable != "" && !strings.EqualFold(t.Name, fktable) {
+			continue
+		}
+		for _, fk := range t.ForeignKeys {
+			if pktable != "" && !strings.EqualFold(fk.RefTable, pktable) {
+				continue
+			}
+			for k, c := range fk.Columns {
+				pkcol := ""
+				if k < len(fk.RefColumns) {
+					pkcol = fk.RefColumns[k]
+				}
+				data = append(data, []any{
+					qualifier, "dbo", fk.RefTable, pkcol, qualifier, "dbo", t.Name, c,
+					int64(k + 1), int64(1), int64(1), "FK_" + t.Name + "_" + fk.RefTable, "PK_" + fk.RefTable, int64(7),
+				})
+			}
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spStatistics is the getIndexInfo backing proc: one row per index column.
+func spStatistics(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@table_name", 0))
+	qualifier := defaultQualifier(ctx, arg(args, "@table_qualifier", 2))
+	cols := []catalog.Column{
+		sn("TABLE_QUALIFIER"), sn("TABLE_OWNER"), sn("TABLE_NAME"), in16("NON_UNIQUE"), sn("INDEX_QUALIFIER"),
+		sn("INDEX_NAME"), in16("TYPE"), in16("SEQ_IN_INDEX"), sn("COLUMN_NAME"), str32("COLLATION"),
+		in32("CARDINALITY"), in32("PAGES"), nstr("FILTER_CONDITION"),
+	}
+	var data [][]any
+	if t, ok, err := findTable(ctx, b, qualifier, table); err != nil {
+		return nil, true, err
+	} else if ok {
+		for _, ix := range sysviews.TableIndexes(t) {
+			nonUnique, typ := int64(1), int64(3)
+			if ix.Unique {
+				nonUnique = 0
+			}
+			if ix.Clustered {
+				typ = 1
+			}
+			for k, c := range ix.Columns {
+				data = append(data, []any{
+					catOf(t, qualifier), "dbo", t.Name, nonUnique, qualifier, ix.Name, typ, int64(k + 1), c, "A", nil, nil, nil,
+				})
+			}
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spSpecialColumns is the getBestRowIdentifier backing proc: the PK columns as the best row id.
+func spSpecialColumns(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@table_name", 0))
+	qualifier := defaultQualifier(ctx, arg(args, "@table_qualifier", 2))
+	cols := []catalog.Column{
+		in16("SCOPE"), sn("COLUMN_NAME"), in16("DATA_TYPE"), sn("TYPE_NAME"),
+		in32("PRECISION"), in32("LENGTH"), in16("SCALE"), in16("PSEUDO_COLUMN"),
+	}
+	var data [][]any
+	if t, ok, err := findTable(ctx, b, qualifier, table); err != nil {
+		return nil, true, err
+	} else if ok {
+		for _, c := range t.PrimaryKey {
+			cd, found := colDef(t, c)
+			if !found {
+				continue
+			}
+			data = append(data, []any{
+				int64(0), c, odbcType(cd.Type), infoschema.TypeName(cd.Type),
+				typePrecision(cd.Type), typeLength(cd.Type), typeScale(cd.Type), int64(1),
+			})
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spStoredProcedures is the getProcedures backing proc: stored procedures and functions.
+func spStoredProcedures(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	qualifier := defaultQualifier(ctx, arg(args, "@procedure_qualifier", 2))
+	namePat := arg(args, "@procedure_name", 0)
+	cols := []catalog.Column{
+		sn("PROCEDURE_QUALIFIER"), sn("PROCEDURE_OWNER"), sn("PROCEDURE_NAME"),
+		in32("NUM_INPUT_PARAMS"), in32("NUM_OUTPUT_PARAMS"), in32("NUM_RESULT_SETS"), nstr("REMARKS"), in16("PROCEDURE_TYPE"),
+	}
+	var data [][]any
+	for _, r := range listRoutines(ctx, b, qualifier) {
+		if r.Kind != tds.RoutineProc && r.Kind != tds.RoutineFunc {
+			continue
+		}
+		if !matchLike(r.Name, namePat) {
+			continue
+		}
+		ptype := int64(1)
+		if r.Kind == tds.RoutineFunc {
+			ptype = 2
+		}
+		data = append(data, []any{qualifier, "dbo", r.Name + ";1", int64(len(r.Params)), int64(0), int64(-1), nil, ptype})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spSprocColumns is the getProcedureColumns backing proc: a procedure's/function's parameters.
+func spSprocColumns(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	proc := unqualifyProc(arg(args, "@procedure_name", 0))
+	qualifier := defaultQualifier(ctx, arg(args, "@procedure_qualifier", 2))
+	cols := []catalog.Column{
+		sn("PROCEDURE_QUALIFIER"), sn("PROCEDURE_OWNER"), sn("PROCEDURE_NAME"), sn("COLUMN_NAME"),
+		in16("COLUMN_TYPE"), in16("DATA_TYPE"), sn("TYPE_NAME"), in32("PRECISION"), in32("LENGTH"),
+		in16("SCALE"), in16("RADIX"), in16("NULLABLE"), nstr("REMARKS"),
+	}
+	var data [][]any
+	for _, r := range listRoutines(ctx, b, qualifier) {
+		if !strings.EqualFold(r.Name, proc) {
+			continue
+		}
+		for _, p := range r.Params {
+			ty := declType(p.Type)
+			data = append(data, []any{
+				qualifier, "dbo", r.Name + ";1", p.Name, int64(1), odbcType(ty), infoschema.TypeName(ty),
+				typePrecision(ty), typeLength(ty), typeScale(ty), typeRadix(ty), int64(1), nil,
+			})
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spHelpindex is the SSMS index summary: name, description, and key columns per index.
+func spHelpindex(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@objname", 0))
+	qualifier := currentDB(ctx)
+	cols := []catalog.Column{sn("index_name"), nstr("index_description"), nstr("index_keys")}
+	var data [][]any
+	if t, ok, err := findTable(ctx, b, qualifier, table); err != nil {
+		return nil, true, err
+	} else if ok {
+		for _, ix := range sysviews.TableIndexes(t) {
+			data = append(data, []any{ix.Name, indexDesc(ix), strings.Join(ix.Columns, ", ")})
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// spHelpconstraint is the SSMS constraint summary: PK / FK / CHECK / DEFAULT on a table.
+func spHelpconstraint(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	table := unqualifyProc(arg(args, "@objname", 0))
+	qualifier := currentDB(ctx)
+	cols := []catalog.Column{sn("constraint_type"), sn("constraint_name"), nstr("constraint_keys")}
+	var data [][]any
+	if t, ok, err := findTable(ctx, b, qualifier, table); err != nil {
+		return nil, true, err
+	} else if ok {
+		if len(t.PrimaryKey) > 0 {
+			data = append(data, []any{"PRIMARY KEY (clustered)", "PK_" + t.Name, strings.Join(t.PrimaryKey, ", ")})
+		}
+		for _, fk := range t.ForeignKeys {
+			keys := strings.Join(fk.Columns, ", ") + " REFERENCES " + fk.RefTable + " (" + strings.Join(fk.RefColumns, ", ") + ")"
+			data = append(data, []any{"FOREIGN KEY", "FK_" + t.Name + "_" + fk.RefTable, keys})
+		}
+		for _, ck := range t.Checks {
+			data = append(data, []any{"CHECK", ck.Name, ck.Expression})
+		}
+		for _, c := range t.Columns {
+			if c.Default != "" {
+				data = append(data, []any{"DEFAULT on column " + c.Name, "DF_" + t.Name + "_" + c.Name, c.Default})
+			}
+		}
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+// findTable looks up one table by name in a database. introspectSchema returns an empty schema for a
+// multi-db backend's non-existent database (e.g. master), and all tables for a single-db backend.
+func findTable(ctx context.Context, b tds.Backend, qualifier, name string) (catalog.Table, bool, error) {
+	if name == "" {
+		return catalog.Table{}, false, nil
+	}
+	schema, _, err := introspectSchema(ctx, b, &tds.Query{Database: qualifier})
+	if err != nil {
+		return catalog.Table{}, false, err
+	}
+	for _, t := range schema.Tables {
+		if strings.EqualFold(t.Name, name) {
+			return t, true, nil
+		}
+	}
+	return catalog.Table{}, false, nil
+}
+
+func colDef(t catalog.Table, name string) (catalog.Column, bool) {
+	for _, c := range t.Columns {
+		if strings.EqualFold(c.Name, name) {
+			return c, true
+		}
+	}
+	return catalog.Column{}, false
+}
+
+func indexDesc(ix catalog.Index) string {
+	parts := []string{"nonclustered"}
+	if ix.Clustered {
+		parts[0] = "clustered"
+	}
+	if ix.Unique {
+		parts = append(parts, "unique")
+	}
+	if ix.Primary {
+		parts = append(parts, "primary key")
+	}
+	return strings.Join(parts, ", ") + " located on PRIMARY"
+}
+
+// declType maps a declared T-SQL type ("int", "nvarchar(50)", "decimal(10,2)") to the value model.
+func declType(decl string) types.Type {
+	s := strings.ToLower(strings.TrimSpace(decl))
+	inner := ""
+	if i := strings.IndexByte(s, '('); i >= 0 {
+		if j := strings.IndexByte(s, ')'); j > i {
+			inner = s[i+1 : j]
+		}
+		s = strings.TrimSpace(s[:i])
+	}
+	t := types.Type{}
+	switch s {
+	case "bit":
+		t.Kind = types.Bool
+	case "tinyint", "smallint", "int", "integer":
+		t.Kind = types.Int32
+	case "bigint":
+		t.Kind = types.Int64
+	case "real", "float":
+		t.Kind = types.Float64
+	case "decimal", "dec", "numeric", "money", "smallmoney":
+		t.Kind = types.Decimal
+	case "date", "time", "datetime", "datetime2", "smalldatetime":
+		t.Kind = types.Time
+	case "uniqueidentifier":
+		t.Kind = types.UUID
+	case "binary", "varbinary", "image":
+		t.Kind = types.Bytes
+	default:
+		t.Kind = types.String
+	}
+	if inner != "" {
+		if t.Kind == types.Decimal {
+			parts := strings.SplitN(inner, ",", 2)
+			t.Precision = atoiOr(parts[0], 18)
+			if len(parts) == 2 {
+				t.Scale = atoiOr(parts[1], 0)
+			}
+		} else if n, err := strconv.Atoi(strings.TrimSpace(inner)); err == nil {
+			t.MaxLen = n
+		}
+	}
+	return t
+}
+
+func atoiOr(s string, d int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+		return n
+	}
+	return d
 }
 
 // defaultQualifier uses the explicit @table_qualifier if given, else the session's current database.

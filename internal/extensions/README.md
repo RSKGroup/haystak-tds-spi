@@ -113,8 +113,9 @@ results with them.
 | --- | --- |
 | `sp_databases`, `sp_tables`, `sp_columns` | ✓ |
 | `sp_helptext`, `sp_help` | ✓ |
-| `sp_helpdb`, `sp_helpindex`, `sp_helpconstraint` | ◻ |
-| `sp_pkeys`, `sp_fkeys`, `sp_special_columns`, `sp_statistics`, `sp_stored_procedures`, `sp_sproc_columns` | ◻ |
+| `sp_helpindex`, `sp_helpconstraint` | ✓ |
+| `sp_helpdb` | ◻ |
+| `sp_pkeys`, `sp_fkeys`, `sp_special_columns`, `sp_statistics`, `sp_stored_procedures`, `sp_sproc_columns` | ✓ |
 | `sp_server_info`, `sp_datatype_info`, `sp_tables_ex`, `sp_columns_ex`, `sp_table_privileges`, `sp_column_privileges` | ◻ |
 
 ---

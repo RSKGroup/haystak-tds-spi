@@ -256,9 +256,9 @@ func foreignKeysRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	return cols, rows
 }
 
-// tableIndexes returns a table's declared indexes, synthesizing the clustered PK index from PrimaryKey
+// TableIndexes returns a table's declared indexes, synthesizing the clustered PK index from PrimaryKey
 // when no explicit primary index was declared (SQL Server always backs a PK with an index).
-func tableIndexes(t catalog.Table) []catalog.Index {
+func TableIndexes(t catalog.Table) []catalog.Index {
 	idxs := append([]catalog.Index{}, t.Indexes...)
 	for _, ix := range idxs {
 		if ix.Primary {
@@ -279,7 +279,7 @@ func indexesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		for i, ix := range tableIndexes(t) {
+		for i, ix := range TableIndexes(t) {
 			typ, desc := int64(2), "NONCLUSTERED"
 			if ix.Clustered {
 				typ, desc = 1, "CLUSTERED"
@@ -300,7 +300,7 @@ func indexColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		for i, ix := range tableIndexes(t) {
+		for i, ix := range TableIndexes(t) {
 			for j, c := range ix.Columns {
 				rows = append(rows, []any{
 					oid(t.Name), int64(i + 1), int64(j + 1), colID(t, c), int64(j + 1), int64(0), int64(0),
@@ -318,7 +318,7 @@ func keyConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		for i, ix := range tableIndexes(t) {
+		for i, ix := range TableIndexes(t) {
 			switch {
 			case ix.Primary:
 				rows = append(rows, []any{ix.Name, oid(ix.Name), oid(t.Name), int64(1), "PK", "PRIMARY_KEY_CONSTRAINT", int64(i + 1)})
