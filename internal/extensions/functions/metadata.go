@@ -25,6 +25,12 @@ func init() {
 		}
 		return nil
 	})
+	register("TYPE_ID", func(a []any) any {
+		if id, ok := typeIDByName[strings.ToLower(argStr(a, 0))]; ok {
+			return id
+		}
+		return nil
+	})
 }
 
 // ObjectID maps an object name (bare, schema-qualified, or bracketed) to the stable id SQL Server
@@ -65,6 +71,15 @@ var sysTypeNames = map[int64]string{
 	122: "smallmoney", 127: "bigint", 165: "varbinary", 167: "varchar", 173: "binary",
 	175: "char", 231: "nvarchar", 239: "nchar", 241: "xml",
 }
+
+// typeIDByName reverses sysTypeNames for TYPE_ID (name -> system_type_id).
+var typeIDByName = func() map[string]int64 {
+	m := make(map[string]int64, len(sysTypeNames))
+	for id, name := range sysTypeNames {
+		m[name] = id
+	}
+	return m
+}()
 
 // dbIDOf maps a database name to a stable non-zero id (system dbs keep their canonical ids).
 func dbIDOf(name string) int64 {

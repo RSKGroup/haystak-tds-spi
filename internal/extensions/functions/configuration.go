@@ -15,6 +15,15 @@ func init() {
 	register("@@ERROR", zeroInt)
 	register("@@TRANCOUNT", zeroInt)
 	register("@@FETCH_STATUS", zeroInt)
+	register("@@IDENTITY", func([]any) any { return nil })
+	register("@@PROCID", func([]any) any { return nil })
+	register("@@SERVICENAME", func([]any) any { return "MSSQLSERVER" })
+	register("@@NESTLEVEL", zeroInt)
+	register("@@CURSOR_ROWS", zeroInt)
+	register("@@MAX_PRECISION", func([]any) any { return int64(38) })
+	register("@@DATEFIRST", func([]any) any { return int64(7) })
+	register("@@LOCK_TIMEOUT", func([]any) any { return int64(-1) })
+	register("@@OPTIONS", func([]any) any { return int64(5496) })
 }
 
 func zeroInt([]any) any { return int64(0) }

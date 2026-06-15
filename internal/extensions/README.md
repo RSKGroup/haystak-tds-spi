@@ -156,7 +156,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `HAS_DBACCESS` | `internal/extensions/functions/metadata.go` | Y |
 | `COL_NAME` |  | - |
 | `COL_LENGTH` |  | - |
-| `TYPE_ID` |  | - |
+| `TYPE_ID` | `internal/extensions/functions/metadata.go` | Y |
 | `OBJECT_DEFINITION` |  | - |
 | `OBJECTPROPERTY` |  | - |
 | `OBJECTPROPERTYEX` |  | - |
@@ -177,15 +177,15 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `@@ERROR` | `internal/extensions/functions/configuration.go` | Y |
 | `@@TRANCOUNT` | `internal/extensions/functions/configuration.go` | Y |
 | `@@FETCH_STATUS` | `internal/extensions/functions/configuration.go` | Y |
-| `@@IDENTITY` |  | - |
-| `@@SERVICENAME` |  | - |
-| `@@NESTLEVEL` |  | - |
-| `@@MAX_PRECISION` |  | - |
-| `@@OPTIONS` |  | - |
-| `@@DATEFIRST` |  | - |
-| `@@LOCK_TIMEOUT` |  | - |
-| `@@CURSOR_ROWS` |  | - |
-| `@@PROCID` |  | - |
+| `@@IDENTITY` | `internal/extensions/functions/configuration.go` | Y |
+| `@@SERVICENAME` | `internal/extensions/functions/configuration.go` | Y |
+| `@@NESTLEVEL` | `internal/extensions/functions/configuration.go` | Y |
+| `@@MAX_PRECISION` | `internal/extensions/functions/configuration.go` | Y |
+| `@@OPTIONS` | `internal/extensions/functions/configuration.go` | Y |
+| `@@DATEFIRST` | `internal/extensions/functions/configuration.go` | Y |
+| `@@LOCK_TIMEOUT` | `internal/extensions/functions/configuration.go` | Y |
+| `@@CURSOR_ROWS` | `internal/extensions/functions/configuration.go` | Y |
+| `@@PROCID` | `internal/extensions/functions/configuration.go` | Y |
 
 ### Security
 
