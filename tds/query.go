@@ -59,15 +59,24 @@ const (
 	AggStringAgg
 )
 
-// SelectItem is one entry in the select list: a plain column, an aggregate, or an expression.
+// SelectItem is one entry in the select list: a plain column, an aggregate, an expression, or a window.
 type SelectItem struct {
-	Column  string     // plain column reference
-	Agg     AggFunc    // aggregate function (AggNone for a plain column)
-	Arg     string     // aggregate argument column ("*" for COUNT(*))
-	ArgExpr *ValueExpr // aggregate argument expression (e.g. MAX(CASE …)); nil for a plain column arg
-	Sep     string     // STRING_AGG separator literal
-	Expr    *ValueExpr // scalar expression (nil unless this item is computed)
-	Alias   string     // output column name (optional)
+	Column  string      // plain column reference
+	Agg     AggFunc     // aggregate function (AggNone for a plain column)
+	Arg     string      // aggregate argument column ("*" for COUNT(*))
+	ArgExpr *ValueExpr  // aggregate argument expression (e.g. MAX(CASE …)); nil for a plain column arg
+	Sep     string      // STRING_AGG separator literal
+	Expr    *ValueExpr  // scalar expression (nil unless this item is computed)
+	Window  *WindowSpec // window function over an OVER clause (nil otherwise)
+	Alias   string      // output column name (optional)
+}
+
+// WindowSpec is a window function call: FUNC(args) OVER (PARTITION BY … ORDER BY …).
+type WindowSpec struct {
+	Func        string
+	Args        []*ValueExpr
+	PartitionBy []string
+	OrderBy     []OrderItem
 }
 
 // ValueKind tags the variant of a ValueExpr scalar expression.

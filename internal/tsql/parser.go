@@ -484,11 +484,55 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 	if err != nil {
 		return tds.SelectItem{}, err
 	}
+	if ve.Kind == tds.ValFunc && p.peek().kind == tIdent && strings.EqualFold(p.peek().text, "OVER") {
+		win, err := p.overClause(ve)
+		if err != nil {
+			return tds.SelectItem{}, err
+		}
+		return tds.SelectItem{Window: win, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+	}
 	alias := aliasOr(leadAlias, p.optAlias())
 	if ve.Kind == tds.ValCol {
 		return tds.SelectItem{Column: ve.Col, Alias: alias}, nil
 	}
 	return tds.SelectItem{Expr: ve, Alias: alias}, nil
+}
+
+// overClause parses OVER (PARTITION BY … ORDER BY …) for a window function call.
+func (p *parser) overClause(fn *tds.ValueExpr) (*tds.WindowSpec, error) {
+	p.next() // OVER
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after OVER, got %q", p.peek().text)
+	}
+	p.next()
+	w := &tds.WindowSpec{Func: strings.ToUpper(fn.Func), Args: fn.Args}
+	if p.peek().kind == tIdent && strings.EqualFold(p.peek().text, "PARTITION") {
+		p.next()
+		if err := p.expectKeyword("BY"); err != nil {
+			return nil, err
+		}
+		cols, err := p.identList()
+		if err != nil {
+			return nil, err
+		}
+		w.PartitionBy = cols
+	}
+	if p.isKeyword("ORDER") {
+		p.next()
+		if err := p.expectKeyword("BY"); err != nil {
+			return nil, err
+		}
+		items, err := p.orderList()
+		if err != nil {
+			return nil, err
+		}
+		w.OrderBy = items
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after OVER clause, got %q", p.peek().text)
+	}
+	p.next()
+	return w, nil
 }
 
 func aliasOr(lead, trail string) string {

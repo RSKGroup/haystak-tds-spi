@@ -52,7 +52,7 @@ func allCases() []Case {
 	for _, group := range [][]Case{
 		stringCases, mathCases, datetimeCases, logicalCases, jsonCases, cryptoCases,
 		metadataCases, securityCases, systemCases, conversionCases, aggregateCases,
-		sysviewCases, infoschemaCases, procCases, languageCases,
+		windowCases, sysviewCases, infoschemaCases, procCases, languageCases,
 	} {
 		all = append(all, group...)
 	}

@@ -45,7 +45,13 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds
 		return aggregate(mCols, indexCols(mCols), mRows, &q2, env)
 	}
 
-	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, q.Select, env)
+	wCols, wRows, wSel, err := materializeWindows(cols, idx, filtered, q.Select, env)
+	if err != nil {
+		return nil, err
+	}
+	cols, filtered, idx = wCols, wRows, indexCols(wCols)
+
+	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, wSel, env)
 	if err != nil {
 		return nil, err
 	}

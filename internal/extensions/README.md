@@ -235,12 +235,12 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `ROW_NUMBER` |  | - |
-| `RANK` |  | - |
-| `DENSE_RANK` |  | - |
+| `ROW_NUMBER` | `internal/exec/window.go` | Y |
+| `RANK` | `internal/exec/window.go` | Y |
+| `DENSE_RANK` | `internal/exec/window.go` | Y |
 | `NTILE` |  | - |
-| `LAG` |  | - |
-| `LEAD` |  | - |
+| `LAG` | `internal/exec/window.go` | Y |
+| `LEAD` | `internal/exec/window.go` | Y |
 | `FIRST_VALUE` |  | - |
 | `LAST_VALUE` |  | - |
 | `PERCENT_RANK` |  | - |
