@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
-	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
-	"github.com/RSKGroup/haystak-tds-spi/internal/infoschema"
-	"github.com/RSKGroup/haystak-tds-spi/internal/sysviews"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/infoschema"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/sysviews"
 	"github.com/RSKGroup/haystak-tds-spi/internal/tsql"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -1016,7 +1016,6 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 	return agg, dbs, nil
 }
 
-
 func probe(sql, db string) (tds.Rows, bool, error) {
 	u := strings.TrimSuffix(strings.TrimSpace(sql), ";")
 	u = strings.ToUpper(strings.TrimSpace(u))
@@ -1056,7 +1055,7 @@ func probeValue(e, db string) (any, bool) {
 	if !isProbeScalar(name) {
 		return nil, false
 	}
-	return funcs.Eval(name, args)
+	return functions.Eval(name, args)
 }
 
 // probeCall splits a bare scalar into a function name + optional single string argument:

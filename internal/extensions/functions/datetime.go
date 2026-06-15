@@ -1,7 +1,7 @@
 // Copyright 2026 RSKGroup, LLC.
 // SPDX-License-Identifier: Apache-2.0
 
-package funcs
+package functions
 
 import "time"
 

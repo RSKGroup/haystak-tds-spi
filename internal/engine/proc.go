@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/infoschema"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
-	"github.com/RSKGroup/haystak-tds-spi/internal/infoschema"
-	"github.com/RSKGroup/haystak-tds-spi/internal/sysviews"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/sysviews"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"

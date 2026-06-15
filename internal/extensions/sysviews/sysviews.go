@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
-	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -86,7 +86,7 @@ func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 	}
 	rows := [][]any{mk("master", 1), mk("tempdb", 2), mk("model", 3), mk("msdb", 4)}
 	for _, db := range dbs {
-		rows = append(rows, mk(db, funcs.DBID(db)))
+		rows = append(rows, mk(db, functions.DBID(db)))
 	}
 	return cols, rows
 }
@@ -441,7 +441,7 @@ func tableByName(schema catalog.Schema) map[string]*catalog.Table {
 }
 
 // oid is the one object_id scheme, shared with OBJECT_ID/OBJECT_NAME so the catalog views join.
-func oid(name string) int64 { return funcs.ObjectID(name) }
+func oid(name string) int64 { return functions.ObjectID(name) }
 
 func routineTypeCodes(k tds.RoutineKind) (string, string) {
 	switch k {

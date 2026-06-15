@@ -23,14 +23,18 @@ there are no import cycles.
 
 | Package | Responsibility | Add a … |
 |---|---|---|
-| `internal/extensions/catalog/funcs` | scalar system/catalog functions (`DB_ID`, `HAS_DBACCESS`, `QUOTENAME`, …) | function → register it in a group file |
+| `internal/extensions/functions` | scalar system/catalog functions (`DB_ID`, `HAS_DBACCESS`, `QUOTENAME`, …) | function → register it in a group file |
 | `internal/extensions/views` | `CREATE/ALTER/DROP VIEW` + read-time expansion | — |
 | `internal/extensions/procedures` | `CREATE/DROP PROCEDURE` + `EXEC` + parameter substitution | — |
 | `internal/extensions/procedures/control` | T-SQL procedural constructs, **one file per statement** | construct (`IF`/`WHILE`/…) → new file here |
 | `internal/extensions/routines` | shared base: the `Runner` seam + DDL-text helpers | — |
+| `internal/extensions/sysviews` | `sys.*` catalog views | a view → a case in `Resolve` |
+| `internal/extensions/infoschema` | `INFORMATION_SCHEMA.*` views | a view → a case in `Resolve` |
+| `internal/extensions/batch` | `DECLARE`/`SET @v` batch-variable binding | — |
 
-`internal/sysviews` and `internal/infoschema` (the `sys.*` and `INFORMATION_SCHEMA.*` catalogs) are
-stable today; they are slated to move under `internal/extensions/catalog/` as the catalog surface consolidates.
+Each `extensions/` package maps to one SQL Server surface — `functions` (the function families, one file per
+category), `sysviews` (`sys.*`), `infoschema` (`INFORMATION_SCHEMA.*`), and the stored-object packages. The
+`sp_*` catalog procedures still live in `internal/engine` (coupled to its introspection helpers).
 
 ## The seam
 

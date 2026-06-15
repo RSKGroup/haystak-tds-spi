@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -299,7 +299,7 @@ func evalFunc(name string, a []any, env *Env) any {
 	}
 	// Everything else (string / numeric / date / logical / catalog scalars) lives in its family file
 	// under catalog/funcs and resolves through the registry — see that package's *.go.
-	if v, ok := funcs.Eval(name, a); ok {
+	if v, ok := functions.Eval(name, a); ok {
 		return v
 	}
 	return nil
@@ -310,14 +310,14 @@ func evalFunc(name string, a []any, env *Env) any {
 func CatalogResolvers(schema catalog.Schema, routines []*tds.Routine, dbs []string) (object, db func(int64) (string, bool)) {
 	objs := map[int64]string{}
 	for _, t := range schema.Tables {
-		objs[funcs.ObjectID(t.Name)] = t.Name
+		objs[functions.ObjectID(t.Name)] = t.Name
 	}
 	for _, r := range routines {
-		objs[funcs.ObjectID(r.Name)] = r.Name
+		objs[functions.ObjectID(r.Name)] = r.Name
 	}
 	dbm := map[int64]string{1: "master", 2: "tempdb", 3: "model", 4: "msdb"}
 	for _, d := range dbs {
-		dbm[funcs.DBID(d)] = d
+		dbm[functions.DBID(d)] = d
 	}
 	object = func(id int64) (string, bool) { n, ok := objs[id]; return n, ok }
 	db = func(id int64) (string, bool) { n, ok := dbm[id]; return n, ok }

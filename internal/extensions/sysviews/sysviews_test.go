@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/catalog/funcs"
-	"github.com/RSKGroup/haystak-tds-spi/internal/sysviews"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/sysviews"
 	"github.com/RSKGroup/haystak-tds-spi/internal/tsql"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -96,7 +96,7 @@ func TestObjectIDMatchesSqlModulesColumn(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("want 1 row, got %d", len(rows))
 	}
-	if got, want := rows[0][0].(int64), funcs.ObjectID("GetCustomer"); got != want {
+	if got, want := rows[0][0].(int64), functions.ObjectID("GetCustomer"); got != want {
 		t.Errorf("object_id = %d, want %d", got, want)
 	}
 }

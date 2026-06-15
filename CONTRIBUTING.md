@@ -17,11 +17,12 @@ file each. Build out control flow demand-driven; you never edit the constructs t
 
 ## Add a scalar / catalog function (e.g. `DB_NAME`)
 
-1. Open the matching group file under **`internal/extensions/catalog/funcs/`** (`catalog.go` for catalog/metadata
-   functions; add `string.go` / `datetime.go` / `security.go` if a new group is warranted).
+1. Open the file for that SQL Server function category under **`internal/extensions/functions/`** —
+   `metadata.go`, `string.go`, `datetime.go`, `math.go`, `logical.go`, `security.go`, `configuration.go`,
+   `system.go` — or add a new category file (e.g. `json.go`) if one is warranted.
 2. In that file's `init`, `register("DB_NAME", func(a []any) any { … })`.
 
-The evaluator calls `funcs.Eval` for any function it doesn't handle generically, so registration is
+The evaluator calls `functions.Eval` for any function it doesn't handle generically, so registration is
 all it takes. Keep groups cohesive; split a file once it gets large.
 
 ## Add a stored-object capability (views / procedures)

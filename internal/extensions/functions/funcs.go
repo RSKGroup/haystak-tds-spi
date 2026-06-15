@@ -7,28 +7,14 @@
 // To add a function: register it from the relevant group file's init (catalog.go, and future
 // string.go / datetime.go / security.go as groups grow). The evaluator calls Eval for any function
 // it doesn't handle itself, so registration is the whole ritual — no engine changes.
-package funcs
+package functions
 
-import (
-	"sort"
-	"strings"
-)
+import "strings"
 
 // registry maps an upper-cased function name to its implementation.
 var registry = map[string]func([]any) any{}
 
 func register(name string, fn func([]any) any) { registry[strings.ToUpper(name)] = fn }
-
-// Names returns every registered function name, sorted — the ground truth for "what is implemented"
-// that the inventory test reconciles against the README manifest.
-func Names() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // Eval evaluates a registered function; ok is false when the name isn't one of ours.
 func Eval(name string, args []any) (any, bool) {
