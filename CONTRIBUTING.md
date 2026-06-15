@@ -25,6 +25,27 @@ file each. Build out control flow demand-driven; you never edit the constructs t
 The evaluator calls `functions.Eval` for any function it doesn't handle generically, so registration is
 all it takes. Keep groups cohesive; split a file once it gets large.
 
+Three things take more than a registration:
+
+- **Catalog scalars that need the live schema** (`COL_NAME`, `OBJECTPROPERTY`, …): add a case in
+  `internal/exec/value.go`'s `evalFunc` keyed off the query `Env` (built by `CatalogObjects`); the
+  registry has no catalog access. These resolve in SELECT/ORDER BY only.
+- **Parser-backed functions**: reserved-keyword names (`LEFT`/`RIGHT`), datepart keywords
+  (`DATEADD`/`DATEPART`), `IIF`, and `TRY_CAST`/`TRY_CONVERT` need a case in `internal/tsql/parser.go`.
+- **Aggregates**: add an `AggFunc` value in `tds`, a case in the parser's `isAggName`/`aggOf`, and the
+  computation in `internal/exec/aggregate.go`.
+
+Keep each SQL Server surface's own mapping: `COL_LENGTH`, `sys.columns.max_length`, `sp_columns` LENGTH,
+and `CHARACTER_MAXIMUM_LENGTH` each own their length logic. Do not fold superficially-similar functions
+into one shared helper just because their bodies match today — distinct surfaces evolve independently.
+
+## Add a catalog view (`sys.*` / `INFORMATION_SCHEMA.*`)
+
+1. Open `internal/extensions/sysviews/sysviews.go` (or `infoschema/infoschema.go`).
+2. Add a `case "<view>"` in `Resolve` returning a builder's `(cols, data)`.
+3. The builder reads the backend's `catalog.Schema` + routines and emits the view's columns as rows.
+   An empty-but-shaped view (no data yet) still returns its full column set so clients can describe it.
+
 ## Add a stored-object capability (views / procedures)
 
 Work in `internal/extensions/views` or `internal/extensions/procedures`. These persist definitions through the public

@@ -11,7 +11,7 @@ them, not in them.
 |---|---|
 | `internal/wire` | TDS protocol: PRELOGIN, LOGIN7, TLS-in-TDS, SQL_BATCH, RPC, token/result encoding |
 | `internal/tsql` | T-SQL -> AST (lexer + parser) |
-| `internal/exec` | expression and row evaluation (filters, joins, projection, generic functions) |
+| `internal/exec` | expression/row evaluation (filters, joins, projection, aggregates); plus catalog scalars that need the live schema (`COL_NAME`/`COL_LENGTH`/`OBJECTPROPERTY`/`COLUMNPROPERTY`) resolved off the query `Env` |
 | `internal/engine` | the read query engine; the hub that wires the feature packages together |
 | `tds`, `server` | the **public SPI** a backend implements, and the wire server that drives it |
 
@@ -23,7 +23,7 @@ there are no import cycles.
 
 | Package | Responsibility | Add a … |
 |---|---|---|
-| `internal/extensions/functions` | scalar system/catalog functions (`DB_ID`, `HAS_DBACCESS`, `QUOTENAME`, …) | function -> register it in a group file |
+| `internal/extensions/functions` | scalar functions by family — `string`/`datetime`/`math`/`logical`/`metadata`/`security`/`configuration`/`system` | function -> register it in its family file |
 | `internal/extensions/views` | `CREATE/ALTER/DROP VIEW` + read-time expansion | — |
 | `internal/extensions/procedures` | `CREATE/DROP PROCEDURE` + `EXEC` + parameter substitution | — |
 | `internal/extensions/procedures/control` | T-SQL procedural constructs, **one file per statement** | construct (`IF`/`WHILE`/…) -> new file here |
@@ -35,6 +35,14 @@ there are no import cycles.
 Each `extensions/` package maps to one SQL Server surface — `functions` (the function families, one file per
 category), `sysviews` (`sys.*`), `infoschema` (`INFORMATION_SCHEMA.*`), and the stored-object packages. The
 `sp_*` catalog procedures still live in `internal/engine` (coupled to its introspection helpers).
+
+**Two homes for functions.** Pure scalars register in `functions` and resolve everywhere via
+`functions.Eval` (no context). Catalog scalars that need the live schema — `OBJECT_NAME`, `COL_NAME`,
+`COL_LENGTH`, `OBJECTPROPERTY`, `COLUMNPROPERTY` — evaluate in `internal/exec` off the query `Env` and
+resolve only in the SELECT projection and ORDER BY (predicate clauses evaluate with a nil env).
+Aggregates are an `AggFunc` enum spanning `tds`, the parser, and `internal/exec`. A few functions need
+parser support, not just registration: reserved-keyword names (`LEFT`/`RIGHT`), datepart keywords
+(`DATEADD`/`DATEPART`), `IIF` (desugars to `CASE`), and `TRY_CAST`/`TRY_CONVERT`.
 
 ## The seam
 
