@@ -55,13 +55,13 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `STRING_ESCAPE` | `internal/extensions/functions/string.go` | Y |
 | `STRING_SPLIT` | `internal/exec/tablefunc.go` | Y |
 | `TRANSLATE` | `internal/extensions/functions/string.go` | Y |
-| `FORMATMESSAGE` |  | - |
+| `FORMATMESSAGE` | `internal/extensions/functions/string.go` | Y |
 | `UNICODE` | `internal/extensions/functions/string.go` | Y |
 | `NCHAR` | `internal/extensions/functions/string.go` | Y |
 | `CHAR` | `internal/extensions/functions/string.go` | Y |
 | `ASCII` | `internal/extensions/functions/string.go` | Y |
-| `SOUNDEX` |  | - |
-| `DIFFERENCE` |  | - |
+| `SOUNDEX` | `internal/extensions/functions/string.go` | Y |
+| `DIFFERENCE` | `internal/extensions/functions/string.go` | Y |
 | `STR` | `internal/extensions/functions/string.go` | Y |
 
 ### Date & time
@@ -256,9 +256,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `JSON_VALUE` | `internal/extensions/functions/json.go` | Y |
 | `JSON_QUERY` | `internal/extensions/functions/json.go` | Y |
 | `JSON_MODIFY` | `internal/extensions/functions/json.go` | Y |
-| `JSON_PATH_EXISTS` |  | - |
+| `JSON_PATH_EXISTS` | `internal/extensions/functions/json.go` | Y |
 | `JSON_OBJECT` |  | - |
-| `JSON_ARRAY` |  | - |
+| `JSON_ARRAY` | `internal/extensions/functions/json.go` | Y |
 | `OPENJSON` | `internal/exec/tablefunc.go` | Y |
 
 ### Cryptographic

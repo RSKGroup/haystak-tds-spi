@@ -209,6 +209,132 @@ func init() {
 		}
 		return string(b[1 : len(b)-1]) // strip the quotes Marshal wraps around the escaped text
 	})
+	register("SOUNDEX", func(a []any) any { return soundex(argStr(a, 0)) })
+	register("DIFFERENCE", func(a []any) any { return difference(argStr(a, 0), argStr(a, 1)) })
+	register("FORMATMESSAGE", func(a []any) any {
+		if len(a) == 0 {
+			return nil
+		}
+		return formatMessage(argStr(a, 0), a[1:])
+	})
+}
+
+// soundex is the standard four-character phonetic code: first letter plus three consonant digits.
+func soundex(s string) string {
+	s = strings.ToUpper(s)
+	var first byte
+	i := 0
+	for ; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			first = s[i]
+			i++
+			break
+		}
+	}
+	if first == 0 {
+		return ""
+	}
+	out := []byte{first}
+	prev := soundexCode(first)
+	for ; i < len(s) && len(out) < 4; i++ {
+		c := s[i]
+		if c < 'A' || c > 'Z' {
+			continue
+		}
+		d := soundexCode(c)
+		if d != '0' {
+			if d != prev {
+				out = append(out, d)
+			}
+			prev = d
+		} else if c != 'H' && c != 'W' {
+			prev = '0' // a vowel separates equal codes; H/W do not
+		}
+	}
+	for len(out) < 4 {
+		out = append(out, '0')
+	}
+	return string(out)
+}
+
+func soundexCode(c byte) byte {
+	switch c {
+	case 'B', 'F', 'P', 'V':
+		return '1'
+	case 'C', 'G', 'J', 'K', 'Q', 'S', 'X', 'Z':
+		return '2'
+	case 'D', 'T':
+		return '3'
+	case 'L':
+		return '4'
+	case 'M', 'N':
+		return '5'
+	case 'R':
+		return '6'
+	}
+	return '0'
+}
+
+func difference(a, b string) int64 {
+	x, y := soundex(a), soundex(b)
+	for len(x) < 4 {
+		x += "0"
+	}
+	for len(y) < 4 {
+		y += "0"
+	}
+	var n int64
+	for i := 0; i < 4; i++ {
+		if x[i] == y[i] {
+			n++
+		}
+	}
+	return n
+}
+
+// formatMessage substitutes printf-style %s/%d/%i/%u/%x placeholders (and %%) with the trailing args.
+func formatMessage(msg string, args []any) string {
+	var b strings.Builder
+	ai := 0
+	for i := 0; i < len(msg); i++ {
+		if msg[i] != '%' || i+1 >= len(msg) {
+			b.WriteByte(msg[i])
+			continue
+		}
+		c := msg[i+1]
+		switch {
+		case c == '%':
+			b.WriteByte('%')
+		case strings.IndexByte("sdiux", c) >= 0 && ai < len(args):
+			if c == 's' {
+				b.WriteString(argText(args[ai]))
+			} else if n, ok := toInt64(args[ai]); ok {
+				if c == 'x' {
+					b.WriteString(strconv.FormatInt(n, 16))
+				} else {
+					b.WriteString(strconv.FormatInt(n, 10))
+				}
+			}
+			ai++
+		default:
+			b.WriteByte('%')
+			b.WriteByte(c)
+		}
+		i++
+	}
+	return b.String()
+}
+
+func toInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case int:
+		return int64(n), true
+	case float64:
+		return int64(n), true
+	}
+	return 0, false
 }
 
 func argText(v any) string {

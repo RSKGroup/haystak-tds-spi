@@ -10,4 +10,7 @@ var jsonCases = []Case{
 	{Element: "func:JSON_QUERY", SQL: `SELECT JSON_QUERY('{"a":[1,2,3]}','$.a')`, Want: []any{"[1,2,3]"}},
 	{Element: "func:JSON_MODIFY", Name: "JSON_MODIFY/set", SQL: `SELECT JSON_MODIFY('{"a":1,"b":2}', '$.a', 9)`, Want: []any{`{"a":9,"b":2}`}},
 	{Element: "func:JSON_MODIFY", Name: "JSON_MODIFY/append", SQL: `SELECT JSON_MODIFY('{"arr":[1,2]}', 'append $.arr', 3)`, Want: []any{`{"arr":[1,2,3]}`}},
+	{Element: "func:JSON_PATH_EXISTS", Name: "JSON_PATH_EXISTS/yes", SQL: `SELECT JSON_PATH_EXISTS('{"a":1}','$.a')`, Want: []any{1}},
+	{Element: "func:JSON_PATH_EXISTS", Name: "JSON_PATH_EXISTS/no", SQL: `SELECT JSON_PATH_EXISTS('{"a":1}','$.x')`, Want: []any{0}},
+	{Element: "func:JSON_ARRAY", SQL: "SELECT JSON_ARRAY(1, 2, 3)", Want: []any{"[1,2,3]"}},
 }

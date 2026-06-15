@@ -94,6 +94,40 @@ func init() {
 	})
 	register("JSON_VALUE", func(a []any) any { return jsonExtract(a, false) })
 	register("JSON_QUERY", func(a []any) any { return jsonExtract(a, true) })
+	register("JSON_PATH_EXISTS", func(a []any) any {
+		s, ok := jsonInput(a)
+		if !ok {
+			return nil
+		}
+		var root any
+		if json.Unmarshal([]byte(s), &root) != nil {
+			return int64(0)
+		}
+		path := "$"
+		if len(a) >= 2 {
+			if p, ok := a[1].(string); ok {
+				path = p
+			}
+		}
+		if _, ok := jsonNav(root, path); ok {
+			return int64(1)
+		}
+		return int64(0)
+	})
+	register("JSON_ARRAY", func(a []any) any {
+		arr := make([]any, 0, len(a))
+		for _, v := range a {
+			if v == nil { // ABSENT ON NULL (the default)
+				continue
+			}
+			arr = append(arr, v)
+		}
+		b, err := json.Marshal(arr)
+		if err != nil {
+			return nil
+		}
+		return string(b)
+	})
 	register("JSON_MODIFY", func(a []any) any {
 		if len(a) < 3 || a[0] == nil || a[1] == nil {
 			return nil

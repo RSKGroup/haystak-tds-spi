@@ -32,4 +32,7 @@ var stringCases = []Case{
 	{Element: "func:TRANSLATE", SQL: "SELECT TRANSLATE('2*[3]','[]','()')", Want: []any{"2*(3)"}},
 	{Element: "func:STR", SQL: "SELECT STR(3.14159,6,2)", Want: []any{"  3.14"}},
 	{Element: "func:STRING_ESCAPE", SQL: `SELECT STRING_ESCAPE('a"b','json')`, Want: []any{`a\"b`}},
+	{Element: "func:SOUNDEX", SQL: "SELECT SOUNDEX('Robert')", Want: []any{"R163"}},
+	{Element: "func:DIFFERENCE", SQL: "SELECT DIFFERENCE('Smith','Smythe')", Want: []any{4}},
+	{Element: "func:FORMATMESSAGE", SQL: "SELECT FORMATMESSAGE('Hi %s you are %d', 'Bob', 5)", Want: []any{"Hi Bob you are 5"}},
 }
