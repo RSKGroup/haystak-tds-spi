@@ -19,7 +19,7 @@ const dbName = "haystak"
 
 // Resolve answers a query against sys.* catalog views from a backend's declared schema and stored
 // routines. Returns handled=false when the query does not target the sys schema.
-func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Query) (tds.Rows, bool, error) {
+func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
@@ -82,6 +82,14 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = systypesRows()
 	case "table_types":
 		cols, data = tableTypesRows(schema)
+	case "database_principals":
+		cols, data = databasePrincipalsRows(p)
+	case "server_principals":
+		cols, data = serverPrincipalsRows(p)
+	case "database_role_members":
+		cols, data = databaseRoleMembersRows(p)
+	case "sysusers":
+		cols, data = sysusersRows(p)
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -522,6 +530,112 @@ func objectNameSet(schema catalog.Schema, rts []*tds.Routine) map[string]bool {
 	}
 	return m
 }
+
+// wellKnownPrincipals are the fixed database principals SQL Server always exposes.
+var wellKnownPrincipals = []struct {
+	id   int64
+	name string
+	typ  string // S = user, R = role
+}{
+	{0, "public", "R"}, {1, "dbo", "S"}, {2, "guest", "S"}, {3, "INFORMATION_SCHEMA", "S"}, {4, "sys", "S"},
+}
+
+func principalName(p tds.Principal) string {
+	if p.Username != "" {
+		return p.Username
+	}
+	return "haystak"
+}
+
+func wellKnownID(name string) (int64, bool) {
+	for _, w := range wellKnownPrincipals {
+		if strings.EqualFold(w.name, name) {
+			return w.id, true
+		}
+	}
+	return 0, false
+}
+
+func userPrincipalID(p tds.Principal) int64 {
+	if id, ok := wellKnownID(principalName(p)); ok {
+		return id
+	}
+	return 5
+}
+
+func defaultSchema(name string) any {
+	switch strings.ToLower(name) {
+	case "dbo":
+		return "dbo"
+	case "guest":
+		return "guest"
+	}
+	return nil
+}
+
+// databasePrincipalsRows is sys.database_principals: the fixed well-knowns plus the live authenticated
+// user and its roles (the Principal seam).
+func databasePrincipalsRows(p tds.Principal) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("principal_id"), sname("type"), sname("type_desc"),
+		nsname("default_schema_name"), intc("is_fixed_role"),
+	}
+	desc := func(t string) string {
+		if t == "R" {
+			return "DATABASE_ROLE"
+		}
+		return "SQL_USER"
+	}
+	var rows [][]any
+	for _, w := range wellKnownPrincipals {
+		rows = append(rows, []any{w.name, w.id, w.typ, desc(w.typ), defaultSchema(w.name), int64(0)})
+	}
+	if u := principalName(p); !isWellKnownName(u) {
+		rows = append(rows, []any{u, int64(5), "S", "SQL_USER", "dbo", int64(0)})
+	}
+	for i, r := range p.Roles {
+		rows = append(rows, []any{r, int64(6 + i), "R", "DATABASE_ROLE", nil, int64(0)})
+	}
+	return cols, rows
+}
+
+// serverPrincipalsRows is sys.server_principals: sa, public, and the live login.
+func serverPrincipalsRows(p tds.Principal) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), intc("principal_id"), sname("type"), sname("type_desc"), intc("is_disabled")}
+	rows := [][]any{
+		{"sa", int64(1), "S", "SQL_LOGIN", int64(0)},
+		{"public", int64(2), "R", "SERVER_ROLE", int64(0)},
+	}
+	if u := principalName(p); !strings.EqualFold(u, "sa") {
+		rows = append(rows, []any{u, int64(3), "S", "SQL_LOGIN", int64(0)})
+	}
+	return cols, rows
+}
+
+// databaseRoleMembersRows is sys.database_role_members: the live user's role memberships.
+func databaseRoleMembersRows(p tds.Principal) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{intc("role_principal_id"), intc("member_principal_id")}
+	var rows [][]any
+	for i := range p.Roles {
+		rows = append(rows, []any{int64(6 + i), userPrincipalID(p)})
+	}
+	return cols, rows
+}
+
+// sysusersRows is the legacy sys.sysusers compatibility view over the same principal set.
+func sysusersRows(p tds.Principal) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{intc("uid"), sname("name")}
+	var rows [][]any
+	for _, w := range wellKnownPrincipals {
+		rows = append(rows, []any{w.id, w.name})
+	}
+	if u := principalName(p); !isWellKnownName(u) {
+		rows = append(rows, []any{int64(5), u})
+	}
+	return cols, rows
+}
+
+func isWellKnownName(name string) bool { _, ok := wellKnownID(name); return ok }
 
 // tableTypesRows is sys.table_types: a projection over the backend's declared table types (empty if none).
 func tableTypesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {

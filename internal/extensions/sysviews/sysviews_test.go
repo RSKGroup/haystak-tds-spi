@@ -32,14 +32,16 @@ func fixture() (catalog.Schema, []*tds.Routine, []string) {
 	return schema, rts, []string{"shop"}
 }
 
-func run(t *testing.T, sql string) [][]any {
+func run(t *testing.T, sql string) [][]any { return runAs(t, tds.Principal{}, sql) }
+
+func runAs(t *testing.T, p tds.Principal, sql string) [][]any {
 	t.Helper()
 	schema, rts, dbs := fixture()
 	q, err := tsql.Parse(sql)
 	if err != nil {
 		t.Fatalf("parse %q: %v", sql, err)
 	}
-	rows, handled, err := sysviews.Resolve(schema, rts, dbs, q)
+	rows, handled, err := sysviews.Resolve(schema, rts, dbs, p, q)
 	if err != nil {
 		t.Fatalf("resolve %q: %v", sql, err)
 	}
@@ -138,5 +140,35 @@ func TestDBNameReversesDatabaseID(t *testing.T) {
 	rows := run(t, "SELECT DB_NAME(database_id) AS dn FROM sys.databases WHERE name = 'shop'")
 	if len(rows) != 1 || str(rows[0][0]) != "shop" {
 		t.Fatalf("DB_NAME(database_id) = %v, want [shop]", rows)
+	}
+}
+
+func TestDatabasePrincipalsReflectLiveIdentity(t *testing.T) {
+	p := tds.Principal{Username: "alice", Roles: []string{"db_datareader"}}
+	names := map[string]string{}
+	for _, r := range runAs(t, p, "SELECT name, type_desc FROM sys.database_principals") {
+		names[fmt.Sprintf("%v", r[0])] = fmt.Sprintf("%v", r[1])
+	}
+	if names["dbo"] != "SQL_USER" || names["alice"] != "SQL_USER" || names["db_datareader"] != "DATABASE_ROLE" {
+		t.Errorf("database_principals = %v, want dbo + alice (user) + db_datareader (role)", names)
+	}
+	// role membership links the role to the live user
+	mem := runAs(t, p, "SELECT role_principal_id, member_principal_id FROM sys.database_role_members")
+	if len(mem) != 1 || fmt.Sprintf("%v", mem[0][1]) != "5" {
+		t.Errorf("database_role_members = %v, want one row for member id 5 (alice)", mem)
+	}
+}
+
+func TestPrincipalsDefaultWhenUnauthenticated(t *testing.T) {
+	// empty Principal -> well-knowns + the default "haystak" user, no roles
+	names := map[string]bool{}
+	for _, r := range run(t, "SELECT name FROM sys.database_principals") {
+		names[fmt.Sprintf("%v", r[0])] = true
+	}
+	if !names["dbo"] || !names["public"] || !names["haystak"] {
+		t.Errorf("database_principals = %v, want dbo + public + haystak", names)
+	}
+	if rows := run(t, "SELECT role_principal_id FROM sys.database_role_members"); len(rows) != 0 {
+		t.Errorf("database_role_members = %v, want empty (no roles)", rows)
 	}
 }

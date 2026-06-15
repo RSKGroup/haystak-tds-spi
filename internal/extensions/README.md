@@ -345,11 +345,11 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `sys.database_principals` |  | - |
-| `sys.server_principals` |  | - |
+| `sys.database_principals` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.server_principals` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.database_permissions` |  | - |
 | `sys.server_permissions` |  | - |
-| `sys.database_role_members` |  | - |
+| `sys.database_role_members` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Dynamic management views
 
@@ -369,7 +369,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.syscolumns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.systypes` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.sysindexes` |  | - |
-| `sys.sysusers` |  | - |
+| `sys.sysusers` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ---
 

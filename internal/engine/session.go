@@ -25,6 +25,12 @@ func currentDB(ctx context.Context) string {
 	return db
 }
 
+// principalOf is the authenticated identity in ctx (zero value when unauthenticated) for sys.*_principals.
+func principalOf(ctx context.Context) tds.Principal {
+	p, _ := tds.PrincipalFromContext(ctx)
+	return p
+}
+
 // Session carries per-connection state (the current database) across a batch sequence.
 type Session struct {
 	b  tds.Backend
