@@ -79,16 +79,16 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `CURRENT_TIMESTAMP` | `internal/extensions/functions/datetime.go` | Y |
 | `DATEADD` | `internal/extensions/functions/datetime.go` | Y |
 | `DATEDIFF` | `internal/extensions/functions/datetime.go` | Y |
-| `DATEDIFF_BIG` |  | - |
+| `DATEDIFF_BIG` | `internal/extensions/functions/datetime.go` | Y |
 | `DATEPART` | `internal/extensions/functions/datetime.go` | Y |
 | `DATENAME` | `internal/extensions/functions/datetime.go` | Y |
-| `DATEFROMPARTS` |  | - |
-| `DATETIMEFROMPARTS` |  | - |
+| `DATEFROMPARTS` | `internal/extensions/functions/datetime.go` | Y |
+| `DATETIMEFROMPARTS` | `internal/extensions/functions/datetime.go` | Y |
 | `EOMONTH` | `internal/extensions/functions/datetime.go` | Y |
 | `SWITCHOFFSET` |  | - |
 | `TODATETIMEOFFSET` |  | - |
 | `ISDATE` | `internal/extensions/functions/datetime.go` | Y |
-| `DATETRUNC` |  | - |
+| `DATETRUNC` | `internal/extensions/functions/datetime.go` | Y |
 
 ### Mathematical
 
@@ -126,8 +126,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `CONVERT` | `internal/tsql/parser.go` | Y |
 | `TRY_CAST` | `internal/tsql/parser.go` | Y |
 | `TRY_CONVERT` | `internal/tsql/parser.go` | Y |
-| `PARSE` |  | - |
-| `TRY_PARSE` |  | - |
+| `PARSE` | `internal/tsql/parser.go` | Y |
+| `TRY_PARSE` | `internal/tsql/parser.go` | Y |
 | `FORMAT` |  | - |
 
 ### Logical

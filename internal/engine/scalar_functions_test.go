@@ -116,6 +116,25 @@ func TestDateFunctions(t *testing.T) {
 	}
 }
 
+func TestDateFinishers(t *testing.T) {
+	r := qry(t, "SELECT DATETRUNC(month,'2024-03-15'), DATEDIFF_BIG(day,'2024-01-01','2024-01-15'), DATEFROMPARTS(2024,2,29), DATETIMEFROMPARTS(2024,1,1,13,30,0,0), PARSE('42' AS INT)")[0]
+	if !strings.Contains(cell(r[0]), "2024-03-01") {
+		t.Errorf("DATETRUNC month = %v, want 2024-03-01", r[0])
+	}
+	if cell(r[1]) != "14" {
+		t.Errorf("DATEDIFF_BIG = %v, want 14", r[1])
+	}
+	if !strings.Contains(cell(r[2]), "2024-02-29") {
+		t.Errorf("DATEFROMPARTS = %v, want 2024-02-29", r[2])
+	}
+	if !strings.Contains(cell(r[3]), "13:30") {
+		t.Errorf("DATETIMEFROMPARTS = %v, want 13:30", r[3])
+	}
+	if cell(r[4]) != "42" {
+		t.Errorf("PARSE('42' AS INT) = %v, want 42", r[4])
+	}
+}
+
 func TestDateAddEomonthIsdate(t *testing.T) {
 	rows := qry(t, "SELECT DATEADD(day,1,'2024-01-15'), DATEADD(month,1,'2024-01-31'), EOMONTH('2024-02-10'), ISDATE('2024-01-01'), ISDATE('nope')")
 	r := rows[0]

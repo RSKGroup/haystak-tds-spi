@@ -25,6 +25,62 @@ func init() {
 	register("DATENAME", dateName)
 	register("EOMONTH", eomonth)
 	register("ISDATE", isDate)
+	register("DATETRUNC", dateTrunc)
+	register("DATEDIFF_BIG", dateDiff) // same boundary count; bigint return
+	register("DATEFROMPARTS", func(a []any) any {
+		y, ok1 := argInt(a, 0)
+		m, ok2 := argInt(a, 1)
+		d, ok3 := argInt(a, 2)
+		if !ok1 || !ok2 || !ok3 {
+			return nil
+		}
+		return time.Date(int(y), time.Month(m), int(d), 0, 0, 0, 0, time.UTC)
+	})
+	register("DATETIMEFROMPARTS", func(a []any) any {
+		if len(a) < 7 {
+			return nil
+		}
+		y, _ := argInt(a, 0)
+		m, _ := argInt(a, 1)
+		d, _ := argInt(a, 2)
+		h, _ := argInt(a, 3)
+		mi, _ := argInt(a, 4)
+		s, _ := argInt(a, 5)
+		ms, _ := argInt(a, 6)
+		return time.Date(int(y), time.Month(m), int(d), int(h), int(mi), int(s), int(ms)*1e6, time.UTC)
+	})
+}
+
+// dateTrunc is DATETRUNC: the start of the datepart containing the date.
+func dateTrunc(a []any) any {
+	if len(a) < 2 {
+		return nil
+	}
+	t, ok := argTime(a, 1)
+	if !ok {
+		return nil
+	}
+	switch normDatePart(argStr(a, 0)) {
+	case "year":
+		return time.Date(t.Year(), 1, 1, 0, 0, 0, 0, t.Location())
+	case "quarter":
+		return time.Date(t.Year(), time.Month((quarter(t)-1)*3+1), 1, 0, 0, 0, 0, t.Location())
+	case "month":
+		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
+	case "week":
+		return dayFloor(t).AddDate(0, 0, -int(dayFloor(t).Weekday())) // back to Sunday
+	case "day", "dayofyear", "weekday":
+		return dayFloor(t)
+	case "hour":
+		return t.Truncate(time.Hour)
+	case "minute":
+		return t.Truncate(time.Minute)
+	case "second":
+		return t.Truncate(time.Second)
+	case "millisecond":
+		return t.Truncate(time.Millisecond)
+	}
+	return nil
 }
 
 func utcNow([]any) any { return time.Now().UTC() }

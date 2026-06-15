@@ -578,11 +578,14 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 			}
 			return p.convertExpr()
 		}
+		if (strings.EqualFold(t.text, "PARSE") || strings.EqualFold(t.text, "TRY_PARSE")) && p.peekN(1).kind == tLParen {
+			return p.castExpr() // PARSE(expr AS type) shares CAST's shape
+		}
 		if strings.EqualFold(t.text, "IIF") && p.peekN(1).kind == tLParen {
 			return p.iifExpr()
 		}
 		switch strings.ToUpper(t.text) {
-		case "DATEADD", "DATEDIFF", "DATEPART", "DATENAME":
+		case "DATEADD", "DATEDIFF", "DATEDIFF_BIG", "DATEPART", "DATENAME", "DATETRUNC":
 			if p.peekN(1).kind == tLParen {
 				return p.datePartCall(strings.ToUpper(t.text))
 			}
