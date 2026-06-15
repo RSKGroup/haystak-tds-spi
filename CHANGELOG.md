@@ -7,7 +7,7 @@ Stored routines are now visible and scriptable through the standard catalog — 
 - **Routine catalog surface** — `sys.sql_modules` (reconstructed CREATE text), `sys.views`,
   `sys.procedures`, `sys.parameters`, and `sys.objects` widened to span tables, views, procedures,
   functions, and triggers (`U`/`V`/`P`/`FN`/`TR`); `INFORMATION_SCHEMA.VIEWS` / `ROUTINES` /
-  `PARAMETERS`; and `sp_helptext` / `sp_help`. A client's *Script as → CREATE* and object tree now read
+  `PARAMETERS`; and `sp_helptext` / `sp_help`. A client's *Script as -> CREATE* and object tree now read
   stored views, procedures, functions, and triggers.
 - **Catalog scalar functions** — `OBJECT_NAME`, `DB_NAME`, `OBJECT_SCHEMA_NAME`, `TYPE_NAME`, backed by a
   single unified `object_id` / `database_id` scheme so `OBJECT_ID('x')` joins the catalog views and
@@ -15,7 +15,7 @@ Stored routines are now visible and scriptable through the standard catalog — 
 - **API additions** — `tds.RoutineFunc` / `tds.RoutineTrigger` routine kinds; `catalog.Index`,
   `catalog.Check`, and `catalog.Column.Identity` / `.Computed`, so a backend can declare indexes, check
   constraints, identity, and computed columns.
-- **Conformance** — `tdstest.RunConformance` now checks `Caps.Routines` ⟺ `RoutineStore` and that a
+- **Conformance** — `tdstest.RunConformance` now checks `Caps.Routines` <-> `RoutineStore` and that a
   written routine of each kind surfaces through the catalog views.
 
 ## v1.3.0
@@ -24,7 +24,7 @@ Extension surface foundation — additive, no breaking changes.
 
 - **`internal/extensions` package layout** — `catalog/` (scalar functions), `views/`, `procedures/`,
   `routines/` (the shared base plus the `Runner` engine seam), and `batch/`.
-- **`RoutineStore`** — persist `CREATE VIEW` / `PROCEDURE`, with read-time view expansion (FROM-a-view →
+- **`RoutineStore`** — persist `CREATE VIEW` / `PROCEDURE`, with read-time view expansion (FROM-a-view ->
   derived table, body qualified to the view's database).
 - **Batch variables** — `DECLARE @v = …` / `SET @v = …` bound and substituted before parse, so the core
   lexer never sees a `@`.
