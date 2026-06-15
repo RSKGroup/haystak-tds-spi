@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v1.5.0)
+## v1.5.0
 
 A broad SQL Server surface expansion — additive, no breaking changes. The one public API addition is
 `catalog.Schema.TableTypes` (with `catalog.TableType`), so a backend can declare user-defined table types.
