@@ -64,6 +64,8 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = identityColumnsRows(schema)
 	case "computed_columns":
 		cols, data = computedColumnsRows(schema)
+	case "sql_expression_dependencies":
+		cols, data = sqlExpressionDependenciesRows(schema, rts)
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -422,6 +424,69 @@ func computedColumnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	return cols, rows
 }
 
+// sqlExpressionDependenciesRows is sys.sql_expression_dependencies: view -> table/view references
+// parsed from each view body's FROM/JOIN clauses; referenced_id resolves when the target is known.
+func sqlExpressionDependenciesRows(schema catalog.Schema, rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("referencing_id"), intc("referencing_minor_id"), intc("referencing_class"), sname("referencing_class_desc"),
+		intc("referenced_class"), sname("referenced_class_desc"), nsname("referenced_server_name"), nsname("referenced_database_name"),
+		nsname("referenced_schema_name"), sname("referenced_entity_name"), nintc("referenced_id"), intc("referenced_minor_id"),
+		intc("is_caller_dependent"), intc("is_ambiguous"),
+	}
+	known := objectNameSet(schema, rts)
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind != tds.RoutineView {
+			continue
+		}
+		for _, name := range referencedNames(r.Body) {
+			var refID, refSchema any
+			if known[strings.ToLower(name)] {
+				refID, refSchema = oid(name), "dbo"
+			}
+			rows = append(rows, []any{
+				oid(r.Name), int64(0), int64(1), "OBJECT_OR_COLUMN",
+				int64(1), "OBJECT_OR_COLUMN", nil, nil,
+				refSchema, name, refID, int64(0),
+				int64(0), int64(0),
+			})
+		}
+	}
+	return cols, rows
+}
+
+// referencedNames pulls the object names following FROM/JOIN in a view body (best-effort tokenizer).
+func referencedNames(body string) []string {
+	tokens := strings.Fields(strings.NewReplacer(",", " ", "(", " ", ")", " ").Replace(body))
+	var out []string
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(tokens); i++ {
+		switch strings.ToUpper(tokens[i]) {
+		case "FROM", "JOIN":
+			name := routines.Unqualify(tokens[i+1])
+			if name == "" || strings.EqualFold(name, "SELECT") {
+				continue
+			}
+			if key := strings.ToLower(name); !seen[key] {
+				seen[key] = true
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+func objectNameSet(schema catalog.Schema, rts []*tds.Routine) map[string]bool {
+	m := map[string]bool{}
+	for _, t := range schema.Tables {
+		m[strings.ToLower(t.Name)] = true
+	}
+	for _, r := range rts {
+		m[strings.ToLower(r.Name)] = true
+	}
+	return m
+}
+
 // colID is a column's 1-based ordinal within its table (the column_id the catalog reports).
 func colID(t catalog.Table, name string) int64 {
 	for i, c := range t.Columns {
@@ -463,6 +528,9 @@ func intc(n string) catalog.Column {
 }
 func nintc(n string) catalog.Column {
 	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64, Nullable: true}}
+}
+func nsname(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.String, Nullable: true}}
 }
 
 func sysTypeID(t types.Type) int64 {

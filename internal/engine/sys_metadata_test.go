@@ -105,6 +105,23 @@ func TestSysComputedColumns(t *testing.T) {
 	}
 }
 
+func TestSysSqlExpressionDependencies(t *testing.T) {
+	deps := func(view string) [][]any {
+		return qry(t, "SELECT referenced_entity_name, referenced_id FROM sys.sql_expression_dependencies WHERE referencing_id = OBJECT_ID('"+view+"')")
+	}
+	// view-on-table: resolves to the table's object_id
+	if d := deps("vActiveProducts"); len(d) != 1 || cell(d[0][0]) != "products" || cell(d[0][1]) != cell(objectID(t, "products")) {
+		t.Fatalf("vActiveProducts deps = %v, want products with resolved id", d)
+	}
+	// view-on-view chain
+	if d := deps("vPremiumProducts"); len(d) != 1 || cell(d[0][0]) != "vActiveProducts" {
+		t.Fatalf("vPremiumProducts deps = %v, want vActiveProducts", d)
+	}
+	if d := deps("vOrderTotals"); len(d) != 1 || cell(d[0][0]) != "orders" {
+		t.Fatalf("vOrderTotals deps = %v, want orders", d)
+	}
+}
+
 // objectID resolves OBJECT_ID('name') through the engine so tests compare against the live id scheme.
 func objectID(t *testing.T, name string) any {
 	t.Helper()

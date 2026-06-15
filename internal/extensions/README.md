@@ -339,7 +339,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.database_files` |  | - |
 | `sys.filegroups` |  | - |
 | `sys.extended_properties` |  | - |
-| `sys.sql_expression_dependencies` |  | - |
+| `sys.sql_expression_dependencies` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Security
 
