@@ -303,6 +303,13 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 			p.next()
 			q.FromSub = sub
 			q.FromAlias = p.optTableAlias()
+		} else if p.peek().kind == tIdent && p.peekN(1).kind == tLParen {
+			ve, err := p.funcCall(strings.ToUpper(p.peek().text))
+			if err != nil {
+				return nil, err
+			}
+			q.FromFunc = &tds.TableFunc{Name: ve.Func, Args: ve.Args}
+			q.FromAlias = p.optTableAlias()
 		} else {
 			db, sch, tbl, err := p.tableName()
 			if err != nil {

@@ -29,6 +29,7 @@ func wiredElements() map[string]bool {
 	add("func", exec.EnvScalarNames())
 	add("agg", exec.AggregateNames())
 	add("win", exec.WindowFuncNames())
+	add("tvf", exec.TableFuncNames())
 	add("sys", sysviews.SupportedViews())
 	add("infoschema", infoschema.SupportedViews())
 	add("proc", engine.SupportedProcs())

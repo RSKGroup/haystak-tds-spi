@@ -313,6 +313,14 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
 	}
 
+	if q.FromFunc != nil {
+		cols, data, err := exec.EvalTableFunc(q.FromFunc.Name, q.FromFunc.Args)
+		if err != nil {
+			return nil, err
+		}
+		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
+	}
+
 	if q.Table == "" && len(q.Joins) == 0 {
 		return exec.ApplyWith(nil, [][]any{{}}, q, catalogEnv(ctx, b, q, nil))
 	}

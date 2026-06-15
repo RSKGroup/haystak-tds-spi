@@ -53,7 +53,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `REVERSE` | `internal/extensions/functions/string.go` | Y |
 | `CONCAT_WS` | `internal/extensions/functions/string.go` | Y |
 | `STRING_ESCAPE` | `internal/extensions/functions/string.go` | Y |
-| `STRING_SPLIT` |  | - |
+| `STRING_SPLIT` | `internal/exec/tablefunc.go` | Y |
 | `TRANSLATE` | `internal/extensions/functions/string.go` | Y |
 | `FORMATMESSAGE` |  | - |
 | `UNICODE` | `internal/extensions/functions/string.go` | Y |
@@ -259,7 +259,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `JSON_PATH_EXISTS` |  | - |
 | `JSON_OBJECT` |  | - |
 | `JSON_ARRAY` |  | - |
-| `OPENJSON` |  | - |
+| `OPENJSON` | `internal/exec/tablefunc.go` | Y |
 
 ### Cryptographic
 

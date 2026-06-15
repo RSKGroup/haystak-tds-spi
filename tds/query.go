@@ -71,6 +71,12 @@ type SelectItem struct {
 	Alias   string      // output column name (optional)
 }
 
+// TableFunc is a table-valued function in a FROM clause: STRING_SPLIT(…), OPENJSON(…).
+type TableFunc struct {
+	Name string
+	Args []*ValueExpr
+}
+
 // WindowSpec is a window function call: FUNC(args) OVER (PARTITION BY … ORDER BY …).
 type WindowSpec struct {
 	Func        string
@@ -162,7 +168,8 @@ type Query struct {
 	Database     string // db qualifier from db.schema.table (empty = current/default)
 	Schema       string
 	Table        string
-	FromSub      *Query // derived table: FROM (SELECT …) (Table empty when set)
+	FromSub      *Query     // derived table: FROM (SELECT …) (Table empty when set)
+	FromFunc     *TableFunc // table-valued function: FROM STRING_SPLIT(…)/OPENJSON(…)
 	FromAlias    string
 	Joins        []Join
 	Distinct     bool

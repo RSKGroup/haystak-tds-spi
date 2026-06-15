@@ -5,9 +5,80 @@ package functions
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 )
+
+// JSONEntry is one OPENJSON row: key, value (scalar as text, object/array as JSON text), type code.
+type JSONEntry struct {
+	Key   string
+	Value any
+	Type  int64
+}
+
+// OpenJSONRows enumerates a JSON array or object (optionally at path) into OPENJSON key/value/type rows.
+func OpenJSONRows(s, path string) ([]JSONEntry, bool) {
+	var root any
+	if json.Unmarshal([]byte(s), &root) != nil {
+		return nil, false
+	}
+	if p := strings.TrimSpace(path); p != "" && p != "$" {
+		v, ok := jsonNav(root, p)
+		if !ok {
+			return nil, false
+		}
+		root = v
+	}
+	switch v := root.(type) {
+	case []any:
+		out := make([]JSONEntry, 0, len(v))
+		for i, e := range v {
+			out = append(out, JSONEntry{Key: strconv.Itoa(i), Value: jsonValueText(e), Type: jsonType(e)})
+		}
+		return out, true
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys) // document order is lost on decode; sort for determinism
+		out := make([]JSONEntry, 0, len(v))
+		for _, k := range keys {
+			out = append(out, JSONEntry{Key: k, Value: jsonValueText(v[k]), Type: jsonType(v[k])})
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func jsonType(v any) int64 {
+	switch v.(type) {
+	case string:
+		return 1
+	case float64:
+		return 2
+	case bool:
+		return 3
+	case []any:
+		return 4
+	case map[string]any:
+		return 5
+	}
+	return 0
+}
+
+func jsonValueText(v any) any {
+	switch v.(type) {
+	case map[string]any, []any:
+		b, _ := json.Marshal(v)
+		return string(b)
+	case nil:
+		return nil
+	default:
+		return jsonScalar(v)
+	}
+}
 
 func init() {
 	register("ISJSON", func(a []any) any {
