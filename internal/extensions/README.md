@@ -530,7 +530,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `CONTINUE` | `internal/extensions/procedures/control/` | Y |
 | `RETURN` | `internal/extensions/procedures/control/` | Y |
 | `GOTO` |  | - |
-| `WAITFOR` |  | - |
+| `WAITFOR` | `internal/extensions/procedures/control/` | Y |
 | `TRY ... CATCH` | `internal/extensions/procedures/control/` | Y |
 | `THROW` | `internal/extensions/procedures/control/` | Y |
 | `RAISERROR` | `internal/extensions/procedures/control/` | Y |
@@ -544,7 +544,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `SET @v = ...` | `internal/extensions/batch/batch.go` | Y |
 | `USE` | `internal/extensions/batch/batch.go` | Y |
 | `EXEC` / `EXECUTE` (stored procedure) | `internal/extensions/batch/batch.go` | Y |
-| `SELECT @v = col` |  | - |
+| `SELECT @v = col` | `internal/extensions/procedures/control/` | Y |
 | `DECLARE @t TABLE (...)` |  | - |
 | `sp_executesql` / dynamic SQL |  | - |
 | `SET` options with effect (`ANSI_NULLS`, `QUOTED_IDENTIFIER`, `ROWCOUNT`, `IDENTITY_INSERT`) |  | - |

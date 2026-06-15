@@ -68,6 +68,10 @@ func HasControlFlow(sql string) bool {
 				if !beginTxn && controlLead[kw] {
 					return true
 				}
+				// SELECT @v = … is a variable assignment (procedural), not a result-set query.
+				if kw == "SELECT" && i+2 < len(toks) && strings.HasPrefix(toks[i+1].text, "@") && toks[i+2].text == "=" {
+					return true
+				}
 			}
 			atStart = false
 		default:
@@ -103,6 +107,9 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 			}
 		}
 	case *Raw:
+		if handled, err := trySelectAssign(ctx, n.SQL, sc, run); err != nil || handled {
+			return err
+		}
 		rows, err := run.Exec(ctx, subst(n.SQL, sc))
 		if err != nil {
 			return err
@@ -110,6 +117,8 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 		if rows != nil {
 			st.last = rows
 		}
+	case *Waitfor:
+		return execWaitfor(ctx, n)
 	case *Declare:
 		for _, v := range n.Vars {
 			lit := "NULL"

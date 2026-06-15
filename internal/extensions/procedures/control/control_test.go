@@ -17,6 +17,7 @@ func TestHasControlFlowIsolation(t *testing.T) {
 		"EXEC sp_help",                                       // bare proc
 		"SELECT * FROM (SELECT 1 WHERE EXISTS (SELECT 1)) x", // EXISTS deep in a subquery is not a statement
 		"BEGIN TRANSACTION",                                  // transaction, not a control block
+		"SELECT @x AS r",                                     // reading a variable is a result-set query, not assignment
 	}
 	for _, sql := range plain {
 		if HasControlFlow(sql) {
@@ -30,6 +31,8 @@ func TestHasControlFlowIsolation(t *testing.T) {
 		"PRINT 'hi'",
 		"SELECT 1; RETURN",
 		"BEGIN TRY SELECT 1 END TRY BEGIN CATCH SELECT 2 END CATCH",
+		"SELECT @x = id FROM t", // assignment-select is procedural
+		"WAITFOR DELAY '00:00:01'",
 	}
 	for _, sql := range control {
 		if !HasControlFlow(sql) {

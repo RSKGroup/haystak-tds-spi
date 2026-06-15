@@ -139,6 +139,15 @@ func (p *parser) stmt() (Stmt, error) {
 			p.advance()
 			p.readToStmtBound()
 			return &Continue{}, nil
+		case "WAITFOR":
+			p.advance()
+			kind := ""
+			if !p.eof() && p.peek().kind == tWord {
+				kind = strings.ToUpper(p.peek().text)
+				p.advance()
+			}
+			val := strings.Trim(strings.TrimSpace(p.readToStmtBound()), "'")
+			return &Waitfor{isDelay: kind == "DELAY", val: val}, nil
 		}
 	}
 	return &Raw{SQL: p.rawStmt()}, nil
