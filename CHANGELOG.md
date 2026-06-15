@@ -40,6 +40,7 @@ Other:
 - System/security scalars: `NEWSEQUENTIALID`, `XACT_STATE`, `CURSOR_STATUS`, `CONNECTIONPROPERTY`, `CONTEXT_INFO`, `SESSION_CONTEXT`, `HAS_PERMS_BY_NAME`; crypto `COMPRESS`/`DECOMPRESS` (gzip) and `PWDENCRYPT`/`PWDCOMPARE` (SHA-256).
 - `INDEXPROPERTY`, `INDEXKEY_PROPERTY` (catalog index metadata); `SWITCHOFFSET`, `TODATETIMEOFFSET` (datetimeoffset).
 - More catalog: `sys.partitions` (one per table), `sys.database_files`/`sys.filegroups` (single-DB topology), `sys.system_objects`/`sys.stats`/`sys.stats_columns` (empty-shaped); `sp_helptrigger`/`sp_depends` (project routine data), `sp_table_privileges`/`sp_column_privileges` (empty).
+- Control-of-flow: a procedural interpreter runs `IF…ELSE`, `WHILE`, `BEGIN…END`, `BREAK`, `CONTINUE`, `RETURN`, `PRINT`, with runtime `DECLARE`/`SET` variables. Opt-in: the engine routes a batch here only when it leads with a control statement; plain batches keep the flat path unchanged. (`TRY/CATCH`, `THROW`/`RAISERROR`, `GOTO`, `WAITFOR` not yet.)
 
 ## v1.4.0
 

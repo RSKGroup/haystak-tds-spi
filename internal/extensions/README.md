@@ -523,18 +523,18 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `IF ... ELSE` |  | - |
-| `WHILE` |  | - |
-| `BEGIN ... END` |  | - |
-| `BREAK` |  | - |
-| `CONTINUE` |  | - |
-| `RETURN` |  | - |
+| `IF ... ELSE` | `internal/extensions/procedures/control/` | Y |
+| `WHILE` | `internal/extensions/procedures/control/` | Y |
+| `BEGIN ... END` | `internal/extensions/procedures/control/` | Y |
+| `BREAK` | `internal/extensions/procedures/control/` | Y |
+| `CONTINUE` | `internal/extensions/procedures/control/` | Y |
+| `RETURN` | `internal/extensions/procedures/control/` | Y |
 | `GOTO` |  | - |
 | `WAITFOR` |  | - |
 | `TRY ... CATCH` |  | - |
 | `THROW` |  | - |
 | `RAISERROR` |  | - |
-| `PRINT` |  | - |
+| `PRINT` | `internal/extensions/procedures/control/` | Y |
 
 ### Variables & batch
 

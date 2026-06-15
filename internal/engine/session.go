@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/batch"
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/procedures/control"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
@@ -50,6 +51,12 @@ func (s *Session) Database() string { return s.db }
 
 // Exec runs a batch under the session's current database; envDB is the new db when USE changed it.
 func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string, error) {
+	// Opt-in: a batch with control flow runs through the procedural interpreter; everything else keeps
+	// the flat path untouched.
+	if control.HasControlFlow(sql) {
+		rows, err := control.Run(WithDatabase(ctx, s.db), sql, engineRunner{s.b})
+		return rows, -1, "", err
+	}
 	sql, err := batch.Resolve(sql) // bind + substitute DECLARE/SET @var batch variables
 	if err != nil {
 		return nil, -1, "", err
