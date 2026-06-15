@@ -49,6 +49,21 @@ func TestSystemScalars(t *testing.T) {
 	}
 }
 
+func TestCryptoFunctions(t *testing.T) {
+	r := qry(t, "SELECT HASHBYTES('SHA2_256', 'abc'), HASHBYTES('MD5', 'abc')")[0]
+	if b, ok := r[0].([]byte); !ok || len(b) != 32 || b[0] != 0xba { // SHA-256('abc') starts with 0xba
+		t.Errorf("HASHBYTES SHA2_256 = %v, want 32-byte hash starting 0xba", r[0])
+	}
+	if b, ok := r[1].([]byte); !ok || len(b) != 16 {
+		t.Errorf("HASHBYTES MD5 = %v, want 16 bytes", r[1])
+	}
+	a := cell(qry(t, "SELECT CHECKSUM('hello')")[0][0])
+	b := cell(qry(t, "SELECT CHECKSUM('hello')")[0][0])
+	if a != b || a == "<nil>" {
+		t.Errorf("CHECKSUM not deterministic: %v vs %v", a, b)
+	}
+}
+
 func TestJSONFunctions(t *testing.T) {
 	r := qry(t, `SELECT JSON_VALUE('{"name":"Bob","age":30}', '$.name'), JSON_VALUE('{"name":"Bob","age":30}', '$.age'), ISJSON('{"a":1}'), ISJSON('not json'), JSON_QUERY('{"a":[1,2,3]}', '$.a'), JSON_VALUE('{"a":{"b":7}}', '$.a.b')`)[0]
 	if cell(r[0]) != "Bob" || cell(r[1]) != "30" {

@@ -265,9 +265,9 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `HASHBYTES` |  | - |
-| `CHECKSUM` |  | - |
-| `BINARY_CHECKSUM` |  | - |
+| `HASHBYTES` | `internal/extensions/functions/crypto.go` | Y |
+| `CHECKSUM` | `internal/extensions/functions/crypto.go` | Y |
+| `BINARY_CHECKSUM` | `internal/extensions/functions/crypto.go` | Y |
 | `COMPRESS` |  | - |
 | `DECOMPRESS` |  | - |
 | `PWDENCRYPT` |  | - |

@@ -1,0 +1,65 @@
+// Copyright 2026 RSKGroup, LLC.
+// SPDX-License-Identifier: Apache-2.0
+
+package functions
+
+import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
+	"fmt"
+	"hash/fnv"
+	"strings"
+)
+
+func init() {
+	register("HASHBYTES", func(a []any) any {
+		if len(a) < 2 {
+			return nil
+		}
+		data := hashBytesArg(a[1])
+		switch strings.ToUpper(argStr(a, 0)) {
+		case "MD5":
+			h := md5.Sum(data)
+			return h[:]
+		case "SHA1", "SHA":
+			h := sha1.Sum(data)
+			return h[:]
+		case "SHA2_256":
+			h := sha256.Sum256(data)
+			return h[:]
+		case "SHA2_512":
+			h := sha512.Sum512(data)
+			return h[:]
+		}
+		return nil
+	})
+	// CHECKSUM/BINARY_CHECKSUM are a deterministic 32-bit hash for change detection -- stable, not
+	// bit-identical to SQL Server's undocumented algorithm.
+	register("CHECKSUM", checksum)
+	register("BINARY_CHECKSUM", checksum)
+}
+
+func hashBytesArg(v any) []byte {
+	switch x := v.(type) {
+	case []byte:
+		return x
+	case string:
+		return []byte(x)
+	case nil:
+		return nil
+	}
+	return []byte(fmt.Sprint(v))
+}
+
+func checksum(a []any) any {
+	h := fnv.New32a()
+	for _, v := range a {
+		if v == nil {
+			continue
+		}
+		_, _ = h.Write([]byte(fmt.Sprint(v)))
+	}
+	return int64(int32(h.Sum32()))
+}
