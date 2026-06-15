@@ -238,11 +238,11 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `ROW_NUMBER` | `internal/exec/window.go` | Y |
 | `RANK` | `internal/exec/window.go` | Y |
 | `DENSE_RANK` | `internal/exec/window.go` | Y |
-| `NTILE` |  | - |
+| `NTILE` | `internal/exec/window.go` | Y |
 | `LAG` | `internal/exec/window.go` | Y |
 | `LEAD` | `internal/exec/window.go` | Y |
-| `FIRST_VALUE` |  | - |
-| `LAST_VALUE` |  | - |
+| `FIRST_VALUE` | `internal/exec/window.go` | Y |
+| `LAST_VALUE` | `internal/exec/window.go` | Y |
 | `PERCENT_RANK` |  | - |
 | `CUME_DIST` |  | - |
 | `PERCENTILE_CONT` |  | - |

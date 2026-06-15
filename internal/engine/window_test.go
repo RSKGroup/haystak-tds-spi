@@ -51,6 +51,25 @@ func TestWindowRankDenseRank(t *testing.T) {
 	}
 }
 
+func TestWindowNtile(t *testing.T) {
+	// 3 emps into 2 buckets: bucket 1 gets 2 rows (10,11), bucket 2 gets 1 (12).
+	got := map[string]string{}
+	for _, r := range qry(t, "SELECT id, NTILE(2) OVER (ORDER BY id) AS b FROM emps") {
+		got[cell(r[0])] = cell(r[1])
+	}
+	if got["10"] != "1" || got["11"] != "1" || got["12"] != "2" {
+		t.Errorf("NTILE(2) = %v, want 10->1 11->1 12->2", got)
+	}
+}
+
+func TestWindowFirstLastValue(t *testing.T) {
+	for _, r := range qry(t, "SELECT id, FIRST_VALUE(id) OVER (ORDER BY id) AS fv, LAST_VALUE(id) OVER (ORDER BY id) AS lv FROM emps") {
+		if cell(r[1]) != "10" || cell(r[2]) != "12" {
+			t.Errorf("id %v first/last = %v/%v, want 10/12", r[0], r[1], r[2])
+		}
+	}
+}
+
 func TestWindowLagLead(t *testing.T) {
 	rows := qry(t, "SELECT id, LAG(id) OVER (ORDER BY id) AS lg, LEAD(id) OVER (ORDER BY id) AS ld FROM emps")
 	// id 10: lag NULL, lead 11; id 11: lag 10, lead 12; id 12: lag 11, lead NULL.

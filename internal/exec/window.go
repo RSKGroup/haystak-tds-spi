@@ -13,7 +13,7 @@ import (
 )
 
 // windowFuncs are the wired window functions; keep in lockstep with the applyWindow switch.
-var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "LAG", "LEAD"}
+var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE"}
 
 // WindowFuncNames returns the wired window-function names, sorted.
 func WindowFuncNames() []string {
@@ -62,9 +62,9 @@ func materializeWindows(cols []catalog.Column, idx map[string]int, rows [][]any,
 
 func windowColType(w *tds.WindowSpec, cols []catalog.Column, idx map[string]int) types.Type {
 	switch w.Func {
-	case "ROW_NUMBER", "RANK", "DENSE_RANK":
+	case "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE":
 		return types.Type{Kind: types.Int64}
-	case "LAG", "LEAD":
+	case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE":
 		if len(w.Args) > 0 {
 			return exprType(w.Args[0], cols, idx)
 		}
@@ -205,6 +205,45 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 				}
 			}
 			out[m] = rank
+		}
+	case "NTILE":
+		n := 1
+		if len(w.Args) >= 1 {
+			if v, ok := toInt(asLit(w.Args[0])); ok && v >= 1 {
+				n = int(v)
+			}
+		}
+		total := len(members)
+		base, rem := total/n, total%n
+		bucketSize := func(b int) int {
+			if b <= rem {
+				return base + 1
+			}
+			return base
+		}
+		bucket, left := 1, bucketSize(1)
+		for _, m := range members {
+			for left == 0 && bucket < n {
+				bucket++
+				left = bucketSize(bucket)
+			}
+			out[m] = int64(bucket)
+			left--
+		}
+	case "FIRST_VALUE", "LAST_VALUE":
+		if len(members) == 0 {
+			return nil
+		}
+		target := members[0]
+		if w.Func == "LAST_VALUE" {
+			target = members[len(members)-1]
+		}
+		v, err := evalValue(idx, rows[target], w.Args[0], env)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			out[m] = v
 		}
 	case "LAG", "LEAD":
 		offset := 1
