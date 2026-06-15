@@ -308,7 +308,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sys.identity_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.computed_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
 | `sys.all_columns` | `internal/extensions/sysviews/sysviews.go` | Y |
-| `sys.table_types` |  | - |
+| `sys.table_types` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Indexes & keys
 

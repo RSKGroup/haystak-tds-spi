@@ -184,6 +184,13 @@ func (b *Backend) Describe(ctx context.Context) (catalog.Schema, error) {
 	for _, n := range b.order {
 		s.Tables = append(s.Tables, b.tables[n].def)
 	}
+	s.TableTypes = []catalog.TableType{{
+		Name: "OrderLineType",
+		Columns: []catalog.Column{
+			{Name: "product_id", Type: types.Type{Kind: types.Int64}},
+			{Name: "qty", Type: types.Type{Kind: types.Int32}},
+		},
+	}}
 	return s, nil
 }
 

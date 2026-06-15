@@ -80,6 +80,8 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, q *tds.Que
 		cols, data = syscolumnsRows(schema)
 	case "systypes":
 		cols, data = systypesRows()
+	case "table_types":
+		cols, data = tableTypesRows(schema)
 	default:
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -519,6 +521,19 @@ func objectNameSet(schema catalog.Schema, rts []*tds.Routine) map[string]bool {
 		m[strings.ToLower(r.Name)] = true
 	}
 	return m
+}
+
+// tableTypesRows is sys.table_types: a projection over the backend's declared table types (empty if none).
+func tableTypesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		sname("name"), intc("system_type_id"), intc("user_type_id"), intc("schema_id"),
+		intc("is_user_defined"), intc("is_table_type"), intc("type_table_object_id"),
+	}
+	var rows [][]any
+	for _, tt := range schema.TableTypes {
+		rows = append(rows, []any{tt.Name, int64(243), oid(tt.Name), int64(1), int64(1), int64(1), oid(tt.Name)})
+	}
+	return cols, rows
 }
 
 // sequencesRows is sys.sequences: empty, no sequences are modeled.

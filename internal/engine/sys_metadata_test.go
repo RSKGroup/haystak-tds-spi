@@ -187,6 +187,17 @@ func TestInfoSchemaConstraintTableUsageAndDomains(t *testing.T) {
 	}
 }
 
+func TestSysTableTypes(t *testing.T) {
+	// projection over the backend's declared table types (inmem seeds OrderLineType)
+	rows := qry(t, "SELECT name, is_table_type, type_table_object_id FROM sys.table_types WHERE name = 'OrderLineType'")
+	if len(rows) != 1 || cell(rows[0][1]) != "1" {
+		t.Fatalf("sys.table_types = %v, want OrderLineType is_table_type=1", rows)
+	}
+	if cell(rows[0][2]) != cell(objectID(t, "OrderLineType")) {
+		t.Errorf("type_table_object_id = %v, want OBJECT_ID(OrderLineType)", rows[0][2])
+	}
+}
+
 func TestSpHelpdb(t *testing.T) {
 	names := map[string]bool{}
 	for _, r := range qry(t, "EXEC sp_helpdb") {

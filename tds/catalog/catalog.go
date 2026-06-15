@@ -6,9 +6,17 @@ package catalog
 
 import "github.com/RSKGroup/haystak-tds-spi/tds/types"
 
-// Schema is one database's worth of tables, returned by Backend.Describe.
+// Schema is one database's worth of tables, returned by Backend.Describe. TableTypes is optional
+// metadata a backend may declare to feed sys.table_types.
 type Schema struct {
-	Tables []Table
+	Tables     []Table
+	TableTypes []TableType
+}
+
+// TableType is a user-defined table type (CREATE TYPE ... AS TABLE); it drives sys.table_types.
+type TableType struct {
+	Name    string
+	Columns []Column
 }
 
 // Table is one table's definition: columns, keys, and (multi-database backends) its Catalog. Indexes
