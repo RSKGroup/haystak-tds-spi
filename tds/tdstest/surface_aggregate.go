@@ -16,4 +16,5 @@ var aggregateCases = []Case{
 	{Element: "agg:STDEVP", SQL: "SELECT STDEVP(schema_id) FROM sys.types", Want: []any{approx(0)}},
 	{Element: "agg:VAR", SQL: "SELECT VAR(schema_id) FROM sys.types", Want: []any{approx(0)}},
 	{Element: "agg:VARP", SQL: "SELECT VARP(schema_id) FROM sys.types", Want: []any{approx(0)}},
+	{Element: "agg:STRING_AGG", SQL: "SELECT STRING_AGG(name, ',') FROM sys.types", Want: []any{"bit,tinyint,smallint,int,bigint,decimal,numeric,float,real,date,time,datetime,datetime2,char,varchar,nchar,nvarchar,binary,varbinary,uniqueidentifier"}},
 }

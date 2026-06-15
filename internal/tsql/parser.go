@@ -458,11 +458,27 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 				argExpr = ve // expression argument (e.g. CASE) — evaluated per row before the fold
 			}
 		}
+		sep := ""
+		if fn == tds.AggStringAgg {
+			if p.peek().kind != tComma {
+				return tds.SelectItem{}, fmt.Errorf("tsql: STRING_AGG requires a separator, got %q", p.peek().text)
+			}
+			p.next()
+			sve, err := p.valueExpr()
+			if err != nil {
+				return tds.SelectItem{}, err
+			}
+			s, ok := sve.Lit.(string)
+			if sve.Kind != tds.ValLit || !ok {
+				return tds.SelectItem{}, fmt.Errorf("tsql: STRING_AGG separator must be a string literal")
+			}
+			sep = s
+		}
 		if p.peek().kind != tRParen {
 			return tds.SelectItem{}, fmt.Errorf("tsql: expected ')' after aggregate, got %q", p.peek().text)
 		}
 		p.next()
-		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Sep: sep, Alias: aliasOr(leadAlias, p.optAlias())}, nil
 	}
 	ve, err := p.valueExpr()
 	if err != nil {
@@ -824,7 +840,7 @@ func (p *parser) optAlias() string {
 
 func isAggName(s string) bool {
 	switch strings.ToUpper(s) {
-	case "COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_BIG", "STDEV", "STDEVP", "VAR", "VARP":
+	case "COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_BIG", "STDEV", "STDEVP", "VAR", "VARP", "STRING_AGG":
 		return true
 	}
 	return false
@@ -852,6 +868,8 @@ func aggOf(s string) tds.AggFunc {
 		return tds.AggVar
 	case "VARP":
 		return tds.AggVarp
+	case "STRING_AGG":
+		return tds.AggStringAgg
 	}
 	return tds.AggNone
 }

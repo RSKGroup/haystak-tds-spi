@@ -158,16 +158,17 @@ func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o 
 
 // aggByName is the aggregate dispatch table; its keys are the wired set AggregateNames reports.
 var aggByName = map[string]tds.AggFunc{
-	"COUNT":     tds.AggCount,
-	"SUM":       tds.AggSum,
-	"AVG":       tds.AggAvg,
-	"MIN":       tds.AggMin,
-	"MAX":       tds.AggMax,
-	"COUNT_BIG": tds.AggCountBig,
-	"STDEV":     tds.AggStdev,
-	"STDEVP":    tds.AggStdevp,
-	"VAR":       tds.AggVar,
-	"VARP":      tds.AggVarp,
+	"COUNT":      tds.AggCount,
+	"SUM":        tds.AggSum,
+	"AVG":        tds.AggAvg,
+	"MIN":        tds.AggMin,
+	"MAX":        tds.AggMax,
+	"COUNT_BIG":  tds.AggCountBig,
+	"STDEV":      tds.AggStdev,
+	"STDEVP":     tds.AggStdevp,
+	"VAR":        tds.AggVar,
+	"VARP":       tds.AggVarp,
+	"STRING_AGG": tds.AggStringAgg,
 }
 
 func aggFuncFromName(name string) tds.AggFunc {
@@ -197,13 +198,23 @@ func aggArg(args []*tds.ValueExpr) string {
 	return ""
 }
 
+// aggSep is the STRING_AGG separator: the literal second argument, or "" if absent.
+func aggSep(args []*tds.ValueExpr) string {
+	if len(args) >= 2 && args[1].Kind == tds.ValLit {
+		if s, ok := args[1].Lit.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 // evalAggValue evaluates a value expression in the GROUP context: aggregate calls (COUNT/SUM/…) compute
 // over the group's rows via origIdx; everything else evaluates against the aggregated output row.
 func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, ve *tds.ValueExpr, env *Env) (any, error) {
 	switch ve.Kind {
 	case tds.ValFunc:
 		if fn := aggFuncFromName(ve.Func); fn != tds.AggNone {
-			return computeAgg(fn, aggArg(ve.Args), origIdx, group)
+			return computeAgg(fn, aggArg(ve.Args), aggSep(ve.Args), origIdx, group)
 		}
 	case tds.ValBinary:
 		l, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Left, env)
@@ -345,6 +356,11 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 			if name == "" {
 				name = it.Arg
 			}
+		case tds.AggStringAgg:
+			typ = types.Type{Kind: types.String, MaxLen: 4000}
+			if name == "" {
+				name = "agg"
+			}
 		}
 		out = append(out, catalog.Column{Name: name, Type: typ})
 	}
@@ -360,7 +376,7 @@ func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, erro
 			}
 			continue
 		}
-		v, err := computeAgg(it.Agg, it.Arg, idx, rows)
+		v, err := computeAgg(it.Agg, it.Arg, it.Sep, idx, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -371,8 +387,23 @@ func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, erro
 
 // computeAgg evaluates one aggregate function over a group's rows. arg is the column name ("*" or
 // "" for COUNT-all); idx is the pre-aggregation column index.
-func computeAgg(fn tds.AggFunc, arg string, idx map[string]int, rows [][]any) (any, error) {
+func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]any) (any, error) {
 	switch fn {
+	case tds.AggStringAgg:
+		i, ok := resolveCol(idx, arg)
+		if !ok {
+			return nil, fmt.Errorf("exec: unknown column %q in STRING_AGG", arg)
+		}
+		var parts []string
+		for _, r := range rows {
+			if r[i] != nil {
+				parts = append(parts, fmt.Sprintf("%v", r[i]))
+			}
+		}
+		if len(parts) == 0 {
+			return nil, nil
+		}
+		return strings.Join(parts, sep), nil
 	case tds.AggCount, tds.AggCountBig:
 		if arg == "*" || arg == "" {
 			return int64(len(rows)), nil
