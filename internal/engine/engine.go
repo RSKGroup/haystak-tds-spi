@@ -703,9 +703,22 @@ func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExp
 
 const maxRecursionDepth = 100
 
+// armRefsCTE reports whether an arm self-references the CTE, in its main FROM or in a JOIN.
+func armRefsCTE(q *tds.Query, name string) bool {
+	if strings.EqualFold(q.Table, name) {
+		return true
+	}
+	for _, j := range q.Joins {
+		if strings.EqualFold(j.Table, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func isRecursiveCTE(cte *tds.Query, name string) bool {
 	for a := cte; a != nil; a = a.Union {
-		if strings.EqualFold(a.Table, name) {
+		if armRefsCTE(a, name) {
 			return true
 		}
 	}
@@ -717,7 +730,7 @@ func runRecursiveCTE(ctx context.Context, b tds.Backend, name string, body *tds.
 	for a := body; a != nil; a = a.Union {
 		arm := *a
 		arm.Union = nil
-		if strings.EqualFold(a.Table, name) {
+		if armRefsCTE(&arm, name) {
 			recs = append(recs, &arm)
 		} else {
 			anchors = append(anchors, &arm)
@@ -737,13 +750,12 @@ func runRecursiveCTE(ctx context.Context, b tds.Backend, name string, body *tds.
 	}
 	working := acc
 	for depth := 0; depth < maxRecursionDepth && len(working) > 0; depth++ {
+		overlay := &cteOverlay{real: b, name: name, cols: cols, rows: working}
 		var next [][]any
 		for _, r := range recs {
-			rs, err := exec.Apply(cols, working, r)
-			if err != nil {
-				return nil, nil, err
-			}
-			_, d, err := materialize(rs)
+			// Run the recursive arm through the full engine so it can scan real tables joined against the
+			// CTE; the overlay presents the prior iteration's rows as the CTE table.
+			_, d, err := runMaterialize(ctx, overlay, r)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -756,6 +768,33 @@ func runRecursiveCTE(ctx context.Context, b tds.Backend, name string, body *tds.
 		working = next
 	}
 	return cols, acc, nil
+}
+
+// cteOverlay presents a recursive CTE's working rows as a scannable table, delegating every other table
+// to the real backend, so a recursive arm can JOIN the CTE against real tables through the engine.
+type cteOverlay struct {
+	real tds.Backend
+	name string
+	cols []catalog.Column
+	rows [][]any
+}
+
+func (o *cteOverlay) Describe(ctx context.Context) (catalog.Schema, error) {
+	return o.real.Describe(ctx)
+}
+func (o *cteOverlay) Capabilities() tds.Caps { return tds.Caps{Pushdown: true} }
+
+func (o *cteOverlay) Scan(ctx context.Context, q *tds.Query) (tds.Rows, error) {
+	if strings.EqualFold(q.Table, o.name) {
+		return exec.Apply(o.cols, o.rows, &tds.Query{})
+	}
+	if sc, ok := o.real.(tds.Scanner); ok {
+		return sc.Scan(ctx, q)
+	}
+	if qe, ok := o.real.(tds.QueryExecutor); ok {
+		return qe.ExecuteQuery(ctx, q)
+	}
+	return nil, fmt.Errorf("engine: recursive CTE arm cannot scan %q", q.Table)
 }
 
 func runMaterialize(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.Column, [][]any, error) {

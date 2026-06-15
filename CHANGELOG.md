@@ -31,6 +31,7 @@ Other:
 - Parser: reserved-keyword function names (`LEFT`/`RIGHT`), datepart keywords (`DATEADD`/`DATEPART`/…), `IIF` (desugars to `CASE`), and `TRY_CAST`/`TRY_CONVERT`/`PARSE`.
 - Seam-first catalog: views are projections over SPI seams — `sys.table_types` over `catalog.Schema.TableTypes`, the security catalog over the authenticated `tds.Principal` — populating when the backend/identity supplies data and degrading to the correct empty shape otherwise.
 - Catalog scalars (`OBJECT_NAME`/`COL_*`/`*PROPERTY`/`OBJECT_DEFINITION`) resolve in every clause: SELECT, ORDER BY, WHERE, HAVING, JOIN-ON, and searched-CASE WHEN conditions (the evaluators thread the catalog env, not just SubFn).
+- Recursive CTEs (`WITH cte AS (anchor UNION ALL recursive)`) support the recursive arm joining real tables against the CTE, so hierarchy walks (org charts, category trees, BOM) traverse fully, not just self-contained recursion.
 
 ## v1.4.0
 
