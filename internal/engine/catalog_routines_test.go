@@ -194,3 +194,52 @@ func TestInmemCreateViewSurfacesAndExpands(t *testing.T) {
 		t.Fatalf("view expansion = %v, want ids 1,2", got)
 	}
 }
+
+func TestInfoSchemaSchemata(t *testing.T) {
+	got := nameSet(t, "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA")
+	if !got["dbo"] || !got["sys"] || !got["INFORMATION_SCHEMA"] {
+		t.Errorf("SCHEMATA = %v, want dbo + sys + INFORMATION_SCHEMA", got)
+	}
+}
+
+func TestInfoSchemaCheckConstraints(t *testing.T) {
+	rows := qry(t, "SELECT CONSTRAINT_NAME, CHECK_CLAUSE FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS WHERE CONSTRAINT_NAME = 'CK_products_price'")
+	if len(rows) != 1 || !strings.Contains(cell(rows[0][1]), "price") {
+		t.Fatalf("CHECK_CONSTRAINTS = %v, want CK_products_price referencing price", rows)
+	}
+}
+
+func TestInfoSchemaConstraintColumnUsage(t *testing.T) {
+	got := map[string]bool{}
+	for _, r := range qry(t, "SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE") {
+		got[cell(r[2])+":"+cell(r[0])+"."+cell(r[1])] = true
+	}
+	if !got["PK_products:products.product_id"] {
+		t.Errorf("missing PK column usage in %v", got)
+	}
+	if !got["FK_product_tags_products:products.product_id"] { // FK reports the referenced table's column
+		t.Errorf("missing FK column usage in %v", got)
+	}
+	if !got["CK_products_price:products.price"] {
+		t.Errorf("missing CHECK column usage in %v", got)
+	}
+}
+
+func TestInfoSchemaViewTableUsage(t *testing.T) {
+	got := map[string]string{}
+	for _, r := range qry(t, "SELECT VIEW_NAME, TABLE_NAME FROM INFORMATION_SCHEMA.VIEW_TABLE_USAGE") {
+		got[cell(r[0])] = cell(r[1])
+	}
+	if got["vActiveProducts"] != "products" || got["vOrderTotals"] != "orders" {
+		t.Errorf("VIEW_TABLE_USAGE = %v, want vActiveProducts->products, vOrderTotals->orders", got)
+	}
+	if _, ok := got["vPremiumProducts"]; ok { // references a view, not a base table
+		t.Errorf("vPremiumProducts should surface no base table, got %v", got["vPremiumProducts"])
+	}
+}
+
+func TestInfoSchemaRoutineColumns(t *testing.T) {
+	if rows := qry(t, "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.ROUTINE_COLUMNS"); len(rows) != 0 {
+		t.Errorf("ROUTINE_COLUMNS = %v, want empty set (no table-valued functions)", rows)
+	}
+}

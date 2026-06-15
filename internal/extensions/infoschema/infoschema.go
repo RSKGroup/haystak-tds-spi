@@ -44,6 +44,16 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, q *tds.Query) (rows tds.
 		cols, data = keyColumnUsageRows(schema)
 	case "REFERENTIAL_CONSTRAINTS":
 		cols, data = referentialConstraintsRows(schema)
+	case "SCHEMATA":
+		cols, data = schemataRows()
+	case "CHECK_CONSTRAINTS":
+		cols, data = checkConstraintsRows(schema)
+	case "CONSTRAINT_COLUMN_USAGE":
+		cols, data = constraintColumnUsageRows(schema)
+	case "VIEW_TABLE_USAGE":
+		cols, data = viewTableUsageRows(schema, rts)
+	case "ROUTINE_COLUMNS":
+		cols, data = routineColumnsRows()
 	default:
 		return nil, true, fmt.Errorf("infoschema: INFORMATION_SCHEMA.%s not supported", q.Table)
 	}
@@ -231,6 +241,98 @@ func referentialConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]an
 		}
 	}
 	return cols, rows
+}
+
+// schemataRows is INFORMATION_SCHEMA.SCHEMATA: the schemas in this catalog.
+func schemataRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("CATALOG_NAME"), strCol("SCHEMA_NAME"), strCol("SCHEMA_OWNER"),
+		nstrCol("DEFAULT_CHARACTER_SET_CATALOG"), nstrCol("DEFAULT_CHARACTER_SET_SCHEMA"), strCol("DEFAULT_CHARACTER_SET_NAME"),
+	}
+	var rows [][]any
+	for _, s := range []string{"dbo", "sys", "INFORMATION_SCHEMA"} {
+		rows = append(rows, []any{catalogName, s, "dbo", nil, nil, "iso_1"})
+	}
+	return cols, rows
+}
+
+// checkConstraintsRows is INFORMATION_SCHEMA.CHECK_CONSTRAINTS: declared CHECK clauses.
+func checkConstraintsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("CONSTRAINT_CATALOG"), strCol("CONSTRAINT_SCHEMA"), strCol("CONSTRAINT_NAME"), strCol("CHECK_CLAUSE"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		for _, ck := range t.Checks {
+			rows = append(rows, []any{catalogOf(t), schemaName, ck.Name, ck.Expression})
+		}
+	}
+	return cols, rows
+}
+
+// constraintColumnUsageRows is INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE: PK columns on their table,
+// FK columns on the referenced table, and CHECK columns the clause brackets.
+func constraintColumnUsageRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"), strCol("COLUMN_NAME"),
+		strCol("CONSTRAINT_CATALOG"), strCol("CONSTRAINT_SCHEMA"), strCol("CONSTRAINT_NAME"),
+	}
+	var rows [][]any
+	for _, t := range schema.Tables {
+		cat := catalogOf(t)
+		for _, c := range t.PrimaryKey {
+			rows = append(rows, []any{cat, schemaName, t.Name, c, cat, schemaName, "PK_" + t.Name})
+		}
+		for _, fk := range t.ForeignKeys {
+			name := "FK_" + t.Name + "_" + fk.RefTable
+			for _, c := range fk.RefColumns {
+				rows = append(rows, []any{cat, schemaName, fk.RefTable, c, cat, schemaName, name})
+			}
+		}
+		for _, ck := range t.Checks {
+			expr := strings.ToLower(ck.Expression)
+			for _, c := range t.Columns {
+				if strings.Contains(expr, "["+strings.ToLower(c.Name)+"]") {
+					rows = append(rows, []any{cat, schemaName, t.Name, c.Name, cat, schemaName, ck.Name})
+				}
+			}
+		}
+	}
+	return cols, rows
+}
+
+// viewTableUsageRows is INFORMATION_SCHEMA.VIEW_TABLE_USAGE: the base tables each view references.
+func viewTableUsageRows(schema catalog.Schema, rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("VIEW_CATALOG"), strCol("VIEW_SCHEMA"), strCol("VIEW_NAME"),
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"),
+	}
+	tableSet := map[string]bool{}
+	for _, t := range schema.Tables {
+		tableSet[strings.ToLower(t.Name)] = true
+	}
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind != tds.RoutineView {
+			continue
+		}
+		for _, name := range routines.ReferencedNames(r.Body) {
+			if tableSet[strings.ToLower(name)] {
+				rows = append(rows, []any{catalogName, schemaName, r.Name, catalogName, schemaName, name})
+			}
+		}
+	}
+	return cols, rows
+}
+
+// routineColumnsRows is INFORMATION_SCHEMA.ROUTINE_COLUMNS: empty, no table-valued functions exist.
+func routineColumnsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"), strCol("COLUMN_NAME"),
+		intCol("ORDINAL_POSITION"), strCol("IS_NULLABLE"), strCol("DATA_TYPE"),
+		nintCol("CHARACTER_MAXIMUM_LENGTH"), nintCol("NUMERIC_PRECISION"), nintCol("NUMERIC_SCALE"),
+	}
+	return cols, nil
 }
 
 // catalogOf is the table's database (TABLE_CATALOG), or the default catalog if untagged.

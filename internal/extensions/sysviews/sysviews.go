@@ -443,7 +443,7 @@ func sqlExpressionDependenciesRows(schema catalog.Schema, rts []*tds.Routine) ([
 		if r.Kind != tds.RoutineView {
 			continue
 		}
-		for _, name := range referencedNames(r.Body) {
+		for _, name := range routines.ReferencedNames(r.Body) {
 			var refID, refSchema any
 			if known[strings.ToLower(name)] {
 				refID, refSchema = oid(name), "dbo"
@@ -497,27 +497,6 @@ func extendedPropertiesRows() ([]catalog.Column, [][]any) {
 		intc("class"), sname("class_desc"), intc("major_id"), intc("minor_id"), sname("name"), nsname("value"),
 	}
 	return cols, nil
-}
-
-// referencedNames pulls the object names following FROM/JOIN in a view body (best-effort tokenizer).
-func referencedNames(body string) []string {
-	tokens := strings.Fields(strings.NewReplacer(",", " ", "(", " ", ")", " ").Replace(body))
-	var out []string
-	seen := map[string]bool{}
-	for i := 0; i+1 < len(tokens); i++ {
-		switch strings.ToUpper(tokens[i]) {
-		case "FROM", "JOIN":
-			name := routines.Unqualify(tokens[i+1])
-			if name == "" || strings.EqualFold(name, "SELECT") {
-				continue
-			}
-			if key := strings.ToLower(name); !seen[key] {
-				seen[key] = true
-				out = append(out, name)
-			}
-		}
-	}
-	return out
 }
 
 func objectNameSet(schema catalog.Schema, rts []*tds.Routine) map[string]bool {

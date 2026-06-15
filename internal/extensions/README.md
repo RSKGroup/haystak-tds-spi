@@ -385,13 +385,13 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `INFORMATION_SCHEMA.TABLE_CONSTRAINTS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.KEY_COLUMN_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS` | `internal/extensions/infoschema/infoschema.go` | Y |
-| `INFORMATION_SCHEMA.CHECK_CONSTRAINTS` |  | - |
-| `INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE` |  | - |
+| `INFORMATION_SCHEMA.CHECK_CONSTRAINTS` | `internal/extensions/infoschema/infoschema.go` | Y |
+| `INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE` |  | - |
-| `INFORMATION_SCHEMA.SCHEMATA` |  | - |
+| `INFORMATION_SCHEMA.SCHEMATA` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.DOMAINS` |  | - |
-| `INFORMATION_SCHEMA.ROUTINE_COLUMNS` |  | - |
-| `INFORMATION_SCHEMA.VIEW_TABLE_USAGE` |  | - |
+| `INFORMATION_SCHEMA.ROUTINE_COLUMNS` | `internal/extensions/infoschema/infoschema.go` | Y |
+| `INFORMATION_SCHEMA.VIEW_TABLE_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE` |  | - |
 
 ---

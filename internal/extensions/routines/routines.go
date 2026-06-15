@@ -112,6 +112,28 @@ func Unqualify(name string) string {
 // IndexFold is strings.Index, case-insensitive.
 func IndexFold(s, sub string) int { return strings.Index(strings.ToUpper(s), strings.ToUpper(sub)) }
 
+// ReferencedNames pulls the object names following FROM/JOIN in a query body (best-effort tokenizer,
+// deduped, order-preserving) — the basis for view dependency surfaces.
+func ReferencedNames(body string) []string {
+	tokens := strings.Fields(strings.NewReplacer(",", " ", "(", " ", ")", " ").Replace(body))
+	var out []string
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(tokens); i++ {
+		switch strings.ToUpper(tokens[i]) {
+		case "FROM", "JOIN":
+			name := Unqualify(tokens[i+1])
+			if name == "" || strings.EqualFold(name, "SELECT") {
+				continue
+			}
+			if key := strings.ToLower(name); !seen[key] {
+				seen[key] = true
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
 // LitSQL renders a Go value as a T-SQL literal (for parameter substitution).
 func LitSQL(v any) string {
 	switch x := v.(type) {
