@@ -36,6 +36,12 @@ func init() {
 		}
 		return nil
 	})
+	register("QUOTENAME", func(a []any) any {
+		if len(a) >= 1 {
+			return "[" + strings.ReplaceAll(toStr(a[0]), "]", "]]") + "]"
+		}
+		return nil
+	})
 }
 
 // substr is SQL Server's 1-based SUBSTRING.
