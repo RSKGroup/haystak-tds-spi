@@ -158,6 +158,22 @@ func TestStringFunctions(t *testing.T) {
 	}
 }
 
+func TestStringFinishers(t *testing.T) {
+	r := qry(t, "SELECT CONCAT_WS('-', 'a', 'b', 'c'), TRANSLATE('2*[3]', '[]', '()'), STR(3.14159, 6, 2), STRING_ESCAPE('a\"b', 'json')")[0]
+	if cell(r[0]) != "a-b-c" {
+		t.Errorf("CONCAT_WS = %v, want a-b-c", r[0])
+	}
+	if cell(r[1]) != "2*(3)" {
+		t.Errorf("TRANSLATE = %v, want 2*(3)", r[1])
+	}
+	if strings.TrimSpace(cell(r[2])) != "3.14" {
+		t.Errorf("STR = %q, want '3.14' (right-justified)", cell(r[2]))
+	}
+	if cell(r[3]) != `a\"b` {
+		t.Errorf("STRING_ESCAPE = %v, want a\\\"b", r[3])
+	}
+}
+
 func TestStringCharFunctions(t *testing.T) {
 	rows := qry(t, "SELECT ASCII('A'), CHAR(65), UNICODE('A'), NCHAR(65), LEN(SPACE(3)), PATINDEX('%cd%','abcdef'), PATINDEX('%xy%','abc')")
 	r := rows[0]

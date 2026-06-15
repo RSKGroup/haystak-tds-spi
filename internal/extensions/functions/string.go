@@ -4,7 +4,10 @@
 package functions
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -145,6 +148,77 @@ func init() {
 		}
 		return patIndex(argStr(a, 0), argStr(a, 1))
 	})
+	register("CONCAT_WS", func(a []any) any {
+		if len(a) < 1 {
+			return nil
+		}
+		sep := argText(a[0])
+		var parts []string
+		for _, v := range a[1:] {
+			if v != nil {
+				parts = append(parts, argText(v))
+			}
+		}
+		return strings.Join(parts, sep)
+	})
+	register("TRANSLATE", func(a []any) any {
+		if len(a) < 3 {
+			return nil
+		}
+		from, to := []rune(argStr(a, 1)), []rune(argStr(a, 2))
+		if len(from) != len(to) {
+			return nil
+		}
+		m := make(map[rune]rune, len(from))
+		for i, c := range from {
+			m[c] = to[i]
+		}
+		out := []rune(argStr(a, 0))
+		for i, c := range out {
+			if r, ok := m[c]; ok {
+				out[i] = r
+			}
+		}
+		return string(out)
+	})
+	register("STR", func(a []any) any {
+		f, ok := toFloatOk(arg0(a))
+		if !ok {
+			return nil
+		}
+		length, dec := 10, 0
+		if n, ok := argInt(a, 1); ok {
+			length = int(n)
+		}
+		if n, ok := argInt(a, 2); ok {
+			dec = int(n)
+		}
+		s := strconv.FormatFloat(f, 'f', dec, 64)
+		if len(s) > length {
+			return strings.Repeat("*", length) // does not fit -> asterisks, as SQL Server does
+		}
+		return fmt.Sprintf("%*s", length, s)
+	})
+	register("STRING_ESCAPE", func(a []any) any {
+		if len(a) < 2 || a[0] == nil || !strings.EqualFold(argStr(a, 1), "json") {
+			return nil
+		}
+		b, err := json.Marshal(argStr(a, 0))
+		if err != nil {
+			return nil
+		}
+		return string(b[1 : len(b)-1]) // strip the quotes Marshal wraps around the escaped text
+	})
+}
+
+func argText(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case nil:
+		return ""
+	}
+	return fmt.Sprint(v)
 }
 
 func leftRight(a []any, left bool) any {

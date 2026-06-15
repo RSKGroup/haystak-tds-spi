@@ -51,10 +51,10 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `REPLICATE` | `internal/extensions/functions/string.go` | Y |
 | `SPACE` | `internal/extensions/functions/string.go` | Y |
 | `REVERSE` | `internal/extensions/functions/string.go` | Y |
-| `CONCAT_WS` |  | - |
-| `STRING_ESCAPE` |  | - |
+| `CONCAT_WS` | `internal/extensions/functions/string.go` | Y |
+| `STRING_ESCAPE` | `internal/extensions/functions/string.go` | Y |
 | `STRING_SPLIT` |  | - |
-| `TRANSLATE` |  | - |
+| `TRANSLATE` | `internal/extensions/functions/string.go` | Y |
 | `FORMATMESSAGE` |  | - |
 | `UNICODE` | `internal/extensions/functions/string.go` | Y |
 | `NCHAR` | `internal/extensions/functions/string.go` | Y |
@@ -62,7 +62,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `ASCII` | `internal/extensions/functions/string.go` | Y |
 | `SOUNDEX` |  | - |
 | `DIFFERENCE` |  | - |
-| `STR` |  | - |
+| `STR` | `internal/extensions/functions/string.go` | Y |
 
 ### Date & time
 
