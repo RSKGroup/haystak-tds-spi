@@ -147,7 +147,6 @@ func init() {
 	})
 }
 
-// leftRight is LEFT (n leftmost bytes) when left, else RIGHT (n rightmost bytes).
 func leftRight(a []any, left bool) any {
 	n, ok := argInt(a, 1)
 	if !ok {
@@ -166,7 +165,7 @@ func leftRight(a []any, left bool) any {
 	return s[len(s)-int(n):]
 }
 
-// patIndex is PATINDEX: the 1-based start of the first substring of s matching the LIKE pattern, else 0.
+// patIndex is PATINDEX: 1-based start of the first LIKE-pattern match, else 0.
 func patIndex(pattern, s string) int64 {
 	re, err := regexp.Compile(likeToRegexp(pattern))
 	if err != nil {
@@ -178,8 +177,7 @@ func patIndex(pattern, s string) int64 {
 	return 0
 }
 
-// likeToRegexp translates a T-SQL LIKE pattern to a Go regexp. A leading % stays unanchored (PATINDEX
-// reports where the non-% match begins); other %/_ become .*/. and regex metacharacters are escaped.
+// likeToRegexp converts a LIKE pattern to regexp; a leading % stays unanchored for PATINDEX.
 func likeToRegexp(pattern string) string {
 	var b strings.Builder
 	if strings.HasPrefix(pattern, "%") {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
@@ -1042,8 +1043,11 @@ func probe(sql, db string) (tds.Rows, bool, error) {
 		return nil, false, nil
 	}
 	t := types.Type{Kind: types.String, MaxLen: 255}
-	if _, isInt := val.(int64); isInt {
+	switch val.(type) {
+	case int64:
 		t = types.Type{Kind: types.Int32}
+	case time.Time:
+		t = types.Type{Kind: types.Time}
 	}
 	rs, err := scalarRows("", t, val)
 	return rs, true, err
@@ -1089,7 +1093,7 @@ func isProbeScalar(name string) bool {
 	}
 	switch name {
 	case "SYSTEM_USER", "CURRENT_USER", "SESSION_USER", "USER", "USER_NAME", "SUSER_NAME", "SUSER_SNAME",
-		"HOST_NAME", "APP_NAME", "SCHEMA_NAME", "SERVERPROPERTY", "DATABASEPROPERTYEX":
+		"HOST_NAME", "APP_NAME", "SCHEMA_NAME", "SERVERPROPERTY", "DATABASEPROPERTYEX", "CURRENT_TIMESTAMP":
 		return true
 	}
 	return false

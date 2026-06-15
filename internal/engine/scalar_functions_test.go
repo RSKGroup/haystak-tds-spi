@@ -3,7 +3,45 @@
 
 package engine_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestDateFunctions(t *testing.T) {
+	rows := qry(t, "SELECT DATEDIFF(day,'2024-01-01','2024-01-15'), DATEPART(month,'2024-03-15'), DATEPART(year,'2024-03-15'), DATEPART(quarter,'2024-07-01'), DATENAME(month,'2024-03-15'), DATENAME(weekday,'2024-03-15')")
+	r := rows[0]
+	if cell(r[0]) != "14" || cell(r[1]) != "3" || cell(r[2]) != "2024" || cell(r[3]) != "3" {
+		t.Errorf("DATEDIFF/DATEPART = %v", r[0:4])
+	}
+	if cell(r[4]) != "March" || cell(r[5]) != "Friday" {
+		t.Errorf("DATENAME = %v/%v, want March/Friday", r[4], r[5])
+	}
+}
+
+func TestDateAddEomonthIsdate(t *testing.T) {
+	rows := qry(t, "SELECT DATEADD(day,1,'2024-01-15'), DATEADD(month,1,'2024-01-31'), EOMONTH('2024-02-10'), ISDATE('2024-01-01'), ISDATE('nope')")
+	r := rows[0]
+	if !strings.Contains(cell(r[0]), "2024-01-16") {
+		t.Errorf("DATEADD day = %v, want 2024-01-16", r[0])
+	}
+	if !strings.Contains(cell(r[1]), "2024-02-29") { // month-end clamp
+		t.Errorf("DATEADD month = %v, want 2024-02-29", r[1])
+	}
+	if !strings.Contains(cell(r[2]), "2024-02-29") {
+		t.Errorf("EOMONTH = %v, want 2024-02-29", r[2])
+	}
+	if cell(r[3]) != "1" || cell(r[4]) != "0" {
+		t.Errorf("ISDATE = %v/%v, want 1/0", r[3], r[4])
+	}
+}
+
+func TestCurrentTimestamp(t *testing.T) {
+	rows := qry(t, "SELECT CURRENT_TIMESTAMP")
+	if len(rows) != 1 || cell(rows[0][0]) == "<nil>" || cell(rows[0][0]) == "" {
+		t.Fatalf("CURRENT_TIMESTAMP = %v, want a timestamp", rows)
+	}
+}
 
 func TestTypeID(t *testing.T) {
 	rows := qry(t, "SELECT TYPE_ID('int'), TYPE_ID('nvarchar'), TYPE_ID('uniqueidentifier')")

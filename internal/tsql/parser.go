@@ -572,6 +572,12 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 		if strings.EqualFold(t.text, "CONVERT") && p.peekN(1).kind == tLParen {
 			return p.convertExpr()
 		}
+		switch strings.ToUpper(t.text) {
+		case "DATEADD", "DATEDIFF", "DATEPART", "DATENAME":
+			if p.peekN(1).kind == tLParen {
+				return p.datePartCall(strings.ToUpper(t.text))
+			}
+		}
 		if p.peekN(1).kind == tLParen {
 			return p.funcCall(strings.ToUpper(t.text))
 		}
@@ -581,8 +587,32 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 	return nil, fmt.Errorf("tsql: unexpected %q in expression", t.text)
 }
 
-// funcCall parses a scalar function call whose name token is current and is followed by '(' (so
-// reserved-keyword functions like LEFT/RIGHT resolve the same way as identifier-named ones).
+// datePartCall keeps the datepart keyword (year/day/...) as a literal arg, not a column ref.
+func (p *parser) datePartCall(name string) (*tds.ValueExpr, error) {
+	p.next() // name
+	p.next() // (
+	part := p.peek()
+	if part.kind != tIdent && part.kind != tKeyword {
+		return nil, fmt.Errorf("tsql: expected datepart in %s, got %q", name, part.text)
+	}
+	p.next()
+	args := []*tds.ValueExpr{{Kind: tds.ValLit, Lit: strings.ToLower(part.text)}}
+	for p.peek().kind == tComma {
+		p.next()
+		a, err := p.valueExpr()
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, a)
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after %s args, got %q", name, p.peek().text)
+	}
+	p.next()
+	return &tds.ValueExpr{Kind: tds.ValFunc, Func: name, Args: args}, nil
+}
+
+// funcCall parses NAME(args), including reserved-keyword names like LEFT/RIGHT.
 func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
 	p.next() // name
 	p.next() // (

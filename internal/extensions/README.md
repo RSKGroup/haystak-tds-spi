@@ -75,19 +75,19 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `YEAR` | `internal/extensions/functions/datetime.go` | Y |
 | `MONTH` | `internal/extensions/functions/datetime.go` | Y |
 | `DAY` | `internal/extensions/functions/datetime.go` | Y |
-| `SYSDATETIMEOFFSET` |  | - |
-| `CURRENT_TIMESTAMP` |  | - |
-| `DATEADD` |  | - |
-| `DATEDIFF` |  | - |
+| `SYSDATETIMEOFFSET` | `internal/extensions/functions/datetime.go` | Y |
+| `CURRENT_TIMESTAMP` | `internal/extensions/functions/datetime.go` | Y |
+| `DATEADD` | `internal/extensions/functions/datetime.go` | Y |
+| `DATEDIFF` | `internal/extensions/functions/datetime.go` | Y |
 | `DATEDIFF_BIG` |  | - |
-| `DATEPART` |  | - |
-| `DATENAME` |  | - |
+| `DATEPART` | `internal/extensions/functions/datetime.go` | Y |
+| `DATENAME` | `internal/extensions/functions/datetime.go` | Y |
 | `DATEFROMPARTS` |  | - |
 | `DATETIMEFROMPARTS` |  | - |
-| `EOMONTH` |  | - |
+| `EOMONTH` | `internal/extensions/functions/datetime.go` | Y |
 | `SWITCHOFFSET` |  | - |
 | `TODATETIMEOFFSET` |  | - |
-| `ISDATE` |  | - |
+| `ISDATE` | `internal/extensions/functions/datetime.go` | Y |
 | `DATETRUNC` |  | - |
 
 ### Mathematical
