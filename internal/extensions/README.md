@@ -207,10 +207,10 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `IS_SRVROLEMEMBER` | `internal/extensions/functions/security.go` | Y |
 | `IS_ROLEMEMBER` | `internal/extensions/functions/security.go` | Y |
 | `PERMISSIONS` |  | - |
-| `HAS_PERMS_BY_NAME` |  | - |
+| `HAS_PERMS_BY_NAME` | `internal/extensions/functions/security.go` | Y |
 | `ORIGINAL_LOGIN` | `internal/extensions/functions/security.go` | Y |
-| `CONTEXT_INFO` |  | - |
-| `SESSION_CONTEXT` |  | - |
+| `CONTEXT_INFO` | `internal/extensions/functions/security.go` | Y |
+| `SESSION_CONTEXT` | `internal/extensions/functions/security.go` | Y |
 
 ### System / server
 
@@ -218,12 +218,12 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | --- | --- | --- |
 | `SERVERPROPERTY` | `internal/extensions/functions/system.go` | Y |
 | `DATABASEPROPERTYEX` | `internal/extensions/functions/system.go` | Y |
-| `CONNECTIONPROPERTY` |  | - |
+| `CONNECTIONPROPERTY` | `internal/extensions/functions/system.go` | Y |
 | `NEWID` | `internal/extensions/functions/system.go` | Y |
-| `NEWSEQUENTIALID` |  | - |
+| `NEWSEQUENTIALID` | `internal/extensions/functions/system.go` | Y |
 | `SCOPE_IDENTITY` | `internal/extensions/functions/system.go` | Y |
 | `IDENT_CURRENT` | `internal/extensions/functions/system.go` | Y |
-| `XACT_STATE` |  | - |
+| `XACT_STATE` | `internal/extensions/functions/system.go` | Y |
 | `ERROR_MESSAGE` | `internal/extensions/functions/system.go` | Y |
 | `ERROR_NUMBER` | `internal/extensions/functions/system.go` | Y |
 | `ERROR_SEVERITY` | `internal/extensions/functions/system.go` | Y |
@@ -268,16 +268,16 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `HASHBYTES` | `internal/extensions/functions/crypto.go` | Y |
 | `CHECKSUM` | `internal/extensions/functions/crypto.go` | Y |
 | `BINARY_CHECKSUM` | `internal/extensions/functions/crypto.go` | Y |
-| `COMPRESS` |  | - |
-| `DECOMPRESS` |  | - |
-| `PWDENCRYPT` |  | - |
-| `PWDCOMPARE` |  | - |
+| `COMPRESS` | `internal/extensions/functions/crypto.go` | Y |
+| `DECOMPRESS` | `internal/extensions/functions/crypto.go` | Y |
+| `PWDENCRYPT` | `internal/extensions/functions/crypto.go` | Y |
+| `PWDCOMPARE` | `internal/extensions/functions/crypto.go` | Y |
 
 ### Cursor
 
 | Element | File | Status |
 | --- | --- | --- |
-| `CURSOR_STATUS` |  | - |
+| `CURSOR_STATUS` | `internal/extensions/functions/system.go` | Y |
 
 ---
 

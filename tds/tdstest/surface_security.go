@@ -21,4 +21,7 @@ var securityCases = []Case{
 	{Element: "func:IS_MEMBER", SQL: "SELECT IS_MEMBER('public')", Want: []any{1}},
 	{Element: "func:IS_SRVROLEMEMBER", SQL: "SELECT IS_SRVROLEMEMBER('sysadmin')", Want: []any{P(isNull)}},
 	{Element: "func:IS_ROLEMEMBER", SQL: "SELECT IS_ROLEMEMBER('public')", Want: []any{1}},
+	{Element: "func:CONTEXT_INFO", SQL: "SELECT CONTEXT_INFO()", Want: []any{P(isNull)}},
+	{Element: "func:SESSION_CONTEXT", SQL: "SELECT SESSION_CONTEXT('k')", Want: []any{P(isNull)}},
+	{Element: "func:HAS_PERMS_BY_NAME", SQL: "SELECT HAS_PERMS_BY_NAME('x','OBJECT','SELECT')", Want: []any{1}},
 }

@@ -35,4 +35,9 @@ var systemCases = []Case{
 	{Element: "func:@@DATEFIRST", SQL: "SELECT @@DATEFIRST", Want: []any{7}},
 	{Element: "func:@@LOCK_TIMEOUT", SQL: "SELECT @@LOCK_TIMEOUT", Want: []any{-1}},
 	{Element: "func:@@OPTIONS", SQL: "SELECT @@OPTIONS", Want: []any{5496}},
+
+	{Element: "func:NEWSEQUENTIALID", SQL: "SELECT NEWSEQUENTIALID()", Want: []any{P(isGUID)}},
+	{Element: "func:XACT_STATE", SQL: "SELECT XACT_STATE()", Want: []any{0}},
+	{Element: "func:CURSOR_STATUS", SQL: "SELECT CURSOR_STATUS('global','c')", Want: []any{-3}},
+	{Element: "func:CONNECTIONPROPERTY", SQL: "SELECT CONNECTIONPROPERTY('net_transport')", Want: []any{"TCP"}},
 }

@@ -16,6 +16,9 @@ func init() {
 	register("ORIGINAL_LOGIN", haystakUser)
 	register("HOST_NAME", func([]any) any { return "haystak-tds-spi" })
 	register("APP_NAME", func([]any) any { return "haystak-tds-spi" })
+	register("CONTEXT_INFO", func([]any) any { return nil })    // no session context_info set
+	register("SESSION_CONTEXT", func([]any) any { return nil }) // no session keys set
+	register("HAS_PERMS_BY_NAME", func([]any) any { return int64(1) })
 	register("USER_ID", func(a []any) any {
 		if len(a) == 0 || a[0] == nil {
 			return int64(1)

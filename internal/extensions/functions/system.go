@@ -22,6 +22,24 @@ func init() {
 	register("ERROR_STATE", nilFn)
 	register("ERROR_LINE", nilFn)
 	register("ERROR_PROCEDURE", nilFn)
+	register("NEWSEQUENTIALID", func([]any) any { return newID() })
+	register("XACT_STATE", func([]any) any { return int64(0) }) // no active transaction
+	register("CURSOR_STATUS", func([]any) any { return int64(-3) })
+	register("CONNECTIONPROPERTY", func(a []any) any {
+		switch strings.ToLower(argStr(a, 0)) {
+		case "net_transport":
+			return "TCP"
+		case "protocol_type":
+			return "TSQL"
+		case "local_net_address":
+			return "127.0.0.1"
+		case "local_tcp_port":
+			return int64(1433)
+		case "client_net_address":
+			return "127.0.0.1"
+		}
+		return nil
+	})
 }
 
 func nilFn([]any) any { return nil }

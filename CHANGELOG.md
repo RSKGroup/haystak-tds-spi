@@ -37,6 +37,7 @@ Other:
 - `FORMAT(value, format)`: standard numeric specifiers (`N`/`F`/`D`/`C`/`P`/`X`) and simple custom patterns, plus datetime token mapping (`yyyy`/`MM`/`dd`/`HH`/`mm`/`ss`/`MMMM`/…).
 - `JSON_MODIFY(json, path, value)`: set, insert, delete (NULL value), and `append` at a JSON path.
 - `JSON_PATH_EXISTS`, `JSON_ARRAY`; string `SOUNDEX`, `DIFFERENCE`, `FORMATMESSAGE`.
+- System/security scalars: `NEWSEQUENTIALID`, `XACT_STATE`, `CURSOR_STATUS`, `CONNECTIONPROPERTY`, `CONTEXT_INFO`, `SESSION_CONTEXT`, `HAS_PERMS_BY_NAME`; crypto `COMPRESS`/`DECOMPRESS` (gzip) and `PWDENCRYPT`/`PWDCOMPARE` (SHA-256).
 
 ## v1.4.0
 

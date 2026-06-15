@@ -4,12 +4,15 @@
 package functions
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"strings"
 )
 
@@ -39,6 +42,40 @@ func init() {
 	// bit-identical to SQL Server's undocumented algorithm.
 	register("CHECKSUM", checksum)
 	register("BINARY_CHECKSUM", checksum)
+	register("COMPRESS", func(a []any) any {
+		var buf bytes.Buffer
+		w := gzip.NewWriter(&buf)
+		if _, err := w.Write(hashBytesArg(a[0])); err != nil {
+			return nil
+		}
+		if err := w.Close(); err != nil {
+			return nil
+		}
+		return buf.Bytes()
+	})
+	register("DECOMPRESS", func(a []any) any {
+		r, err := gzip.NewReader(bytes.NewReader(hashBytesArg(a[0])))
+		if err != nil {
+			return nil
+		}
+		out, err := io.ReadAll(r)
+		if err != nil {
+			return nil
+		}
+		return out
+	})
+	// PWDENCRYPT/PWDCOMPARE are a self-consistent SHA-256 hash, not SQL Server's internal salted format.
+	register("PWDENCRYPT", func(a []any) any {
+		h := sha256.Sum256([]byte(argStr(a, 0)))
+		return h[:]
+	})
+	register("PWDCOMPARE", func(a []any) any {
+		h := sha256.Sum256([]byte(argStr(a, 0)))
+		if hb, ok := a[1].([]byte); ok && bytes.Equal(h[:], hb) {
+			return int64(1)
+		}
+		return int64(0)
+	})
 }
 
 func hashBytesArg(v any) []byte {
