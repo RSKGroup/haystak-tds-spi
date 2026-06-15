@@ -5,6 +5,7 @@ package exec
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -167,6 +168,16 @@ func aggFuncFromName(name string) tds.AggFunc {
 		return tds.AggMin
 	case "MAX":
 		return tds.AggMax
+	case "COUNT_BIG":
+		return tds.AggCountBig
+	case "STDEV":
+		return tds.AggStdev
+	case "STDEVP":
+		return tds.AggStdevp
+	case "VAR":
+		return tds.AggVar
+	case "VARP":
+		return tds.AggVarp
 	}
 	return tds.AggNone
 }
@@ -310,12 +321,12 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 			if name == "" {
 				name = it.Column
 			}
-		case tds.AggCount:
+		case tds.AggCount, tds.AggCountBig:
 			typ = types.Type{Kind: types.Int64}
 			if name == "" {
 				name = "count"
 			}
-		case tds.AggSum, tds.AggAvg:
+		case tds.AggSum, tds.AggAvg, tds.AggStdev, tds.AggStdevp, tds.AggVar, tds.AggVarp:
 			typ = types.Type{Kind: types.Float64}
 			if name == "" {
 				name = "agg"
@@ -357,7 +368,7 @@ func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, erro
 // "" for COUNT-all); idx is the pre-aggregation column index.
 func computeAgg(fn tds.AggFunc, arg string, idx map[string]int, rows [][]any) (any, error) {
 	switch fn {
-	case tds.AggCount:
+	case tds.AggCount, tds.AggCountBig:
 		if arg == "*" || arg == "" {
 			return int64(len(rows)), nil
 		}
@@ -372,6 +383,40 @@ func computeAgg(fn tds.AggFunc, arg string, idx map[string]int, rows [][]any) (a
 			}
 		}
 		return n, nil
+	case tds.AggStdev, tds.AggStdevp, tds.AggVar, tds.AggVarp:
+		i, ok := resolveCol(idx, arg)
+		if !ok {
+			return nil, fmt.Errorf("exec: unknown column %q in aggregate", arg)
+		}
+		var vals []float64
+		for _, r := range rows {
+			if r[i] != nil {
+				vals = append(vals, toFloat(r[i]))
+			}
+		}
+		sample := fn == tds.AggStdev || fn == tds.AggVar
+		if len(vals) == 0 || (sample && len(vals) < 2) {
+			return nil, nil
+		}
+		var mean float64
+		for _, v := range vals {
+			mean += v
+		}
+		mean /= float64(len(vals))
+		var ss float64
+		for _, v := range vals {
+			d := v - mean
+			ss += d * d
+		}
+		denom := float64(len(vals))
+		if sample {
+			denom = float64(len(vals) - 1)
+		}
+		variance := ss / denom
+		if fn == tds.AggVar || fn == tds.AggVarp {
+			return variance, nil
+		}
+		return math.Sqrt(variance), nil
 	case tds.AggSum, tds.AggAvg:
 		i, ok := resolveCol(idx, arg)
 		if !ok {

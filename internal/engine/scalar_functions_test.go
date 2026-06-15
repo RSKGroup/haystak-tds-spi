@@ -4,9 +4,50 @@
 package engine_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func mustFloat(t *testing.T, v any) float64 {
+	t.Helper()
+	f, err := strconv.ParseFloat(cell(v), 64)
+	if err != nil {
+		t.Fatalf("not a float: %v", v)
+	}
+	return f
+}
+
+func TestAggregateFunctions(t *testing.T) {
+	// orders.amount = {100, 200, 50}: VARP=3888.89, STDEVP=62.36, VAR=5833.33, STDEV=76.38
+	r := qry(t, "SELECT COUNT_BIG(*), VARP(amount), STDEVP(amount), VAR(amount), STDEV(amount) FROM orders")[0]
+	if cell(r[0]) != "3" {
+		t.Errorf("COUNT_BIG = %v, want 3", r[0])
+	}
+	if v := mustFloat(t, r[1]); v < 3888.0 || v > 3889.0 {
+		t.Errorf("VARP = %v, want ~3888.89", r[1])
+	}
+	if v := mustFloat(t, r[2]); v < 62.0 || v > 62.5 {
+		t.Errorf("STDEVP = %v, want ~62.36", r[2])
+	}
+	if v := mustFloat(t, r[3]); v < 5833.0 || v > 5834.0 {
+		t.Errorf("VAR = %v, want ~5833.33", r[3])
+	}
+	if v := mustFloat(t, r[4]); v < 76.0 || v > 76.6 {
+		t.Errorf("STDEV = %v, want ~76.38", r[4])
+	}
+}
+
+func TestSystemScalars(t *testing.T) {
+	id := cell(qry(t, "SELECT NEWID()")[0][0])
+	if len(id) != 36 || strings.Count(id, "-") != 4 {
+		t.Errorf("NEWID = %q, want a 36-char GUID", id)
+	}
+	r := qry(t, "SELECT SCOPE_IDENTITY(), ERROR_MESSAGE(), ERROR_NUMBER()")[0]
+	if cell(r[0]) != "<nil>" || cell(r[1]) != "<nil>" || cell(r[2]) != "<nil>" {
+		t.Errorf("identity/error scalars = %v, want all NULL", r)
+	}
+}
 
 func TestMathFunctions(t *testing.T) {
 	rows := qry(t, "SELECT CEILING(2.1), FLOOR(2.9), ROUND(123.456,2), POWER(2,10), SQRT(16), SQUARE(5), SIGN(-7), ABS(-3)")

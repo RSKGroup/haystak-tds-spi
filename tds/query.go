@@ -51,6 +51,11 @@ const (
 	AggAvg
 	AggMin
 	AggMax
+	AggCountBig
+	AggStdev
+	AggStdevp
+	AggVar
+	AggVarp
 )
 
 // SelectItem is one entry in the select list: a plain column, an aggregate, or an expression.

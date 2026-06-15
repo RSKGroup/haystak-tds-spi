@@ -17,11 +17,11 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `MIN` | `internal/exec/aggregate.go` | Y |
 | `MAX` | `internal/exec/aggregate.go` | Y |
 | `AVG` | `internal/exec/aggregate.go` | Y |
-| `COUNT_BIG` |  | - |
-| `STDEV` |  | - |
-| `STDEVP` |  | - |
-| `VAR` |  | - |
-| `VARP` |  | - |
+| `COUNT_BIG` | `internal/exec/aggregate.go` | Y |
+| `STDEV` | `internal/exec/aggregate.go` | Y |
+| `STDEVP` | `internal/exec/aggregate.go` | Y |
+| `VAR` | `internal/exec/aggregate.go` | Y |
+| `VARP` | `internal/exec/aggregate.go` | Y |
 | `GROUPING` |  | - |
 | `GROUPING_ID` |  | - |
 | `CHECKSUM_AGG` |  | - |
@@ -219,17 +219,17 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `SERVERPROPERTY` | `internal/extensions/functions/system.go` | Y |
 | `DATABASEPROPERTYEX` | `internal/extensions/functions/system.go` | Y |
 | `CONNECTIONPROPERTY` |  | - |
-| `NEWID` |  | - |
+| `NEWID` | `internal/extensions/functions/system.go` | Y |
 | `NEWSEQUENTIALID` |  | - |
-| `SCOPE_IDENTITY` |  | - |
-| `IDENT_CURRENT` |  | - |
+| `SCOPE_IDENTITY` | `internal/extensions/functions/system.go` | Y |
+| `IDENT_CURRENT` | `internal/extensions/functions/system.go` | Y |
 | `XACT_STATE` |  | - |
-| `ERROR_MESSAGE` |  | - |
-| `ERROR_NUMBER` |  | - |
-| `ERROR_SEVERITY` |  | - |
-| `ERROR_STATE` |  | - |
-| `ERROR_LINE` |  | - |
-| `ERROR_PROCEDURE` |  | - |
+| `ERROR_MESSAGE` | `internal/extensions/functions/system.go` | Y |
+| `ERROR_NUMBER` | `internal/extensions/functions/system.go` | Y |
+| `ERROR_SEVERITY` | `internal/extensions/functions/system.go` | Y |
+| `ERROR_STATE` | `internal/extensions/functions/system.go` | Y |
+| `ERROR_LINE` | `internal/extensions/functions/system.go` | Y |
+| `ERROR_PROCEDURE` | `internal/extensions/functions/system.go` | Y |
 
 ### Ranking & window
 

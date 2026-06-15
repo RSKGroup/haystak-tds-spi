@@ -3,11 +3,38 @@
 
 package functions
 
-import "strings"
+import (
+	"crypto/rand"
+	"fmt"
+	"strings"
+)
 
 func init() {
 	register("SERVERPROPERTY", func(a []any) any { return serverProperty(argStr(a, 0)) })
 	register("DATABASEPROPERTYEX", func([]any) any { return "ON" })
+	register("NEWID", func([]any) any { return newID() })
+	// no identity tracking and no TRY/CATCH context: these are NULL, matching SQL Server outside scope.
+	register("SCOPE_IDENTITY", nilFn)
+	register("IDENT_CURRENT", nilFn)
+	register("ERROR_MESSAGE", nilFn)
+	register("ERROR_NUMBER", nilFn)
+	register("ERROR_SEVERITY", nilFn)
+	register("ERROR_STATE", nilFn)
+	register("ERROR_LINE", nilFn)
+	register("ERROR_PROCEDURE", nilFn)
+}
+
+func nilFn([]any) any { return nil }
+
+// newID is NEWID(): a random v4 GUID in SQL Server's uppercase form.
+func newID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return ""
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return strings.ToUpper(fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]))
 }
 
 // serverProperty answers SERVERPROPERTY(name) with the values native GUIs read on connect.
