@@ -8,6 +8,31 @@ import (
 	"testing"
 )
 
+func TestMathFunctions(t *testing.T) {
+	rows := qry(t, "SELECT CEILING(2.1), FLOOR(2.9), ROUND(123.456,2), POWER(2,10), SQRT(16), SQUARE(5), SIGN(-7), ABS(-3)")
+	r := rows[0]
+	if cell(r[0]) != "3" || cell(r[1]) != "2" || cell(r[2]) != "123.46" || cell(r[3]) != "1024" {
+		t.Errorf("CEILING/FLOOR/ROUND/POWER = %v", r[0:4])
+	}
+	if cell(r[4]) != "4" || cell(r[5]) != "25" || cell(r[6]) != "-1" || cell(r[7]) != "3" {
+		t.Errorf("SQRT/SQUARE/SIGN/ABS = %v", r[4:8])
+	}
+}
+
+func TestLogicalAndConversion(t *testing.T) {
+	rows := qry(t, "SELECT IIF(5 > 3, 'yes', 'no'), IIF(1 > 2, 'yes', 'no'), CHOOSE(2, 'a', 'b', 'c'), TRY_CAST('42' AS INT), TRY_CONVERT(INT, 'notint')")
+	r := rows[0]
+	if cell(r[0]) != "yes" || cell(r[1]) != "no" || cell(r[2]) != "b" {
+		t.Errorf("IIF/CHOOSE = %v", r[0:3])
+	}
+	if cell(r[3]) != "42" {
+		t.Errorf("TRY_CAST('42' AS INT) = %v, want 42", r[3])
+	}
+	if cell(r[4]) != "<nil>" {
+		t.Errorf("TRY_CONVERT(INT,'notint') = %v, want NULL", r[4])
+	}
+}
+
 func TestDateFunctions(t *testing.T) {
 	rows := qry(t, "SELECT DATEDIFF(day,'2024-01-01','2024-01-15'), DATEPART(month,'2024-03-15'), DATEPART(year,'2024-03-15'), DATEPART(quarter,'2024-07-01'), DATENAME(month,'2024-03-15'), DATENAME(weekday,'2024-03-15')")
 	r := rows[0]

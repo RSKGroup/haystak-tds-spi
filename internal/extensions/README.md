@@ -95,28 +95,28 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | Element | File | Status |
 | --- | --- | --- |
 | `ABS` | `internal/extensions/functions/math.go` | Y |
-| `CEILING` |  | - |
-| `FLOOR` |  | - |
-| `ROUND` |  | - |
-| `POWER` |  | - |
-| `SQRT` |  | - |
-| `SQUARE` |  | - |
-| `EXP` |  | - |
-| `LOG` |  | - |
-| `LOG10` |  | - |
-| `SIN` |  | - |
-| `COS` |  | - |
-| `TAN` |  | - |
-| `COT` |  | - |
-| `ASIN` |  | - |
-| `ACOS` |  | - |
-| `ATAN` |  | - |
-| `ATN2` |  | - |
-| `PI` |  | - |
-| `RAND` |  | - |
-| `SIGN` |  | - |
-| `DEGREES` |  | - |
-| `RADIANS` |  | - |
+| `CEILING` | `internal/extensions/functions/math.go` | Y |
+| `FLOOR` | `internal/extensions/functions/math.go` | Y |
+| `ROUND` | `internal/extensions/functions/math.go` | Y |
+| `POWER` | `internal/extensions/functions/math.go` | Y |
+| `SQRT` | `internal/extensions/functions/math.go` | Y |
+| `SQUARE` | `internal/extensions/functions/math.go` | Y |
+| `EXP` | `internal/extensions/functions/math.go` | Y |
+| `LOG` | `internal/extensions/functions/math.go` | Y |
+| `LOG10` | `internal/extensions/functions/math.go` | Y |
+| `SIN` | `internal/extensions/functions/math.go` | Y |
+| `COS` | `internal/extensions/functions/math.go` | Y |
+| `TAN` | `internal/extensions/functions/math.go` | Y |
+| `COT` | `internal/extensions/functions/math.go` | Y |
+| `ASIN` | `internal/extensions/functions/math.go` | Y |
+| `ACOS` | `internal/extensions/functions/math.go` | Y |
+| `ATAN` | `internal/extensions/functions/math.go` | Y |
+| `ATN2` | `internal/extensions/functions/math.go` | Y |
+| `PI` | `internal/extensions/functions/math.go` | Y |
+| `RAND` | `internal/extensions/functions/math.go` | Y |
+| `SIGN` | `internal/extensions/functions/math.go` | Y |
+| `DEGREES` | `internal/extensions/functions/math.go` | Y |
+| `RADIANS` | `internal/extensions/functions/math.go` | Y |
 
 ### Conversion
 
@@ -124,8 +124,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | --- | --- | --- |
 | `CAST` | `internal/tsql/parser.go` | Y |
 | `CONVERT` | `internal/tsql/parser.go` | Y |
-| `TRY_CAST` |  | - |
-| `TRY_CONVERT` |  | - |
+| `TRY_CAST` | `internal/tsql/parser.go` | Y |
+| `TRY_CONVERT` | `internal/tsql/parser.go` | Y |
 | `PARSE` |  | - |
 | `TRY_PARSE` |  | - |
 | `FORMAT` |  | - |
@@ -138,8 +138,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `COALESCE` | `internal/extensions/functions/logical.go` | Y |
 | `NULLIF` | `internal/extensions/functions/logical.go` | Y |
 | `CASE` | `internal/exec/value.go` | Y |
-| `IIF` |  | - |
-| `CHOOSE` |  | - |
+| `IIF` | `internal/tsql/parser.go` | Y |
+| `CHOOSE` | `internal/extensions/functions/logical.go` | Y |
 
 ### Metadata
 

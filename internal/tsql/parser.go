@@ -572,6 +572,15 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 		if strings.EqualFold(t.text, "CONVERT") && p.peekN(1).kind == tLParen {
 			return p.convertExpr()
 		}
+		if (strings.EqualFold(t.text, "TRY_CAST") || strings.EqualFold(t.text, "TRY_CONVERT")) && p.peekN(1).kind == tLParen {
+			if strings.EqualFold(t.text, "TRY_CAST") {
+				return p.castExpr() // CAST already yields NULL on failure
+			}
+			return p.convertExpr()
+		}
+		if strings.EqualFold(t.text, "IIF") && p.peekN(1).kind == tLParen {
+			return p.iifExpr()
+		}
 		switch strings.ToUpper(t.text) {
 		case "DATEADD", "DATEDIFF", "DATEPART", "DATENAME":
 			if p.peekN(1).kind == tLParen {
@@ -585,6 +594,37 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 		return &tds.ValueExpr{Kind: tds.ValCol, Col: name}, nil
 	}
 	return nil, fmt.Errorf("tsql: unexpected %q in expression", t.text)
+}
+
+// iifExpr desugars IIF(cond, yes, no) to a searched CASE so the boolean condition gets full parsing.
+func (p *parser) iifExpr() (*tds.ValueExpr, error) {
+	p.next() // IIF
+	p.next() // (
+	cond, err := p.orExpr()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tComma {
+		return nil, fmt.Errorf("tsql: expected ',' in IIF, got %q", p.peek().text)
+	}
+	p.next()
+	yes, err := p.valueExpr()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tComma {
+		return nil, fmt.Errorf("tsql: expected ',' in IIF, got %q", p.peek().text)
+	}
+	p.next()
+	no, err := p.valueExpr()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after IIF, got %q", p.peek().text)
+	}
+	p.next()
+	return &tds.ValueExpr{Kind: tds.ValCase, Whens: []tds.CaseWhen{{Cond: cond, Result: yes}}, Else: no}, nil
 }
 
 // datePartCall keeps the datepart keyword (year/day/...) as a literal arg, not a column ref.

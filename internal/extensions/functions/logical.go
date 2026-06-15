@@ -15,6 +15,13 @@ func init() {
 		}
 		return a[0]
 	})
+	register("CHOOSE", func(a []any) any {
+		i, ok := argInt(a, 0)
+		if !ok || i < 1 || int(i) >= len(a) {
+			return nil
+		}
+		return a[i] // a[0] is the index; choices start at a[1]
+	})
 }
 
 // coalesce backs both ISNULL(a, b) and COALESCE(a, b, …): the first non-NULL argument.
