@@ -337,7 +337,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	if caps.Pushdown {
 		if sc, ok := b.(tds.Scanner); ok {
 			if len(q.Joins) > 0 {
-				return joinQuery(ctx, sc, q)
+				return joinQuery(ctx, b, q)
 			}
 			raw, err := sc.Scan(ctx, q)
 			if err != nil {
@@ -489,11 +489,10 @@ func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn
 	return env
 }
 
-// queryUsesCatalogFn reports whether any select item calls OBJECT_NAME or DB_NAME with an argument
-// (DB_NAME() with no argument needs only CurrentDB, which is always set).
+// queryUsesCatalogFn reports whether the query calls a catalog scalar (OBJECT_NAME / COL_* / *PROPERTY,
+// or DB_NAME with an argument) anywhere the evaluator threads *Env: SELECT, ORDER BY, WHERE, HAVING,
+// JOIN-ON, and searched-CASE WHEN conditions.
 func queryUsesCatalogFn(q *tds.Query) bool {
-	// Catalog scalars resolve only where the evaluator threads *Env: the SELECT projection and ORDER BY.
-	// Predicate clauses (WHERE/HAVING/JOIN-ON) evaluate with a nil env, so they see no resolver.
 	for a := q; a != nil; a = a.Union {
 		for _, it := range a.Select {
 			if valueExprUsesCatalogFn(it.Expr) || valueExprUsesCatalogFn(it.ArgExpr) {
@@ -505,8 +504,42 @@ func queryUsesCatalogFn(q *tds.Query) bool {
 				return true
 			}
 		}
+		if exprUsesCatalogFn(a.Where) || exprUsesCatalogFn(a.Having) {
+			return true
+		}
+		for _, j := range a.Joins {
+			if exprUsesCatalogFn(j.On) {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+// exprUsesCatalogFn walks a predicate tree for catalog-scalar calls in its value expressions.
+func exprUsesCatalogFn(e *tds.Expr) bool {
+	if e == nil {
+		return false
+	}
+	if p := e.Pred; p != nil {
+		if valueExprUsesCatalogFn(p.LeftExpr) {
+			return true
+		}
+		if ve, ok := p.Value.(*tds.ValueExpr); ok && valueExprUsesCatalogFn(ve) {
+			return true
+		}
+	}
+	for _, c := range e.And {
+		if exprUsesCatalogFn(c) {
+			return true
+		}
+	}
+	for _, c := range e.Or {
+		if exprUsesCatalogFn(c) {
+			return true
+		}
+	}
+	return exprUsesCatalogFn(e.Not)
 }
 
 func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
@@ -530,6 +563,9 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 	}
 	for i := range ve.Whens {
 		if valueExprUsesCatalogFn(ve.Whens[i].Match) || valueExprUsesCatalogFn(ve.Whens[i].Result) {
+			return true
+		}
+		if exprUsesCatalogFn(ve.Whens[i].Cond) {
 			return true
 		}
 	}
@@ -744,7 +780,9 @@ func materialize(rows tds.Rows) ([]catalog.Column, [][]any, error) {
 	return cols, data, rows.Err()
 }
 
-func joinQuery(ctx context.Context, sc tds.Scanner, q *tds.Query) (tds.Rows, error) {
+func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
+	sc := b.(tds.Scanner)
+	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
 	fromAlias := effAlias(q.FromAlias, q.Table)
 	cols, rows, err := scanTable(ctx, sc, &tds.Query{
 		Database: q.Database, Schema: q.Schema, Table: q.Table,
@@ -772,12 +810,12 @@ func joinQuery(ctx context.Context, sc tds.Scanner, q *tds.Query) (tds.Rows, err
 			return nil, err
 		}
 		rcols = qualify(rcols, jAlias)
-		cols, rows, err = exec.Join(cols, rows, j.Type, rcols, rrows, j.On)
+		cols, rows, err = exec.Join(cols, rows, j.Type, rcols, rrows, j.On, env)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return exec.Apply(cols, rows, q)
+	return exec.ApplyWith(cols, rows, q, env)
 }
 
 func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Column, [][]any, error) {

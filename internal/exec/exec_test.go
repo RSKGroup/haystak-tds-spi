@@ -205,7 +205,7 @@ func TestJoin(t *testing.T) {
 	rrows := [][]any{{int64(1), int64(100)}, {int64(2), int64(200)}, {int64(2), int64(50)}}
 	on := &tds.Expr{Pred: &tds.Predicate{Column: "u.id", Op: tds.OpEq, Value: tds.ColRef{Name: "o.user_id"}}}
 
-	cols, rows, err := Join(lcols, [][]any{{int64(1), "ada"}, {int64(2), "alan"}}, tds.JoinInner, rcols, rrows, on)
+	cols, rows, err := Join(lcols, [][]any{{int64(1), "ada"}, {int64(2), "alan"}}, tds.JoinInner, rcols, rrows, on, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestJoin(t *testing.T) {
 		t.Fatalf("inner join = %d cols / %d rows, want 4/3", len(cols), len(rows))
 	}
 
-	_, lrows, err := Join(lcols, [][]any{{int64(3), "grace"}}, tds.JoinLeft, rcols, rrows, on)
+	_, lrows, err := Join(lcols, [][]any{{int64(3), "grace"}}, tds.JoinLeft, rcols, rrows, on, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

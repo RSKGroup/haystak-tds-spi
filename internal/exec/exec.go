@@ -26,7 +26,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds
 
 	var filtered [][]any
 	for _, row := range data {
-		ok, err := evalExpr(idx, row, q.Where, env.subFn())
+		ok, err := evalExpr(idx, row, q.Where, env)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +42,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds
 		}
 		q2 := *q
 		q2.Select = mSel
-		return aggregate(mCols, indexCols(mCols), mRows, &q2)
+		return aggregate(mCols, indexCols(mCols), mRows, &q2, env)
 	}
 
 	mCols, mRows, mSel, err := materializeExprs(cols, idx, filtered, q.Select, env)
@@ -230,20 +230,20 @@ func (e *Env) subFn() SubFn {
 	return e.Sub
 }
 
-func evalExpr(idx map[string]int, row []any, e *tds.Expr, sub SubFn) (bool, error) {
+func evalExpr(idx map[string]int, row []any, e *tds.Expr, env *Env) (bool, error) {
 	switch {
 	case e == nil:
 		return true, nil
 	case e.Const != nil:
 		return *e.Const, nil
 	case e.Pred != nil:
-		return evalPred(idx, row, e.Pred, sub)
+		return evalPred(idx, row, e.Pred, env)
 	case e.Not != nil:
-		v, err := evalExpr(idx, row, e.Not, sub)
+		v, err := evalExpr(idx, row, e.Not, env)
 		return !v, err
 	case len(e.And) > 0:
 		for _, c := range e.And {
-			v, err := evalExpr(idx, row, c, sub)
+			v, err := evalExpr(idx, row, c, env)
 			if err != nil {
 				return false, err
 			}
@@ -254,7 +254,7 @@ func evalExpr(idx map[string]int, row []any, e *tds.Expr, sub SubFn) (bool, erro
 		return true, nil
 	case len(e.Or) > 0:
 		for _, c := range e.Or {
-			v, err := evalExpr(idx, row, c, sub)
+			v, err := evalExpr(idx, row, c, env)
 			if err != nil {
 				return false, err
 			}
@@ -267,7 +267,8 @@ func evalExpr(idx map[string]int, row []any, e *tds.Expr, sub SubFn) (bool, erro
 	return true, nil
 }
 
-func evalPred(idx map[string]int, row []any, p *tds.Predicate, sub SubFn) (bool, error) {
+func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, error) {
+	sub := env.subFn()
 	if p.Op == tds.OpExists && p.Sub != nil {
 		if sub == nil {
 			return false, nil
@@ -280,7 +281,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, sub SubFn) (bool,
 	}
 	var v any
 	if p.LeftExpr != nil {
-		lv, err := evalValue(idx, row, p.LeftExpr, nil)
+		lv, err := evalValue(idx, row, p.LeftExpr, env)
 		if err != nil {
 			return false, err
 		}
@@ -329,7 +330,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, sub SubFn) (bool,
 		rhs := p.Value
 		switch r := rhs.(type) {
 		case *tds.ValueExpr:
-			rv, err := evalValue(idx, row, r, nil)
+			rv, err := evalValue(idx, row, r, env)
 			if err != nil {
 				return false, err
 			}

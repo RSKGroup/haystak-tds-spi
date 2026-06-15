@@ -28,7 +28,7 @@ func isAggregate(q *tds.Query) bool {
 	return false
 }
 
-func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Query) (tds.Rows, error) {
+func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Query, env *Env) (tds.Rows, error) {
 	groupIdx := make([]int, 0, len(q.GroupBy))
 	for _, g := range q.GroupBy {
 		i, ok := idx[g]
@@ -82,7 +82,7 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 	if q.Having != nil {
 		var kept []aggregated
 		for _, ar := range rowsOut {
-			ok, err := evalAggExpr(idx, ar.group, outIdx, ar.row, q.Having)
+			ok, err := evalAggExpr(idx, ar.group, outIdx, ar.row, q.Having, env)
 			if err != nil {
 				return nil, err
 			}
@@ -98,7 +98,7 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 		for i, ar := range rowsOut {
 			k := make([]any, len(q.OrderBy))
 			for j, o := range q.OrderBy {
-				kv, err := aggOrderKey(idx, outIdx, ar.group, ar.row, o)
+				kv, err := aggOrderKey(idx, outIdx, ar.group, ar.row, o, env)
 				if err != nil {
 					return nil, err
 				}
@@ -139,10 +139,10 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 }
 
 // aggOrderKey resolves one ORDER BY term to its sort value in the aggregate context.
-func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o tds.OrderItem) (any, error) {
+func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o tds.OrderItem, env *Env) (any, error) {
 	switch {
 	case o.Expr != nil:
-		return evalAggValue(origIdx, group, outIdx, outRow, o.Expr)
+		return evalAggValue(origIdx, group, outIdx, outRow, o.Expr, env)
 	case o.Ordinal > 0:
 		if o.Ordinal <= len(outRow) {
 			return outRow[o.Ordinal-1], nil
@@ -199,40 +199,40 @@ func aggArg(args []*tds.ValueExpr) string {
 
 // evalAggValue evaluates a value expression in the GROUP context: aggregate calls (COUNT/SUM/…) compute
 // over the group's rows via origIdx; everything else evaluates against the aggregated output row.
-func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, ve *tds.ValueExpr) (any, error) {
+func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, ve *tds.ValueExpr, env *Env) (any, error) {
 	switch ve.Kind {
 	case tds.ValFunc:
 		if fn := aggFuncFromName(ve.Func); fn != tds.AggNone {
 			return computeAgg(fn, aggArg(ve.Args), origIdx, group)
 		}
 	case tds.ValBinary:
-		l, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Left)
+		l, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Left, env)
 		if err != nil {
 			return nil, err
 		}
-		r, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Right)
+		r, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Right, env)
 		if err != nil {
 			return nil, err
 		}
 		return evalBinary(ve.Op, l, r), nil
 	}
-	return evalValue(outIdx, outRow, ve, nil)
+	return evalValue(outIdx, outRow, ve, env)
 }
 
-func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, e *tds.Expr) (bool, error) {
+func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, e *tds.Expr, env *Env) (bool, error) {
 	switch {
 	case e == nil:
 		return true, nil
 	case e.Const != nil:
 		return *e.Const, nil
 	case e.Pred != nil:
-		return evalAggPred(origIdx, group, outIdx, outRow, e.Pred)
+		return evalAggPred(origIdx, group, outIdx, outRow, e.Pred, env)
 	case e.Not != nil:
-		v, err := evalAggExpr(origIdx, group, outIdx, outRow, e.Not)
+		v, err := evalAggExpr(origIdx, group, outIdx, outRow, e.Not, env)
 		return !v, err
 	case len(e.And) > 0:
 		for _, c := range e.And {
-			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c)
+			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c, env)
 			if err != nil {
 				return false, err
 			}
@@ -243,7 +243,7 @@ func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 		return true, nil
 	case len(e.Or) > 0:
 		for _, c := range e.Or {
-			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c)
+			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c, env)
 			if err != nil {
 				return false, err
 			}
@@ -256,10 +256,10 @@ func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 	return true, nil
 }
 
-func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, p *tds.Predicate) (bool, error) {
+func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, p *tds.Predicate, env *Env) (bool, error) {
 	var v any
 	if p.LeftExpr != nil {
-		lv, err := evalAggValue(origIdx, group, outIdx, outRow, p.LeftExpr)
+		lv, err := evalAggValue(origIdx, group, outIdx, outRow, p.LeftExpr, env)
 		if err != nil {
 			return false, err
 		}
@@ -291,7 +291,7 @@ func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 		rhs := p.Value
 		switch r := rhs.(type) {
 		case *tds.ValueExpr:
-			rv, err := evalAggValue(origIdx, group, outIdx, outRow, r)
+			rv, err := evalAggValue(origIdx, group, outIdx, outRow, r, env)
 			if err != nil {
 				return false, err
 			}

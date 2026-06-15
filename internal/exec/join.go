@@ -8,7 +8,7 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 )
 
-func Join(lcols []catalog.Column, lrows [][]any, jt tds.JoinType, rcols []catalog.Column, rrows [][]any, on *tds.Expr) ([]catalog.Column, [][]any, error) {
+func Join(lcols []catalog.Column, lrows [][]any, jt tds.JoinType, rcols []catalog.Column, rrows [][]any, on *tds.Expr, env *Env) ([]catalog.Column, [][]any, error) {
 	cols := make([]catalog.Column, 0, len(lcols)+len(rcols))
 	cols = append(cols, lcols...)
 	cols = append(cols, rcols...)
@@ -23,7 +23,7 @@ func Join(lcols []catalog.Column, lrows [][]any, jt tds.JoinType, rcols []catalo
 			combined = append(combined, rr...)
 			keep := true
 			if on != nil {
-				ok, err := evalExpr(idx, combined, on, nil)
+				ok, err := evalExpr(idx, combined, on, env)
 				if err != nil {
 					return nil, nil, err
 				}

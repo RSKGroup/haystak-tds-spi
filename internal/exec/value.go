@@ -186,7 +186,7 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any,
 		for _, w := range ve.Whens {
 			matched := false
 			if w.Cond != nil {
-				ok, err := evalExpr(idx, row, w.Cond, env.subFn())
+				ok, err := evalExpr(idx, row, w.Cond, env)
 				if err != nil {
 					return nil, err
 				}

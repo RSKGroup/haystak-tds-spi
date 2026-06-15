@@ -30,7 +30,7 @@ Other:
 
 - Parser: reserved-keyword function names (`LEFT`/`RIGHT`), datepart keywords (`DATEADD`/`DATEPART`/…), `IIF` (desugars to `CASE`), and `TRY_CAST`/`TRY_CONVERT`/`PARSE`.
 - Seam-first catalog: views are projections over SPI seams — `sys.table_types` over `catalog.Schema.TableTypes`, the security catalog over the authenticated `tds.Principal` — populating when the backend/identity supplies data and degrading to the correct empty shape otherwise.
-- Known limitation: catalog scalars (`OBJECT_NAME`/`COL_*`/`*PROPERTY`/`OBJECT_DEFINITION`) resolve in the SELECT projection and ORDER BY, not inside WHERE/HAVING predicate clauses.
+- Catalog scalars (`OBJECT_NAME`/`COL_*`/`*PROPERTY`/`OBJECT_DEFINITION`) resolve in every clause: SELECT, ORDER BY, WHERE, HAVING, JOIN-ON, and searched-CASE WHEN conditions (the evaluators thread the catalog env, not just SubFn).
 
 ## v1.4.0
 
