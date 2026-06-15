@@ -411,8 +411,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_special_columns` | `internal/engine/proc.go` | Y |
 | `sp_stored_procedures` | `internal/engine/proc.go` | Y |
 | `sp_sproc_columns` | `internal/engine/proc.go` | Y |
-| `sp_server_info` |  | - |
-| `sp_datatype_info` |  | - |
+| `sp_server_info` | `internal/engine/proc.go` | Y |
+| `sp_datatype_info` | `internal/engine/proc.go` | Y |
 | `sp_table_privileges` |  | - |
 | `sp_column_privileges` |  | - |
 

@@ -51,6 +51,10 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 		return spHelpindex(ctx, b, args)
 	case "sp_helpconstraint":
 		return spHelpconstraint(ctx, b, args)
+	case "sp_server_info":
+		return spServerInfo(ctx, b, args)
+	case "sp_datatype_info", "sp_datatype_info_100":
+		return spDatatypeInfo(ctx, b, args)
 	default:
 		if rs, found, err := execStoredProc(ctx, b, name, args); found || err != nil {
 			return rs, true, err
@@ -556,6 +560,132 @@ func spHelpconstraint(ctx context.Context, b tds.Backend, args []procArg) (tds.R
 	}
 	rs, err := exec.Apply(cols, data, &tds.Query{})
 	return rs, true, err
+}
+
+// spServerInfo is the SQLGetInfo backing proc; @attribute_id narrows to one attribute.
+func spServerInfo(_ context.Context, _ tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	want := arg(args, "@attribute_id", 0)
+	cols := []catalog.Column{in32("attribute_id"), sn("attribute_name"), nstr("attribute_value")}
+	var data [][]any
+	for _, r := range serverInfoRows {
+		if want != "" && strconv.FormatInt(r.id, 10) != want {
+			continue
+		}
+		data = append(data, []any{r.id, r.name, r.value})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+type serverInfoRow struct {
+	id    int64
+	name  string
+	value string
+}
+
+var serverInfoRows = []serverInfoRow{
+	{1, "DBMS_NAME", "Microsoft SQL Server"},
+	{2, "DBMS_VER", "Microsoft SQL Server 2022 - 16.0.1000.6"},
+	{10, "OWNER_TERM", "owner"},
+	{11, "TABLE_TERM", "table"},
+	{12, "MAX_OWNER_NAME_LENGTH", "128"},
+	{13, "TABLE_LENGTH", "128"},
+	{14, "MAX_QUAL_LENGTH", "128"},
+	{15, "COLUMN_LENGTH", "128"},
+	{16, "IDENTIFIER_CASE", "MIXED"},
+	{17, "TX_ISOLATION", "2"},
+	{18, "COLLATION_SEQ", "charset=iso_1 sort_order=nocase_iso"},
+	{19, "SAVEPOINT_SUPPORT", "Y"},
+	{20, "MULTI_RESULT_SETS", "Y"},
+	{22, "ACCESSIBLE_TABLES", "Y"},
+	{100, "USERID_LENGTH", "128"},
+	{101, "QUALIFIER_TERM", "database"},
+	{102, "NAMED_TRANSACTIONS", "Y"},
+	{103, "SPROC_AS_LANGUAGE", "Y"},
+	{104, "ACCESSIBLE_PROC", "Y"},
+	{105, "MAX_INDEX_COLS", "16"},
+	{106, "RENAME_TABLE", "Y"},
+	{107, "RENAME_COLUMN", "Y"},
+	{108, "DROP_COLUMN", "Y"},
+	{111, "DATA_SOURCE_NAME", "haystak-tds-spi"},
+}
+
+// spDatatypeInfo is the SQLGetTypeInfo backing proc; @data_type narrows to one ODBC type code.
+func spDatatypeInfo(_ context.Context, _ tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	want := arg(args, "@data_type", 0)
+	cols := []catalog.Column{
+		sn("TYPE_NAME"), in16("DATA_TYPE"), in32("PRECISION"), str32("LITERAL_PREFIX"), str32("LITERAL_SUFFIX"),
+		str32("CREATE_PARAMS"), in16("NULLABLE"), in16("CASE_SENSITIVE"), in16("SEARCHABLE"), in16("UNSIGNED_ATTRIBUTE"),
+		in16("MONEY"), in16("AUTO_INCREMENT"), sn("LOCAL_TYPE_NAME"), in16("MINIMUM_SCALE"), in16("MAXIMUM_SCALE"),
+		in16("SQL_DATA_TYPE"), in16("SQL_DATETIME_SUB"), in32("NUM_PREC_RADIX"), in16("INTERVAL_PRECISION"), in16("USERTYPE"),
+	}
+	var data [][]any
+	for _, r := range datatypeInfoRows {
+		if want != "" && strconv.FormatInt(r.dataType, 10) != want {
+			continue
+		}
+		data = append(data, r.row())
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
+
+type datatypeRow struct {
+	name     string
+	dataType int64 // ODBC type code
+	prec     int64
+	prefix   string
+	suffix   string
+	params   string // CREATE_PARAMS
+	money    int64
+	numeric  bool // radix 10 + signed + identity-capable
+	minScale any
+	maxScale any
+	userType int64 // sys.types xtype
+}
+
+func (d datatypeRow) row() []any {
+	var radix, unsigned, autoInc any
+	if d.numeric {
+		radix, unsigned, autoInc = int64(10), int64(0), int64(0)
+	}
+	return []any{
+		d.name, d.dataType, d.prec, nullStr(d.prefix), nullStr(d.suffix),
+		nullStr(d.params), int64(1), int64(0), int64(3), unsigned,
+		d.money, autoInc, d.name, d.minScale, d.maxScale,
+		d.dataType, nil, radix, nil, d.userType,
+	}
+}
+
+func nullStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+var datatypeInfoRows = []datatypeRow{
+	{name: "bit", dataType: -7, prec: 1, money: 0, userType: 104},
+	{name: "tinyint", dataType: -6, prec: 3, money: 0, numeric: true, minScale: int64(0), maxScale: int64(0), userType: 48},
+	{name: "smallint", dataType: 5, prec: 5, money: 0, numeric: true, minScale: int64(0), maxScale: int64(0), userType: 52},
+	{name: "int", dataType: 4, prec: 10, money: 0, numeric: true, minScale: int64(0), maxScale: int64(0), userType: 56},
+	{name: "bigint", dataType: -5, prec: 19, money: 0, numeric: true, minScale: int64(0), maxScale: int64(0), userType: 127},
+	{name: "real", dataType: 7, prec: 24, money: 0, numeric: true, userType: 59},
+	{name: "float", dataType: 8, prec: 53, params: "length", money: 0, numeric: true, userType: 62},
+	{name: "decimal", dataType: 3, prec: 38, params: "precision,scale", money: 0, numeric: true, minScale: int64(0), maxScale: int64(38), userType: 106},
+	{name: "numeric", dataType: 2, prec: 38, params: "precision,scale", money: 0, numeric: true, minScale: int64(0), maxScale: int64(38), userType: 108},
+	{name: "money", dataType: 3, prec: 19, prefix: "$", money: 1, numeric: true, minScale: int64(4), maxScale: int64(4), userType: 60},
+	{name: "char", dataType: 1, prec: 8000, prefix: "'", suffix: "'", params: "length", money: 0, userType: 175},
+	{name: "varchar", dataType: 12, prec: 8000, prefix: "'", suffix: "'", params: "max length", money: 0, userType: 167},
+	{name: "nchar", dataType: -8, prec: 4000, prefix: "N'", suffix: "'", params: "length", money: 0, userType: 239},
+	{name: "nvarchar", dataType: -9, prec: 4000, prefix: "N'", suffix: "'", params: "max length", money: 0, userType: 231},
+	{name: "binary", dataType: -2, prec: 8000, prefix: "0x", params: "length", money: 0, userType: 173},
+	{name: "varbinary", dataType: -3, prec: 8000, prefix: "0x", params: "max length", money: 0, userType: 165},
+	{name: "uniqueidentifier", dataType: -11, prec: 36, prefix: "'", suffix: "'", money: 0, userType: 36},
+	{name: "date", dataType: 91, prec: 10, prefix: "'", suffix: "'", money: 0, userType: 40},
+	{name: "time", dataType: 92, prec: 16, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 41},
+	{name: "datetime", dataType: 93, prec: 23, prefix: "'", suffix: "'", money: 0, minScale: int64(3), maxScale: int64(3), userType: 61},
+	{name: "datetime2", dataType: 93, prec: 27, prefix: "'", suffix: "'", params: "scale", money: 0, minScale: int64(0), maxScale: int64(7), userType: 42},
 }
 
 // findTable looks up one table by name in a database. introspectSchema returns an empty schema for a

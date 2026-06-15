@@ -74,6 +74,40 @@ func TestSpHelpindex(t *testing.T) {
 	}
 }
 
+func TestSpServerInfo(t *testing.T) {
+	got := map[string]string{}
+	for _, r := range qry(t, "EXEC sp_server_info") {
+		got[cell(r[1])] = cell(r[2]) // attribute_name -> attribute_value
+	}
+	if got["DBMS_NAME"] != "Microsoft SQL Server" || got["IDENTIFIER_CASE"] != "MIXED" || got["MAX_QUAL_LENGTH"] != "128" {
+		t.Errorf("sp_server_info = %v", got)
+	}
+}
+
+func TestSpServerInfoByID(t *testing.T) {
+	rows := qry(t, "EXEC sp_server_info 2")
+	if len(rows) != 1 || cell(rows[0][1]) != "DBMS_VER" {
+		t.Fatalf("sp_server_info 2 = %v, want single DBMS_VER row", rows)
+	}
+}
+
+func TestSpDatatypeInfo(t *testing.T) {
+	got := map[string]string{}
+	for _, r := range qry(t, "EXEC sp_datatype_info") {
+		got[cell(r[0])] = cell(r[1]) // TYPE_NAME -> DATA_TYPE
+	}
+	if got["int"] != "4" || got["bigint"] != "-5" || got["nvarchar"] != "-9" || got["uniqueidentifier"] != "-11" {
+		t.Errorf("sp_datatype_info codes = %v", got)
+	}
+}
+
+func TestSpDatatypeInfoByCode(t *testing.T) {
+	rows := qry(t, "EXEC sp_datatype_info 4")
+	if len(rows) != 1 || cell(rows[0][0]) != "int" {
+		t.Fatalf("sp_datatype_info 4 = %v, want single int row", rows)
+	}
+}
+
 func TestSpHelpconstraint(t *testing.T) {
 	kinds := map[string]bool{}
 	for _, r := range qry(t, "EXEC sp_helpconstraint 'product_tags'") {
