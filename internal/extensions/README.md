@@ -85,8 +85,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `DATEFROMPARTS` | `internal/extensions/functions/datetime.go` | Y |
 | `DATETIMEFROMPARTS` | `internal/extensions/functions/datetime.go` | Y |
 | `EOMONTH` | `internal/extensions/functions/datetime.go` | Y |
-| `SWITCHOFFSET` |  | - |
-| `TODATETIMEOFFSET` |  | - |
+| `SWITCHOFFSET` | `internal/extensions/functions/datetime.go` | Y |
+| `TODATETIMEOFFSET` | `internal/extensions/functions/datetime.go` | Y |
 | `ISDATE` | `internal/extensions/functions/datetime.go` | Y |
 | `DATETRUNC` | `internal/extensions/functions/datetime.go` | Y |
 
@@ -161,8 +161,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `OBJECTPROPERTY` | `internal/exec/value.go` | Y |
 | `OBJECTPROPERTYEX` | `internal/exec/value.go` | Y |
 | `COLUMNPROPERTY` | `internal/exec/value.go` | Y |
-| `INDEXPROPERTY` |  | - |
-| `INDEXKEY_PROPERTY` |  | - |
+| `INDEXPROPERTY` | `internal/exec/value.go` | Y |
+| `INDEXKEY_PROPERTY` | `internal/exec/value.go` | Y |
 | `STATS_DATE` | `internal/extensions/functions/metadata.go` | Y |
 
 ### Configuration (`@@`)

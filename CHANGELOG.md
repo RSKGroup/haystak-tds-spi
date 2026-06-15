@@ -38,6 +38,7 @@ Other:
 - `JSON_MODIFY(json, path, value)`: set, insert, delete (NULL value), and `append` at a JSON path.
 - `JSON_PATH_EXISTS`, `JSON_ARRAY`; string `SOUNDEX`, `DIFFERENCE`, `FORMATMESSAGE`.
 - System/security scalars: `NEWSEQUENTIALID`, `XACT_STATE`, `CURSOR_STATUS`, `CONNECTIONPROPERTY`, `CONTEXT_INFO`, `SESSION_CONTEXT`, `HAS_PERMS_BY_NAME`; crypto `COMPRESS`/`DECOMPRESS` (gzip) and `PWDENCRYPT`/`PWDCOMPARE` (SHA-256).
+- `INDEXPROPERTY`, `INDEXKEY_PROPERTY` (catalog index metadata); `SWITCHOFFSET`, `TODATETIMEOFFSET` (datetimeoffset).
 
 ## v1.4.0
 

@@ -276,6 +276,7 @@ func evalBinary(op string, l, r any) any {
 var envScalars = []string{
 	"OBJECT_NAME", "DB_NAME", "COL_NAME", "COL_LENGTH",
 	"COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION",
+	"INDEXPROPERTY", "INDEXKEY_PROPERTY",
 }
 
 // EnvScalarNames returns the env-resolved scalar functions, sorted.
@@ -363,6 +364,34 @@ func evalFunc(name string, a []any, env *Env) any {
 			if oid, ok := toInt(a[0]); ok {
 				if def, ok := env.RoutineDef(oid); ok {
 					return def
+				}
+			}
+		}
+		return nil
+	case "INDEXPROPERTY":
+		if env != nil && env.Table != nil && len(a) >= 3 {
+			if oid, ok := toInt(a[0]); ok {
+				name, _ := a[1].(string)
+				prop, _ := a[2].(string)
+				if t, ok := env.Table(oid); ok {
+					for i, ix := range t.Indexes {
+						if strings.EqualFold(ix.Name, name) {
+							return indexProperty(ix, int64(i+1), prop)
+						}
+					}
+				}
+			}
+		}
+		return nil
+	case "INDEXKEY_PROPERTY":
+		if env != nil && env.Table != nil && len(a) >= 4 {
+			oid, ok1 := toInt(a[0])
+			iid, ok2 := toInt(a[1])
+			ord, ok3 := toInt(a[2])
+			prop, _ := a[3].(string)
+			if ok1 && ok2 && ok3 {
+				if t, ok := env.Table(oid); ok && iid >= 1 && int(iid) <= len(t.Indexes) {
+					return indexKeyProperty(t.Indexes[iid-1], t, int(ord), prop)
 				}
 			}
 		}
@@ -461,6 +490,38 @@ func colByteLen(t types.Type) int64 {
 		return -1
 	}
 	return -1
+}
+
+func indexProperty(ix catalog.Index, id int64, prop string) any {
+	switch strings.ToLower(prop) {
+	case "indexid":
+		return id
+	case "isclustered":
+		return boolToInt(ix.Clustered)
+	case "isunique":
+		return boolToInt(ix.Unique)
+	case "ispadindex", "isdisabled", "isautostatistics", "isfulltextkey":
+		return int64(0)
+	}
+	return nil
+}
+
+func indexKeyProperty(ix catalog.Index, t catalog.Table, ordinal int, prop string) any {
+	if ordinal < 1 || ordinal > len(ix.Columns) {
+		return nil
+	}
+	switch strings.ToLower(prop) {
+	case "columnid":
+		for i, c := range t.Columns {
+			if strings.EqualFold(c.Name, ix.Columns[ordinal-1]) {
+				return int64(i + 1)
+			}
+		}
+		return nil
+	case "isdescending":
+		return int64(0)
+	}
+	return nil
 }
 
 func columnProperty(c catalog.Column, ordinal int, prop string) any {

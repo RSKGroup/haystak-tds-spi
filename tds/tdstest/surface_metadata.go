@@ -24,4 +24,6 @@ var metadataCases = []Case{
 	{Element: "func:OBJECTPROPERTY", SQL: "SELECT OBJECTPROPERTY(0,'IsUserTable')", Want: []any{0}},
 	{Element: "func:OBJECTPROPERTYEX", SQL: "SELECT OBJECTPROPERTYEX(0,'IsView')", Want: []any{0}},
 	{Element: "func:OBJECT_DEFINITION", SQL: "SELECT OBJECT_DEFINITION(0)", Want: []any{P(isNull)}},
+	{Element: "func:INDEXPROPERTY", SQL: "SELECT INDEXPROPERTY(0, 'x', 'IsUnique')", Want: []any{P(isNull)}},
+	{Element: "func:INDEXKEY_PROPERTY", SQL: "SELECT INDEXKEY_PROPERTY(0, 1, 1, 'ColumnId')", Want: []any{P(isNull)}},
 }

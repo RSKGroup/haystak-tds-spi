@@ -49,6 +49,46 @@ func init() {
 		ms, _ := argInt(a, 6)
 		return time.Date(int(y), time.Month(m), int(d), int(h), int(mi), int(s), int(ms)*1e6, time.UTC)
 	})
+	register("SWITCHOFFSET", func(a []any) any { // same instant, new displayed offset
+		t, ok := a[0].(time.Time)
+		off, ok2 := parseTZOffset(argStr(a, 1))
+		if !ok || !ok2 {
+			return nil
+		}
+		return t.In(time.FixedZone("", off))
+	})
+	register("TODATETIMEOFFSET", func(a []any) any { // attach an offset to a wall-clock datetime
+		t, ok := a[0].(time.Time)
+		off, ok2 := parseTZOffset(argStr(a, 1))
+		if !ok || !ok2 {
+			return nil
+		}
+		return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.FixedZone("", off))
+	})
+}
+
+// parseTZOffset reads a timezone offset as signed minutes or "+HH:MM"/"-HH:MM", returning seconds.
+func parseTZOffset(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if n, err := strconv.Atoi(s); err == nil {
+		return n * 60, true
+	}
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimLeft(s, "+-")
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, e1 := strconv.Atoi(parts[0])
+	m, e2 := strconv.Atoi(parts[1])
+	if e1 != nil || e2 != nil {
+		return 0, false
+	}
+	off := (h*60 + m) * 60
+	if neg {
+		off = -off
+	}
+	return off, true
 }
 
 // dateTrunc is DATETRUNC: the start of the datepart containing the date.

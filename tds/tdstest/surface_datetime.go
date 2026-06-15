@@ -24,4 +24,6 @@ var datetimeCases = []Case{
 	{Element: "func:ISDATE", SQL: "SELECT ISDATE('2024-01-01')", Want: []any{1}},
 	{Element: "func:DATEFROMPARTS", SQL: "SELECT DATEFROMPARTS(2024,2,29)", Want: []any{contains("2024-02-29")}},
 	{Element: "func:DATETIMEFROMPARTS", SQL: "SELECT DATETIMEFROMPARTS(2024,1,1,1,1,1,0)", Want: []any{contains("2024-01-01 01:01:01")}},
+	{Element: "func:TODATETIMEOFFSET", SQL: "SELECT FORMAT(TODATETIMEOFFSET(DATETIMEFROMPARTS(2024,1,1,9,0,0,0), '+05:00'), 'HH')", Want: []any{"09"}},
+	{Element: "func:SWITCHOFFSET", SQL: "SELECT FORMAT(SWITCHOFFSET(TODATETIMEOFFSET(DATETIMEFROMPARTS(2024,1,1,12,0,0,0), '+00:00'), '+05:00'), 'HH')", Want: []any{"17"}},
 }

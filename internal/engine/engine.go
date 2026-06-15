@@ -556,7 +556,7 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 	}
 	if ve.Kind == tds.ValFunc {
 		switch ve.Func {
-		case "OBJECT_NAME", "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION":
+		case "OBJECT_NAME", "COL_NAME", "COL_LENGTH", "COLUMNPROPERTY", "OBJECTPROPERTY", "OBJECTPROPERTYEX", "OBJECT_DEFINITION", "INDEXPROPERTY", "INDEXKEY_PROPERTY":
 			return true
 		case "DB_NAME":
 			if len(ve.Args) > 0 {
