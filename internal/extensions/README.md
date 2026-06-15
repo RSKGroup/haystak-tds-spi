@@ -128,7 +128,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `TRY_CONVERT` | `internal/tsql/parser.go` | Y |
 | `PARSE` | `internal/tsql/parser.go` | Y |
 | `TRY_PARSE` | `internal/tsql/parser.go` | Y |
-| `FORMAT` |  | - |
+| `FORMAT` | `internal/extensions/functions/format.go` | Y |
 
 ### Logical
 

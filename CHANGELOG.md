@@ -34,6 +34,7 @@ Other:
 - Recursive CTEs (`WITH cte AS (anchor UNION ALL recursive)`) support the recursive arm joining real tables against the CTE, so hierarchy walks (org charts, category trees, BOM) traverse fully, not just self-contained recursion.
 - Window functions `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD` with `OVER (PARTITION BY … ORDER BY …)`. (Aggregate windows like `SUM(x) OVER (…)` and frames are not yet supported.)
 - Table-valued functions in `FROM`: `STRING_SPLIT(string, separator)` (one `value` row per part) and `OPENJSON(json [, path])` (`key`/`value`/`type` rows over an array or object).
+- `FORMAT(value, format)`: standard numeric specifiers (`N`/`F`/`D`/`C`/`P`/`X`) and simple custom patterns, plus datetime token mapping (`yyyy`/`MM`/`dd`/`HH`/`mm`/`ss`/`MMMM`/…).
 
 ## v1.4.0
 
