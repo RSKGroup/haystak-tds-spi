@@ -17,9 +17,18 @@ Stored routines are now visible and scriptable through the standard catalog — 
   constraints, identity, and computed columns.
 - **Conformance** — `tdstest.RunConformance` now checks `Caps.Routines` ⟺ `RoutineStore` and that a
   written routine of each kind surfaces through the catalog views.
-- Since v1.2.4 the extension surface also gained the `internal/extensions` package layout, `RoutineStore`
-  persistence with read-time view expansion, batch `DECLARE` / `SET @var`, and `NOT IN` /
-  aggregate-over-expression query support.
+
+## v1.3.0
+
+Extension surface foundation — additive, no breaking changes.
+
+- **`internal/extensions` package layout** — `catalog/` (scalar functions), `views/`, `procedures/`,
+  `routines/` (the shared base plus the `Runner` engine seam), and `batch/`.
+- **`RoutineStore`** — persist `CREATE VIEW` / `PROCEDURE`, with read-time view expansion (FROM-a-view →
+  derived table, body qualified to the view's database).
+- **Batch variables** — `DECLARE @v = …` / `SET @v = …` bound and substituted before parse, so the core
+  lexer never sees a `@`.
+- **Query** — `NOT IN` and aggregate-over-expression (`MAX(CASE …)`).
 
 ## v1.2.4
 
