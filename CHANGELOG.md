@@ -20,6 +20,7 @@ Procedures:
 Catalog:
 
 - Live-session management: the server now keeps a concurrency-safe session registry (spid assigned at LOGIN7, login/host/app/time captured, removed on disconnect) and audits each login (success or rejected, via `SessionEvent.Succeeded`) and logout through the `Server.Audit` hook (fired only when the hook is set). Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who` enumerate every live session from that registry; with no server (e.g. direct engine use) they return the correct empty shape.
+- Fix: unqualified tables inside `WHERE`/`HAVING`/`SELECT` subqueries and derived tables now inherit the session database (previously a multi-db backend rejected them).
 - `@@SPID` returns the connection's real session id (from the registry), in bare selects and in expressions such as `WHERE session_id = @@SPID`; it falls back to `1` when there is no session. The `@@`-global family now also parses inside expressions.
 - `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
 - `SET ROWCOUNT n` now caps the rows returned by later statements in the batch (`SET ROWCOUNT 0` resets). Other `SET` options (`ANSI_NULLS`, `QUOTED_IDENTIFIER`) are accepted as no-ops.

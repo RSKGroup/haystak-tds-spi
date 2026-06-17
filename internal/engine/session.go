@@ -139,20 +139,68 @@ func parseUse(sql string) (string, bool) {
 	return strings.Trim(strings.TrimSpace(s[4:]), "[]\"`"), true
 }
 
-// applyDefaultDB qualifies unqualified real-table queries (each union arm and its joins) with the session db.
+// applyDefaultDB qualifies every unqualified real-table reference (incl. subqueries) with the session db.
 func applyDefaultDB(q *tds.Query, db string) {
-	if db == "" {
+	if db == "" || q == nil {
 		return
 	}
 	for a := q; a != nil; a = a.Union {
 		if a.Table != "" && a.Database == "" && !isSystemSchema(a.Schema) {
 			a.Database = db
 		}
+		applyDefaultDB(a.FromSub, db)
 		for i := range a.Joins {
-			if a.Joins[i].Table != "" && a.Joins[i].Database == "" && !isSystemSchema(a.Joins[i].Schema) {
-				a.Joins[i].Database = db
+			j := &a.Joins[i]
+			if j.Table != "" && j.Database == "" && !isSystemSchema(j.Schema) {
+				j.Database = db
 			}
+			applyDefaultDB(j.FromSub, db)
 		}
+		defaultDBExpr(a.Where, db)
+		defaultDBExpr(a.Having, db)
+		for k := range a.Select {
+			defaultDBVal(a.Select[k].Expr, db)
+			defaultDBVal(a.Select[k].ArgExpr, db)
+		}
+	}
+}
+
+func defaultDBExpr(e *tds.Expr, db string) {
+	if e == nil {
+		return
+	}
+	if e.Pred != nil {
+		applyDefaultDB(e.Pred.Sub, db)
+		defaultDBVal(e.Pred.LeftExpr, db)
+		if ve, ok := e.Pred.Value.(*tds.ValueExpr); ok {
+			defaultDBVal(ve, db)
+		}
+	}
+	for _, c := range e.And {
+		defaultDBExpr(c, db)
+	}
+	for _, c := range e.Or {
+		defaultDBExpr(c, db)
+	}
+	defaultDBExpr(e.Not, db)
+}
+
+func defaultDBVal(ve *tds.ValueExpr, db string) {
+	if ve == nil {
+		return
+	}
+	applyDefaultDB(ve.Sub, db)
+	defaultDBVal(ve.Left, db)
+	defaultDBVal(ve.Right, db)
+	for _, a := range ve.Args {
+		defaultDBVal(a, db)
+	}
+	defaultDBVal(ve.Operand, db)
+	defaultDBVal(ve.Else, db)
+	for _, w := range ve.Whens {
+		defaultDBExpr(w.Cond, db)
+		defaultDBVal(w.Match, db)
+		defaultDBVal(w.Result, db)
 	}
 }
 
