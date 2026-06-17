@@ -34,7 +34,7 @@ var keywords = map[string]bool{
 	"GROUP": true, "HAVING": true, "ORDER": true, "BY": true, "ASC": true, "DESC": true, "AS": true,
 	"AND": true, "OR": true, "NOT": true, "IN": true, "LIKE": true, "EXISTS": true,
 	"IS": true, "NULL": true, "BETWEEN": true,
-	"JOIN": true, "INNER": true, "LEFT": true, "RIGHT": true, "FULL": true, "OUTER": true, "CROSS": true, "ON": true,
+	"JOIN": true, "INNER": true, "LEFT": true, "RIGHT": true, "FULL": true, "OUTER": true, "CROSS": true, "ON": true, "APPLY": true,
 	"OFFSET": true, "FETCH": true, "NEXT": true, "FIRST": true, "ROWS": true, "ROW": true, "ONLY": true,
 	"CASE": true, "WHEN": true, "THEN": true, "ELSE": true, "END": true,
 	"UNION": true, "ALL": true, "INTERSECT": true, "EXCEPT": true,
@@ -46,7 +46,7 @@ var keywords = map[string]bool{
 // nonReserved keywords also parse as identifiers (e.g. a column named first).
 var nonReserved = map[string]bool{
 	"FIRST": true, "NEXT": true, "ROW": true, "ROWS": true, "ONLY": true,
-	"OFFSET": true, "FETCH": true, "ADD": true, "COLUMN": true, "VALUE": true,
+	"OFFSET": true, "FETCH": true, "ADD": true, "COLUMN": true, "VALUE": true, "APPLY": true,
 }
 
 func lex(s string) ([]token, error) {

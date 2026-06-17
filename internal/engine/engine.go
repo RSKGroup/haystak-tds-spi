@@ -583,74 +583,79 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 
 func makeSubFn(ctx context.Context, b tds.Backend, alias, table string) exec.SubFn {
 	return func(outerRow []any, idx map[string]int, sub *tds.Query) ([][]any, error) {
-		bound := bindOuter(sub, outerRow, idx, alias, table)
+		bound := bindOuter(sub, outerResolver(outerRow, idx, alias, table))
 		_, data, err := runMaterialize(ctx, b, bound)
 		return data, err
 	}
 }
 
-func bindOuter(sub *tds.Query, row []any, idx map[string]int, alias, table string) *tds.Query {
+// outerResolver resolves a correlated reference to the named outer alias/table from one outer row.
+func outerResolver(row []any, idx map[string]int, alias, table string) func(string) (any, bool) {
+	return func(col string) (any, bool) { return outerVal(col, row, idx, alias, table) }
+}
+
+func bindOuter(sub *tds.Query, resolve func(string) (any, bool)) *tds.Query {
 	c := *sub
-	c.Where = bindExpr(sub.Where, row, idx, alias, table)
+	c.Where = bindExpr(sub.Where, resolve)
 	return &c
 }
 
-func bindExpr(e *tds.Expr, row []any, idx map[string]int, alias, table string) *tds.Expr {
+func bindExpr(e *tds.Expr, resolve func(string) (any, bool)) *tds.Expr {
 	if e == nil {
 		return nil
 	}
 	out := *e
 	if e.Pred != nil {
 		p := *e.Pred
-		if v, ok := outerVal(p.Column, row, idx, alias, table); ok {
+		if v, ok := resolve(p.Column); ok {
 			p.LeftExpr = &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
 			p.Column = ""
 		} else if p.LeftExpr != nil {
-			p.LeftExpr = bindVal(p.LeftExpr, row, idx, alias, table)
+			p.LeftExpr = bindVal(p.LeftExpr, resolve)
 		}
 		if cr, ok := p.Value.(tds.ColRef); ok {
-			if v, ok2 := outerVal(cr.Name, row, idx, alias, table); ok2 {
+			if v, ok2 := resolve(cr.Name); ok2 {
 				p.Value = &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
 			}
 		} else if ve, ok := p.Value.(*tds.ValueExpr); ok {
-			p.Value = bindVal(ve, row, idx, alias, table)
+			p.Value = bindVal(ve, resolve)
 		}
 		out.Pred = &p
 	}
-	out.And = bindExprs(e.And, row, idx, alias, table)
-	out.Or = bindExprs(e.Or, row, idx, alias, table)
-	out.Not = bindExpr(e.Not, row, idx, alias, table)
+	out.And = bindExprs(e.And, resolve)
+	out.Or = bindExprs(e.Or, resolve)
+	out.Not = bindExpr(e.Not, resolve)
 	return &out
 }
 
-func bindExprs(es []*tds.Expr, row []any, idx map[string]int, alias, table string) []*tds.Expr {
+func bindExprs(es []*tds.Expr, resolve func(string) (any, bool)) []*tds.Expr {
 	if es == nil {
 		return nil
 	}
 	out := make([]*tds.Expr, len(es))
 	for i, e := range es {
-		out[i] = bindExpr(e, row, idx, alias, table)
+		out[i] = bindExpr(e, resolve)
 	}
 	return out
 }
 
-func bindVal(ve *tds.ValueExpr, row []any, idx map[string]int, alias, table string) *tds.ValueExpr {
+func bindVal(ve *tds.ValueExpr, resolve func(string) (any, bool)) *tds.ValueExpr {
 	if ve == nil {
 		return nil
 	}
 	if ve.Kind == tds.ValCol {
-		if v, ok := outerVal(ve.Col, row, idx, alias, table); ok {
+		if v, ok := resolve(ve.Col); ok {
 			return &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
 		}
 		return ve
 	}
 	out := *ve
-	out.Left = bindVal(ve.Left, row, idx, alias, table)
-	out.Right = bindVal(ve.Right, row, idx, alias, table)
+	out.Left = bindVal(ve.Left, resolve)
+	out.Right = bindVal(ve.Right, resolve)
 	if ve.Args != nil {
 		out.Args = make([]*tds.ValueExpr, len(ve.Args))
 		for i, a := range ve.Args {
-			out.Args[i] = bindVal(a, row, idx, alias, table)
+			out.Args[i] = bindVal(a, resolve)
 		}
 	}
 	return &out
@@ -665,6 +670,29 @@ func outerVal(col string, row []any, idx map[string]int, alias, table string) (a
 		return row[i], true
 	}
 	return nil, false
+}
+
+// leftRowResolver resolves an APPLY right side's correlated reference to a left column (always alias-qualified).
+// A nil row is a schema probe (no left rows): correlated refs bind to "" so the right side yields its columns.
+func leftRowResolver(row []any, idx map[string]int) func(string) (any, bool) {
+	return func(col string) (any, bool) {
+		i, ok := idx[col]
+		if !ok || !strings.Contains(col, ".") {
+			return nil, false
+		}
+		if row == nil {
+			return "", true
+		}
+		return row[i], true
+	}
+}
+
+func leftColIndex(cols []catalog.Column) map[string]int {
+	m := make(map[string]int, len(cols))
+	for i, c := range cols {
+		m[c.Name] = i
+	}
+	return m
 }
 
 func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExpr) error {
@@ -847,6 +875,13 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	cols = qualify(cols, fromAlias)
 	for _, j := range q.Joins {
 		jAlias := effAlias(j.Alias, j.Table)
+		if j.Type == tds.JoinCrossApply || j.Type == tds.JoinOuterApply {
+			cols, rows, err = applyJoin(ctx, b, cols, rows, j, jAlias)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
 		var rcols []catalog.Column
 		var rrows [][]any
 		if j.FromSub != nil {
@@ -883,6 +918,56 @@ func scanJoinSide(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.C
 		return nil, nil, fmt.Errorf("engine: backend cannot scan %q for join", q.Table)
 	}
 	return scanTable(ctx, sc, q)
+}
+
+// applyJoin evaluates CROSS/OUTER APPLY: the right side is materialized once per left row, bound to that
+// row's columns. CROSS APPLY drops a left row with no right rows; OUTER APPLY keeps it with right NULLs.
+func applyJoin(ctx context.Context, b tds.Backend, lcols []catalog.Column, lrows [][]any, j tds.Join, jAlias string) ([]catalog.Column, [][]any, error) {
+	leftIdx := leftColIndex(lcols)
+	var rcols []catalog.Column
+	var out [][]any
+	for _, lr := range lrows {
+		brcols, brrows, err := applyRight(ctx, b, j, lr, leftIdx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if rcols == nil {
+			rcols = qualify(brcols, jAlias)
+		}
+		for _, rr := range brrows {
+			out = append(out, concatRow(lr, rr))
+		}
+		if len(brrows) == 0 && j.Type == tds.JoinOuterApply {
+			out = append(out, concatRow(lr, make([]any, len(brcols))))
+		}
+	}
+	if rcols == nil {
+		if brcols, _, err := applyRight(ctx, b, j, nil, leftIdx); err == nil {
+			rcols = qualify(brcols, jAlias)
+		}
+	}
+	return append(append([]catalog.Column{}, lcols...), rcols...), out, nil
+}
+
+func applyRight(ctx context.Context, b tds.Backend, j tds.Join, lr []any, leftIdx map[string]int) ([]catalog.Column, [][]any, error) {
+	resolve := leftRowResolver(lr, leftIdx)
+	switch {
+	case j.FromSub != nil:
+		return runMaterialize(ctx, b, bindOuter(j.FromSub, resolve))
+	case j.FromFunc != nil:
+		args := make([]*tds.ValueExpr, len(j.FromFunc.Args))
+		for i, a := range j.FromFunc.Args {
+			args[i] = bindVal(a, resolve)
+		}
+		return exec.EvalTableFunc(j.FromFunc.Name, args)
+	}
+	return nil, nil, fmt.Errorf("engine: APPLY requires a subquery or table-valued function")
+}
+
+func concatRow(a, b []any) []any {
+	out := make([]any, 0, len(a)+len(b))
+	out = append(out, a...)
+	return append(out, b...)
 }
 
 func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Column, [][]any, error) {

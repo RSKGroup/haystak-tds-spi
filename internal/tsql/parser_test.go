@@ -103,6 +103,24 @@ func litOf(v any) any {
 	return v
 }
 
+func TestParseApply(t *testing.T) {
+	q, err := Parse("SELECT u.id FROM users u CROSS APPLY (SELECT amount FROM orders WHERE user_id = u.id) x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q.Joins) != 1 || q.Joins[0].Type != tds.JoinCrossApply || q.Joins[0].FromSub == nil || q.Joins[0].Alias != "x" {
+		t.Errorf("CROSS APPLY join = %+v", q.Joins)
+	}
+	q2, err := Parse("SELECT t.id FROM t OUTER APPLY STRING_SPLIT(t.tags, ',') s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := q2.Joins[0]
+	if j.Type != tds.JoinOuterApply || j.FromFunc == nil || j.FromFunc.Name != "STRING_SPLIT" || j.Alias != "s" {
+		t.Errorf("OUTER APPLY TVF join = %+v", j)
+	}
+}
+
 func TestParseBracketIdent(t *testing.T) {
 	q, err := Parse("SELECT [first name] FROM [my table]")
 	if err != nil {

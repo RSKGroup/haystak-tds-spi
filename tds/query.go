@@ -143,6 +143,8 @@ const (
 	JoinRight
 	JoinFull
 	JoinCross
+	JoinCrossApply // per-left-row lateral join, inner (drops left rows with no right rows)
+	JoinOuterApply // per-left-row lateral join, left-outer (keeps left rows, right NULLs)
 )
 
 // Join is one joined table in a multi-table FROM.
@@ -151,9 +153,10 @@ type Join struct {
 	Database string
 	Schema   string
 	Table    string
-	FromSub  *Query // derived table on the join's right side: JOIN (SELECT …) (Table empty when set)
+	FromSub  *Query     // derived table on the right side: JOIN/APPLY (SELECT …) (Table empty when set)
+	FromFunc *TableFunc // table-valued function on the right side: APPLY STRING_SPLIT(…)/OPENJSON(…)
 	Alias    string
-	On       *Expr // nil for CROSS JOIN
+	On       *Expr // nil for CROSS JOIN / APPLY
 }
 
 // SetOp is the junction between SELECTs in a UNION/INTERSECT/EXCEPT chain.

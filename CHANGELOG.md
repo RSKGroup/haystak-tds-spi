@@ -8,6 +8,7 @@ Queries:
 
 - `TOP (n)` / `TOP (n) PERCENT` with a parenthesized count, as Power BI / Tableau / ODBC drivers emit by default.
 - `JOIN` of derived tables on either side: `FROM (SELECT …) a JOIN (SELECT …) b ON …`. Also fixes a silent wrong result where a derived `FROM` combined with joins dropped the joins.
+- `CROSS APPLY` / `OUTER APPLY` (lateral join): the right side — a correlated derived table or a table-valued function (`STRING_SPLIT`, `OPENJSON`) — is evaluated once per left row. `CROSS APPLY` drops a left row with no right rows; `OUTER APPLY` keeps it with right `NULL`s.
 
 Types:
 

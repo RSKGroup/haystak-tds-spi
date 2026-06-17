@@ -204,15 +204,27 @@ func (p *parser) optJoin() (*tds.Join, error) {
 		jt = tds.JoinFull
 	case p.isKeyword("CROSS"):
 		p.next()
-		if err := p.expectKeyword("JOIN"); err != nil {
+		if p.isKeyword("APPLY") {
+			p.next()
+			jt = tds.JoinCrossApply
+		} else {
+			if err := p.expectKeyword("JOIN"); err != nil {
+				return nil, err
+			}
+			jt = tds.JoinCross
+		}
+	case p.isKeyword("OUTER"):
+		p.next()
+		if err := p.expectKeyword("APPLY"); err != nil {
 			return nil, err
 		}
-		jt = tds.JoinCross
+		jt = tds.JoinOuterApply
 	default:
 		return nil, nil
 	}
 	var j *tds.Join
-	if p.peek().kind == tLParen {
+	switch {
+	case p.peek().kind == tLParen:
 		p.next()
 		sub, err := p.selectStmt()
 		if err != nil {
@@ -223,14 +235,20 @@ func (p *parser) optJoin() (*tds.Join, error) {
 		}
 		p.next()
 		j = &tds.Join{Type: jt, FromSub: sub, Alias: p.optTableAlias()}
-	} else {
+	case p.peek().kind == tIdent && p.peekN(1).kind == tLParen:
+		ve, err := p.funcCall(strings.ToUpper(p.peek().text))
+		if err != nil {
+			return nil, err
+		}
+		j = &tds.Join{Type: jt, FromFunc: &tds.TableFunc{Name: ve.Func, Args: ve.Args}, Alias: p.optTableAlias()}
+	default:
 		db, sch, tbl, err := p.tableName()
 		if err != nil {
 			return nil, err
 		}
 		j = &tds.Join{Type: jt, Database: db, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
 	}
-	if jt != tds.JoinCross {
+	if jt != tds.JoinCross && jt != tds.JoinCrossApply && jt != tds.JoinOuterApply {
 		if err := p.expectKeyword("ON"); err != nil {
 			return nil, err
 		}

@@ -474,7 +474,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | subquery (scalar / `IN` / `EXISTS`) | `internal/tsql/parser.go + internal/exec` | Y |
 | recursive CTE (at depth) | `internal/engine/engine.go` | Y |
 | `PIVOT` / `UNPIVOT` |  | - |
-| `CROSS APPLY` / `OUTER APPLY` |  | - |
+| `CROSS APPLY` / `OUTER APPLY` | `internal/tsql/parser.go + internal/engine/engine.go` | Y |
 | `GROUPING SETS` / `ROLLUP` / `CUBE` |  | - |
 | `OVER` (window clause) | `internal/exec/window.go` | Y |
 | `TABLESAMPLE` |  | - |
