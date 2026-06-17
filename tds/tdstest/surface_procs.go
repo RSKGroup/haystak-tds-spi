@@ -29,4 +29,5 @@ var procCases = []Case{
 	{Element: "proc:sp_column_privileges", SQL: "EXEC sp_column_privileges 'zzz_surface_none'", Check: checks(wantCols("COLUMN_NAME", "PRIVILEGE", "GRANTEE"), exactRows(0))},
 	{Element: "proc:sp_helptrigger", SQL: "EXEC sp_helptrigger 'zzz_surface_none'", Check: checks(wantCols("trigger_name", "isupdate", "isafter"), exactRows(0))},
 	{Element: "proc:sp_depends", SQL: "EXEC sp_depends 'zzz_surface_none'", Check: checks(wantCols("name", "type"), exactRows(0))},
+	{Element: "proc:sp_executesql", SQL: "EXEC sp_executesql N'SELECT 1 AS x'", Want: []any{1}},
 }

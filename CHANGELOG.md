@@ -13,6 +13,10 @@ Queries:
 - `PIVOT` / `UNPIVOT` (crosstabs): `PIVOT` rotates a column's values into columns, aggregating per cell; `UNPIVOT` rotates columns back into `(name, value)` rows, dropping `NULL` cells.
 - Table hints (`WITH (NOLOCK)`, `WITH (INDEX(…))`), `TABLESAMPLE`, and trailing `OPTION (…)` query hints now parse (honored as no-ops) instead of failing the query — drivers, ORMs, and SSMS emit these constantly.
 
+Procedures:
+
+- `sp_executesql` (dynamic SQL): runs a parameterized statement string, substituting named params (`@p = value`) as literals before executing. Drivers emit this for nearly every parameterized query.
+
 Types:
 
 - `types.Type.Name` (public, optional): the declared T-SQL type (`varchar`, `money`, `date`, `smallint`, …). When set, the catalog reporters — `INFORMATION_SCHEMA.COLUMNS`, `sys.columns`, the `sys.types` join, and the ODBC `sp_columns` proc — report that exact type, its system type id, ODBC code, and byte length instead of the broader Kind default. Backends that do not set `Name` are unchanged.

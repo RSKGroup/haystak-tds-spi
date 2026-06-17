@@ -51,6 +51,46 @@ var procDispatch = map[string]procFunc{
 	"sp_depends":           spDepends,
 }
 
+// Registered in init, not the literal, to break the cycle spExecuteSQL -> queryOne -> execProc -> procDispatch.
+func init() { procDispatch["sp_executesql"] = spExecuteSQL }
+
+// spExecuteSQL substitutes named params (@p = val) as literals into the statement and runs it.
+func spExecuteSQL(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {
+	if len(args) == 0 {
+		return nil, true, nil
+	}
+	stmt, ok := args[0].val.(string)
+	if !ok {
+		return nil, true, fmt.Errorf("sp_executesql: @stmt must be a string")
+	}
+	type binding struct{ name, lit string }
+	var subs []binding
+	for _, a := range args {
+		if a.name != "" {
+			subs = append(subs, binding{a.name, sqlLiteral(a.val)})
+		}
+	}
+	sort.Slice(subs, func(i, j int) bool { return len(subs[i].name) > len(subs[j].name) })
+	for _, s := range subs {
+		stmt = strings.ReplaceAll(stmt, s.name, s.lit)
+	}
+	rs, _, err := queryOne(ctx, b, stmt)
+	return rs, true, err
+}
+
+func sqlLiteral(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "NULL"
+	case string:
+		return "'" + strings.ReplaceAll(x, "'", "''") + "'"
+	case int64:
+		return strconv.FormatInt(x, 10)
+	default:
+		return fmt.Sprintf("%v", x)
+	}
+}
+
 // SupportedProcs returns every wired built-in sp_* proc name, lower-cased and sorted (aliases included).
 func SupportedProcs() []string {
 	names := make([]string, 0, len(procDispatch))

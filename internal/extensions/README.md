@@ -432,7 +432,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `sp_executesql` |  | - |
+| `sp_executesql` | `internal/engine/proc.go` | Y |
 | `sp_rename` |  | - |
 | `sp_addextendedproperty` |  | - |
 | `sp_who` |  | - |
@@ -546,7 +546,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `EXEC` / `EXECUTE` (stored procedure) | `internal/extensions/batch/batch.go` | Y |
 | `SELECT @v = col` | `internal/extensions/procedures/control/` | Y |
 | `DECLARE @t TABLE (...)` |  | - |
-| `sp_executesql` / dynamic SQL |  | - |
+| `sp_executesql` / dynamic SQL | `internal/engine/proc.go` | Y |
 | `SET` options with effect (`ANSI_NULLS`, `QUOTED_IDENTIFIER`, `ROWCOUNT`, `IDENTITY_INSERT`) |  | - |
 
 ### Transactions
