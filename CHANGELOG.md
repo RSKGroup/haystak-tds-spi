@@ -19,7 +19,8 @@ Procedures:
 
 Catalog:
 
-- Live-session management: the server now keeps a concurrency-safe session registry (spid assigned at LOGIN7, login/host/app/time captured, removed on disconnect) and audits each login (success or rejected, via `SessionEvent.Succeeded`) and logout through the `Server.Audit` hook (fired only when the hook is set). Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who` enumerate every live session from that registry; with no server (e.g. direct engine use) they return the correct empty shape.
+- Live-session management: the server now keeps a concurrency-safe session registry (spid assigned at LOGIN7, login/host/app/time captured, removed on disconnect) and audits each login (success or rejected, via `SessionEvent.Succeeded`) and logout through the `Server.Audit` hook (fired only when the hook is set). Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who` enumerate live sessions from that registry; with no server (e.g. direct engine use) they return the correct empty shape.
+- `Server.SessionVisibility func(ctx, Principal) bool` gates cross-session enumeration like SQL Server's `VIEW SERVER STATE`: it is consulted once per connection, and a principal it rejects — or, by default, when the hook is nil — sees only its own session in those DMVs / `sp_who`. Set it to a backend privilege check to let admins see every session.
 - Fix: unqualified tables inside `WHERE`/`HAVING`/`SELECT` subqueries and derived tables now inherit the session database (previously a multi-db backend rejected them).
 - `@@SPID` returns the connection's real session id (from the registry), in bare selects and in expressions such as `WHERE session_id = @@SPID`; it falls back to `1` when there is no session. The `@@`-global family now also parses inside expressions.
 - `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
@@ -38,6 +39,14 @@ Types:
 Connect-time metadata:
 
 - `DATABASEPROPERTYEX(db, property)` answers per property (`Status` -> `ONLINE`, `Updateability` -> `READ_WRITE`, `UserAccess` -> `MULTI_USER`, `Recovery` -> `SIMPLE`, `Collation`, `LCID`, the `Is*` flags, …) instead of returning `ON` for every property.
+
+Known limitations:
+
+- **Parsed-but-no-op hints.** `TABLESAMPLE`, table hints (`WITH (NOLOCK)`, `WITH (INDEX(…))`), trailing `OPTION (…)`, and the `ANSI_NULLS` / `QUOTED_IDENTIFIER` SET options parse and are accepted so real-world drivers/ORMs/SSMS don't fail — but they do not change results (no sampling, no locking-hint semantics, no isolation change).
+- **New AST shapes are engine-evaluated for Scanner-only backends.** `PIVOT`/`UNPIVOT`, `GROUPING SETS`/`ROLLUP`/`CUBE`, `CROSS`/`OUTER APPLY`, and `COUNT(DISTINCT)` are additive `tds.Query` fields; a backend that only implements `Scanner` keeps compiling and gets these evaluated in-engine over the materialized scan. It does not need to implement them, but it also cannot push them down — they cost a full scan.
+- **`VIEW_COLUMN_USAGE` over star-views.** A view defined as `SELECT *` reports no column-level usage rows (the base columns aren't enumerated in the view text); `VIEW_TABLE_USAGE` still reports the table-level dependency.
+- **`SessionEvent.Kind`** is one of `"login"` or `"logout"`; `Succeeded` is meaningful only for `"login"` (a rejected login fires `Kind:"login", Succeeded:false`).
+- **Deferred (not yet parsed):** `GOTO`/labels and `DECLARE @t TABLE` table variables in the procedural interpreter; server-side DMV columns beyond the enumerated set; the write path beyond annotation updates. Tracked in `workplan/`.
 
 ## v1.5.0
 
