@@ -305,7 +305,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 
-	if q.FromSub != nil {
+	if q.FromSub != nil && len(q.Joins) == 0 {
 		cols, data, err := runMaterialize(ctx, b, q.FromSub)
 		if err != nil {
 			return nil, err
@@ -828,31 +828,43 @@ func materialize(rows tds.Rows) ([]catalog.Column, [][]any, error) {
 }
 
 func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
-	sc := b.(tds.Scanner)
 	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
 	fromAlias := effAlias(q.FromAlias, q.Table)
-	cols, rows, err := scanTable(ctx, sc, &tds.Query{
-		Database: q.Database, Schema: q.Schema, Table: q.Table,
-		Where: singleTableWhere(q.Where, fromAlias, q.Table),
-	})
+	var cols []catalog.Column
+	var rows [][]any
+	var err error
+	if q.FromSub != nil {
+		cols, rows, err = runMaterialize(ctx, b, q.FromSub)
+	} else {
+		cols, rows, err = scanJoinSide(ctx, b, &tds.Query{
+			Database: q.Database, Schema: q.Schema, Table: q.Table,
+			Where: singleTableWhere(q.Where, fromAlias, q.Table),
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
 	cols = qualify(cols, fromAlias)
 	for _, j := range q.Joins {
 		jAlias := effAlias(j.Alias, j.Table)
-		where := singleTableWhere(q.Where, jAlias, j.Table)
-		// Semi-join: scan the right side only for rows whose join key matches a left key. Safe for INNER/LEFT; unsafe for RIGHT/FULL.
-		if j.Type == tds.JoinInner || j.Type == tds.JoinLeft {
-			if lk, rk, ok := joinKeys(j.On, jAlias, j.Table); ok {
-				if vals := distinctColValues(cols, rows, lk); len(vals) > 0 && len(vals) <= semiJoinCap {
-					where = andExpr(where, &tds.Expr{Pred: &tds.Predicate{Column: rk, Op: tds.OpIn, Value: vals}})
+		var rcols []catalog.Column
+		var rrows [][]any
+		if j.FromSub != nil {
+			rcols, rrows, err = runMaterialize(ctx, b, j.FromSub)
+		} else {
+			where := singleTableWhere(q.Where, jAlias, j.Table)
+			// Semi-join: scan the right side only for rows whose join key matches a left key. Safe for INNER/LEFT; unsafe for RIGHT/FULL.
+			if j.Type == tds.JoinInner || j.Type == tds.JoinLeft {
+				if lk, rk, ok := joinKeys(j.On, jAlias, j.Table); ok {
+					if vals := distinctColValues(cols, rows, lk); len(vals) > 0 && len(vals) <= semiJoinCap {
+						where = andExpr(where, &tds.Expr{Pred: &tds.Predicate{Column: rk, Op: tds.OpIn, Value: vals}})
+					}
 				}
 			}
+			rcols, rrows, err = scanJoinSide(ctx, b, &tds.Query{
+				Database: j.Database, Schema: j.Schema, Table: j.Table, Where: where,
+			})
 		}
-		rcols, rrows, err := scanTable(ctx, sc, &tds.Query{
-			Database: j.Database, Schema: j.Schema, Table: j.Table, Where: where,
-		})
 		if err != nil {
 			return nil, err
 		}
@@ -863,6 +875,14 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 	return exec.ApplyWith(cols, rows, q, env)
+}
+
+func scanJoinSide(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.Column, [][]any, error) {
+	sc, ok := b.(tds.Scanner)
+	if !ok {
+		return nil, nil, fmt.Errorf("engine: backend cannot scan %q for join", q.Table)
+	}
+	return scanTable(ctx, sc, q)
 }
 
 func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Column, [][]any, error) {

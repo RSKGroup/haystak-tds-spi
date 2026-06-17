@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Read-surface additions, additive and non-breaking.
+
+Queries:
+
+- `TOP (n)` / `TOP (n) PERCENT` with a parenthesized count, as Power BI / Tableau / ODBC drivers emit by default.
+- `JOIN` of derived tables on either side: `FROM (SELECT …) a JOIN (SELECT …) b ON …`. Also fixes a silent wrong result where a derived `FROM` combined with joins dropped the joins.
+
 ## v1.5.0
 
 A broad SQL Server surface expansion — additive, no breaking changes. The one public API addition is

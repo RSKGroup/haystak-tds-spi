@@ -54,6 +54,48 @@ func TestParseFull(t *testing.T) {
 	}
 }
 
+func TestParseTopParen(t *testing.T) {
+	cases := []struct {
+		sql     string
+		limit   int
+		percent bool
+	}{
+		{"SELECT TOP (2) id FROM orders ORDER BY id", 2, false},
+		{"SELECT TOP (50) PERCENT id FROM orders ORDER BY id", 50, true},
+		{"SELECT TOP 5 id FROM orders", 5, false},
+		{"SELECT TOP 10 PERCENT id FROM orders", 10, true},
+	}
+	for _, c := range cases {
+		q, err := Parse(c.sql)
+		if err != nil {
+			t.Fatalf("%s: %v", c.sql, err)
+		}
+		if q.Limit != c.limit || q.LimitPercent != c.percent {
+			t.Errorf("%s: Limit=%d Percent=%v, want %d %v", c.sql, q.Limit, q.LimitPercent, c.limit, c.percent)
+		}
+	}
+	if _, err := Parse("SELECT TOP (2 id FROM orders"); err == nil {
+		t.Error("expected error for unclosed TOP paren")
+	}
+}
+
+func TestParseDerivedJoin(t *testing.T) {
+	q, err := Parse("SELECT u.name FROM users u JOIN (SELECT user_id FROM orders) o ON o.user_id = u.id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q.Joins) != 1 {
+		t.Fatalf("Joins = %d, want 1", len(q.Joins))
+	}
+	j := q.Joins[0]
+	if j.FromSub == nil || j.Table != "" || j.Alias != "o" {
+		t.Errorf("join = %+v, want FromSub set, Table empty, Alias o", j)
+	}
+	if j.FromSub.Table != "orders" {
+		t.Errorf("derived join inner Table = %q, want orders", j.FromSub.Table)
+	}
+}
+
 func litOf(v any) any {
 	if ve, ok := v.(*tds.ValueExpr); ok {
 		return ve.Lit

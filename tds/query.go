@@ -151,6 +151,7 @@ type Join struct {
 	Database string
 	Schema   string
 	Table    string
+	FromSub  *Query // derived table on the join's right side: JOIN (SELECT …) (Table empty when set)
 	Alias    string
 	On       *Expr // nil for CROSS JOIN
 }

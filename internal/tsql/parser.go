@@ -211,11 +211,25 @@ func (p *parser) optJoin() (*tds.Join, error) {
 	default:
 		return nil, nil
 	}
-	db, sch, tbl, err := p.tableName()
-	if err != nil {
-		return nil, err
+	var j *tds.Join
+	if p.peek().kind == tLParen {
+		p.next()
+		sub, err := p.selectStmt()
+		if err != nil {
+			return nil, err
+		}
+		if p.peek().kind != tRParen {
+			return nil, fmt.Errorf("tsql: expected ')' after derived table, got %q", p.peek().text)
+		}
+		p.next()
+		j = &tds.Join{Type: jt, FromSub: sub, Alias: p.optTableAlias()}
+	} else {
+		db, sch, tbl, err := p.tableName()
+		if err != nil {
+			return nil, err
+		}
+		j = &tds.Join{Type: jt, Database: db, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
 	}
-	j := &tds.Join{Type: jt, Database: db, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
 	if jt != tds.JoinCross {
 		if err := p.expectKeyword("ON"); err != nil {
 			return nil, err
@@ -263,6 +277,10 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 
 	if p.isKeyword("TOP") {
 		p.next()
+		paren := p.peek().kind == tLParen
+		if paren {
+			p.next()
+		}
 		t := p.peek()
 		if t.kind != tNumber {
 			return nil, fmt.Errorf("tsql: expected number after TOP, got %q", t.text)
@@ -273,6 +291,12 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 		}
 		q.Limit = n
 		p.next()
+		if paren {
+			if p.peek().kind != tRParen {
+				return nil, fmt.Errorf("tsql: expected ')' after TOP value, got %q", p.peek().text)
+			}
+			p.next()
+		}
 		if p.isKeyword("PERCENT") {
 			p.next()
 			q.LimitPercent = true
