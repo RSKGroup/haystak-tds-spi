@@ -388,11 +388,9 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 		if err := p.expectKeyword("BY"); err != nil {
 			return nil, err
 		}
-		cols, err := p.identList()
-		if err != nil {
+		if err := p.groupByClause(q); err != nil {
 			return nil, err
 		}
-		q.GroupBy = cols
 	}
 
 	if p.isKeyword("HAVING") {
@@ -969,6 +967,135 @@ func aggOf(s string) tds.AggFunc {
 		return tds.AggApproxCountDistinct
 	}
 	return tds.AggNone
+}
+
+func (p *parser) peekIs(s string) bool {
+	t := p.peek()
+	return (t.kind == tIdent || t.kind == tKeyword) && strings.EqualFold(t.text, s)
+}
+
+// groupByClause parses a plain column list or ROLLUP/CUBE/GROUPING SETS into q.GroupingSets + q.GroupBy.
+func (p *parser) groupByClause(q *tds.Query) error {
+	switch {
+	case p.peekIs("ROLLUP") && p.peekN(1).kind == tLParen:
+		cols, err := p.parenIdentList()
+		if err != nil {
+			return err
+		}
+		q.GroupBy, q.GroupingSets = cols, rollupSets(cols)
+	case p.peekIs("CUBE") && p.peekN(1).kind == tLParen:
+		cols, err := p.parenIdentList()
+		if err != nil {
+			return err
+		}
+		q.GroupBy, q.GroupingSets = cols, cubeSets(cols)
+	case p.peekIs("GROUPING") && p.peekN(1).kind == tIdent && strings.EqualFold(p.peekN(1).text, "SETS"):
+		sets, universe, err := p.groupingSetsClause()
+		if err != nil {
+			return err
+		}
+		q.GroupBy, q.GroupingSets = universe, sets
+	default:
+		cols, err := p.identList()
+		if err != nil {
+			return err
+		}
+		q.GroupBy = cols
+	}
+	return nil
+}
+
+// parenIdentList consumes a ROLLUP/CUBE name then a parenthesized column list.
+func (p *parser) parenIdentList() ([]string, error) {
+	p.next() // ROLLUP / CUBE
+	p.next() // (
+	cols, err := p.identList()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after grouping columns, got %q", p.peek().text)
+	}
+	p.next()
+	return cols, nil
+}
+
+// groupingSetsClause parses GROUPING SETS ( set, … ) where each set is ( cols ), (), or a bare column.
+func (p *parser) groupingSetsClause() ([][]string, []string, error) {
+	p.next() // GROUPING
+	p.next() // SETS
+	if p.peek().kind != tLParen {
+		return nil, nil, fmt.Errorf("tsql: expected '(' after GROUPING SETS, got %q", p.peek().text)
+	}
+	p.next()
+	var sets [][]string
+	var universe []string
+	seen := map[string]bool{}
+	for {
+		var set []string
+		if p.peek().kind == tLParen {
+			p.next()
+			if p.peek().kind != tRParen {
+				cols, err := p.identList()
+				if err != nil {
+					return nil, nil, err
+				}
+				set = cols
+			}
+			if p.peek().kind != tRParen {
+				return nil, nil, fmt.Errorf("tsql: expected ')' in grouping set, got %q", p.peek().text)
+			}
+			p.next()
+		} else {
+			name, ok := p.qualifiedName()
+			if !ok {
+				return nil, nil, fmt.Errorf("tsql: expected column in GROUPING SETS, got %q", p.peek().text)
+			}
+			set = []string{name}
+		}
+		sets = append(sets, set)
+		for _, c := range set {
+			if !seen[c] {
+				seen[c] = true
+				universe = append(universe, c)
+			}
+		}
+		if p.peek().kind == tComma {
+			p.next()
+			continue
+		}
+		break
+	}
+	if p.peek().kind != tRParen {
+		return nil, nil, fmt.Errorf("tsql: expected ')' after GROUPING SETS, got %q", p.peek().text)
+	}
+	p.next()
+	return sets, universe, nil
+}
+
+// rollupSets expands ROLLUP(a,b,c) to the grouping sets (a,b,c),(a,b),(a),().
+func rollupSets(cols []string) [][]string {
+	sets := make([][]string, 0, len(cols)+1)
+	for n := len(cols); n >= 0; n-- {
+		sets = append(sets, append([]string{}, cols[:n]...))
+	}
+	return sets
+}
+
+// cubeSets expands CUBE(a,b) to every subset: (a,b),(a),(b),().
+func cubeSets(cols []string) [][]string {
+	n := len(cols)
+	sets := make([][]string, 0, 1<<n)
+	for mask := (1 << n) - 1; mask >= 0; mask-- {
+		var set []string
+		for i := 0; i < n; i++ {
+			if mask&(1<<(n-1-i)) != 0 {
+				set = append(set, cols[i])
+			}
+		}
+		sets = append(sets, set)
+	}
+	return sets
 }
 
 func (p *parser) identList() ([]string, error) {

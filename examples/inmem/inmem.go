@@ -164,6 +164,18 @@ func (b *Backend) seedRich() {
 		{int64(1), "ABC", "A", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(5)},
 	})
 
+	// sales has two categorical dimensions for ROLLUP/CUBE/GROUPING SETS subtotal tests.
+	b.add(catalog.Table{
+		Name: "sales",
+		Columns: []catalog.Column{
+			{Name: "region", Type: types.Type{Kind: types.String, MaxLen: 8}},
+			{Name: "product", Type: types.Type{Kind: types.String, MaxLen: 8}},
+			{Name: "amount", Type: types.Type{Kind: types.Int64}},
+		},
+	}, [][]any{
+		{"E", "A", int64(10)}, {"E", "B", int64(20)}, {"W", "A", int64(30)}, {"W", "A", int64(5)},
+	})
+
 	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vActiveProducts", Kind: tds.RoutineView,
 		Body: "SELECT product_id, name, price FROM products WHERE in_stock = 1"})
 	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vOrderTotals", Kind: tds.RoutineView,

@@ -331,7 +331,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 			return qe.ExecuteQuery(ctx, q)
 		}
 	}
-	if caps.Aggregate && len(q.Joins) == 0 && q.FromSub == nil && exec.IsAggregate(q) {
+	if caps.Aggregate && len(q.Joins) == 0 && q.FromSub == nil && len(q.GroupingSets) == 0 && exec.IsAggregate(q) {
 		if agg, ok := b.(tds.Aggregator); ok {
 			rows, err := agg.Aggregate(ctx, q)
 			if err == nil {

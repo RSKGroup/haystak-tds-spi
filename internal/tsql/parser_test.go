@@ -103,6 +103,38 @@ func litOf(v any) any {
 	return v
 }
 
+func TestParseGroupingSets(t *testing.T) {
+	r, err := Parse("SELECT a FROM t GROUP BY ROLLUP(a, b)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.GroupingSets; len(got) != 3 || len(got[0]) != 2 || len(got[1]) != 1 || len(got[2]) != 0 {
+		t.Errorf("ROLLUP sets = %v, want [[a b] [a] []]", got)
+	}
+	c, err := Parse("SELECT a FROM t GROUP BY CUBE(a, b)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.GroupingSets) != 4 {
+		t.Errorf("CUBE sets = %v, want 4 sets", c.GroupingSets)
+	}
+	g, err := Parse("SELECT a FROM t GROUP BY GROUPING SETS((a, b), (a), ())")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.GroupingSets) != 3 || len(g.GroupBy) != 2 {
+		t.Errorf("GROUPING SETS = %v, universe %v", g.GroupingSets, g.GroupBy)
+	}
+	// A plain GROUP BY leaves GroupingSets nil.
+	p, err := Parse("SELECT a FROM t GROUP BY a, b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.GroupingSets != nil || len(p.GroupBy) != 2 {
+		t.Errorf("plain GROUP BY = sets %v, cols %v", p.GroupingSets, p.GroupBy)
+	}
+}
+
 func TestParseApply(t *testing.T) {
 	q, err := Parse("SELECT u.id FROM users u CROSS APPLY (SELECT amount FROM orders WHERE user_id = u.id) x")
 	if err != nil {

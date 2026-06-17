@@ -22,8 +22,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `STDEVP` | `internal/exec/aggregate.go` | Y |
 | `VAR` | `internal/exec/aggregate.go` | Y |
 | `VARP` | `internal/exec/aggregate.go` | Y |
-| `GROUPING` |  | - |
-| `GROUPING_ID` |  | - |
+| `GROUPING` | `internal/exec/aggregate.go` | Y |
+| `GROUPING_ID` | `internal/exec/aggregate.go` | Y |
 | `CHECKSUM_AGG` | `internal/exec/aggregate.go` | Y |
 | `STRING_AGG` | `internal/exec/aggregate.go` | Y |
 | `APPROX_COUNT_DISTINCT` | `internal/exec/aggregate.go` | Y |
@@ -475,7 +475,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | recursive CTE (at depth) | `internal/engine/engine.go` | Y |
 | `PIVOT` / `UNPIVOT` |  | - |
 | `CROSS APPLY` / `OUTER APPLY` | `internal/tsql/parser.go + internal/engine/engine.go` | Y |
-| `GROUPING SETS` / `ROLLUP` / `CUBE` |  | - |
+| `GROUPING SETS` / `ROLLUP` / `CUBE` | `internal/tsql/parser.go + internal/exec/aggregate.go` | Y |
 | `OVER` (window clause) | `internal/exec/window.go` | Y |
 | `TABLESAMPLE` |  | - |
 | query hints (`OPTION`, `WITH (NOLOCK)`) |  | - |

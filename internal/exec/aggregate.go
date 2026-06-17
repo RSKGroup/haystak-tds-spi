@@ -17,7 +17,7 @@ import (
 func IsAggregate(q *tds.Query) bool { return isAggregate(q) }
 
 func isAggregate(q *tds.Query) bool {
-	if len(q.GroupBy) > 0 {
+	if len(q.GroupBy) > 0 || len(q.GroupingSets) > 0 {
 		return true
 	}
 	for _, it := range q.Select {
@@ -28,54 +28,36 @@ func isAggregate(q *tds.Query) bool {
 	return false
 }
 
-func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Query, env *Env) (tds.Rows, error) {
-	groupIdx := make([]int, 0, len(q.GroupBy))
-	for _, g := range q.GroupBy {
-		i, ok := idx[g]
-		if !ok {
-			return nil, fmt.Errorf("exec: unknown column %q in GROUP BY", g)
-		}
-		groupIdx = append(groupIdx, i)
-	}
+type aggregated struct {
+	row   []any
+	group [][]any
+}
 
+func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Query, env *Env) (tds.Rows, error) {
 	outCols, err := aggOutCols(cols, idx, q.Select)
 	if err != nil {
 		return nil, err
 	}
 
-	var order []string
-	groups := map[string][][]any{}
-	for _, row := range rows {
-		key := "__all__"
-		if len(groupIdx) > 0 {
-			parts := make([]any, len(groupIdx))
-			for j, gi := range groupIdx {
-				parts[j] = row[gi]
-			}
-			key = fmt.Sprintf("%v", parts)
-		}
-		if _, ok := groups[key]; !ok {
-			order = append(order, key)
-		}
-		groups[key] = append(groups[key], row)
+	universe := make(map[string]bool, len(q.GroupBy))
+	for _, g := range q.GroupBy {
+		universe[g] = true
 	}
-	if len(q.GroupBy) == 0 && len(order) == 0 {
-		order = []string{"__all__"}
+	sets := q.GroupingSets
+	if len(sets) == 0 {
+		sets = [][]string{q.GroupBy}
 	}
 
-	outIdx := indexCols(outCols)
-	type aggregated struct {
-		row   []any
-		group [][]any
-	}
-	rowsOut := make([]aggregated, 0, len(order))
-	for _, k := range order {
-		row, err := aggRow(idx, q.Select, groups[k])
+	var rowsOut []aggregated
+	for _, set := range sets {
+		setRows, err := groupOneSet(idx, rows, q.Select, set, universe)
 		if err != nil {
 			return nil, err
 		}
-		rowsOut = append(rowsOut, aggregated{row: row, group: groups[k]})
+		rowsOut = append(rowsOut, setRows...)
 	}
+
+	outIdx := indexCols(outCols)
 
 	// HAVING is evaluated in the group context: aggregate calls compute over the group, alias and
 	// grouped-column references resolve against the aggregated output row.
@@ -328,6 +310,13 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 	var out []catalog.Column
 	for _, it := range sel {
 		name := it.Alias
+		if _, _, ok := groupingFn(it); ok {
+			if name == "" {
+				name = "grouping"
+			}
+			out = append(out, catalog.Column{Name: name, Type: types.Type{Kind: types.Int64}})
+			continue
+		}
 		var typ types.Type
 		switch it.Agg {
 		case tds.AggNone:
@@ -374,12 +363,62 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 	return out, nil
 }
 
-func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, error) {
+// groupOneSet aggregates rows over one grouping set; universe columns not in the set roll up to NULL.
+func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []string, universe map[string]bool) ([]aggregated, error) {
+	setIdx := make([]int, 0, len(set))
+	setCols := make(map[string]bool, len(set))
+	for _, g := range set {
+		i, ok := idx[g]
+		if !ok {
+			return nil, fmt.Errorf("exec: unknown column %q in GROUP BY", g)
+		}
+		setIdx = append(setIdx, i)
+		setCols[g] = true
+	}
+	var order []string
+	groups := map[string][][]any{}
+	for _, row := range rows {
+		key := "__all__"
+		if len(setIdx) > 0 {
+			parts := make([]any, len(setIdx))
+			for j, gi := range setIdx {
+				parts[j] = row[gi]
+			}
+			key = fmt.Sprintf("%v", parts)
+		}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], row)
+	}
+	if len(setIdx) == 0 && len(order) == 0 {
+		order = []string{"__all__"}
+	}
+	out := make([]aggregated, 0, len(order))
+	for _, k := range order {
+		row, err := aggRowSet(idx, sel, groups[k], setCols, universe)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, aggregated{row: row, group: groups[k]})
+	}
+	return out, nil
+}
+
+func aggRowSet(idx map[string]int, sel []tds.SelectItem, rows [][]any, setCols, universe map[string]bool) ([]any, error) {
 	out := make([]any, len(sel))
 	for j, it := range sel {
+		if gcols, isID, ok := groupingFn(it); ok {
+			out[j] = groupingValue(gcols, isID, setCols)
+			continue
+		}
 		if it.Agg == tds.AggNone {
 			if i, ok := resolveCol(idx, it.Column); ok && len(rows) > 0 {
-				out[j] = rows[0][i]
+				if universe[it.Column] && !setCols[it.Column] {
+					out[j] = nil // rolled up in this grouping set
+				} else {
+					out[j] = rows[0][i]
+				}
 			}
 			continue
 		}
@@ -390,6 +429,43 @@ func aggRow(idx map[string]int, sel []tds.SelectItem, rows [][]any) ([]any, erro
 		out[j] = v
 	}
 	return out, nil
+}
+
+// groupingFn reports whether a select item is GROUPING(col) / GROUPING_ID(cols), with its column args.
+func groupingFn(it tds.SelectItem) ([]string, bool, bool) {
+	ve := it.Expr
+	if it.Agg != tds.AggNone || ve == nil || ve.Kind != tds.ValFunc {
+		return nil, false, false
+	}
+	name := strings.ToUpper(ve.Func)
+	if name != "GROUPING" && name != "GROUPING_ID" {
+		return nil, false, false
+	}
+	cols := make([]string, 0, len(ve.Args))
+	for _, a := range ve.Args {
+		if a.Kind == tds.ValCol {
+			cols = append(cols, a.Col)
+		}
+	}
+	return cols, name == "GROUPING_ID", true
+}
+
+// groupingValue is GROUPING(col) (1 when col is rolled up) or GROUPING_ID(c1,…) (a bitmask, c1 the MSB).
+func groupingValue(gcols []string, isID bool, setCols map[string]bool) any {
+	if !isID {
+		if len(gcols) == 0 || setCols[gcols[0]] {
+			return int64(0)
+		}
+		return int64(1)
+	}
+	var mask int64
+	for _, c := range gcols {
+		mask <<= 1
+		if !setCols[c] {
+			mask |= 1
+		}
+	}
+	return mask
 }
 
 // computeAgg evaluates one aggregate function over a group's rows. arg is the column name ("*" or

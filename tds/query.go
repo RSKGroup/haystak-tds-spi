@@ -181,7 +181,8 @@ type Query struct {
 	Distinct     bool
 	Select       []SelectItem // empty = all columns (*)
 	Where        *Expr
-	GroupBy      []string
+	GroupBy      []string   // grouping-column universe (all columns across GroupingSets when those are set)
+	GroupingSets [][]string // GROUP BY ROLLUP/CUBE/GROUPING SETS: aggregate once per set, union; nil = single GroupBy
 	Having       *Expr
 	OrderBy      []OrderItem
 	Limit        int
