@@ -46,7 +46,7 @@ Known limitations:
 - **New AST shapes are engine-evaluated for Scanner-only backends.** `PIVOT`/`UNPIVOT`, `GROUPING SETS`/`ROLLUP`/`CUBE`, `CROSS`/`OUTER APPLY`, and `COUNT(DISTINCT)` are additive `tds.Query` fields; a backend that only implements `Scanner` keeps compiling and gets these evaluated in-engine over the materialized scan. It does not need to implement them, but it also cannot push them down — they cost a full scan.
 - **`VIEW_COLUMN_USAGE` over star-views.** A view defined as `SELECT *` reports no column-level usage rows (the base columns aren't enumerated in the view text); `VIEW_TABLE_USAGE` still reports the table-level dependency.
 - **`SessionEvent.Kind`** is one of `"login"` or `"logout"`; `Succeeded` is meaningful only for `"login"` (a rejected login fires `Kind:"login", Succeeded:false`).
-- **Deferred (not yet parsed):** `GOTO`/labels and `DECLARE @t TABLE` table variables in the procedural interpreter; server-side DMV columns beyond the enumerated set; the write path beyond annotation updates. Tracked in `workplan/`.
+- **Deferred (not yet parsed):** `GOTO`/labels and `DECLARE @t TABLE` table variables in the procedural interpreter; DMV columns beyond the enumerated set.
 
 ## v1.5.0
 
