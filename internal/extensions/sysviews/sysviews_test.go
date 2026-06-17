@@ -41,7 +41,7 @@ func runAs(t *testing.T, p tds.Principal, sql string) [][]any {
 	if err != nil {
 		t.Fatalf("parse %q: %v", sql, err)
 	}
-	rows, handled, err := sysviews.Resolve(schema, rts, dbs, p, q)
+	rows, handled, err := sysviews.Resolve(schema, rts, dbs, p, nil, q)
 	if err != nil {
 		t.Fatalf("resolve %q: %v", sql, err)
 	}

@@ -19,6 +19,7 @@ Procedures:
 
 Catalog:
 
+- Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who`: project the current session from a `tds.SessionInfo` carried in context (set by the server at login), and the correct empty shape when absent. (Listing all live sessions needs the server session registry.)
 - `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
 - `SET ROWCOUNT n` now caps the rows returned by later statements in the batch (`SET ROWCOUNT 0` resets). Other `SET` options (`ANSI_NULLS`, `QUOTED_IDENTIFIER`) are accepted as no-ops.
 

@@ -21,7 +21,7 @@ const dbName = "haystak"
 type viewBuilder func() ([]catalog.Column, [][]any)
 
 // viewBuilders is the sys.* dispatch table; its keys are the wired set SupportedViews reports.
-func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal) map[string]viewBuilder {
+func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess *tds.SessionInfo) map[string]viewBuilder {
 	return map[string]viewBuilder{
 		"databases":                   func() ([]catalog.Column, [][]any) { return databasesRows(dbs) },
 		"schemas":                     schemasRows,
@@ -66,12 +66,17 @@ func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds
 		"partitions":                  func() ([]catalog.Column, [][]any) { return partitionsRows(schema) },
 		"database_files":              databaseFilesRows,
 		"filegroups":                  filegroupsRows,
+		"dm_exec_sessions":            func() ([]catalog.Column, [][]any) { return dmExecSessionsRows(sess) },
+		"dm_exec_connections":         func() ([]catalog.Column, [][]any) { return dmExecConnectionsRows(sess) },
+		"dm_exec_requests":            func() ([]catalog.Column, [][]any) { return dmExecRequestsRows(sess) },
+		"dm_exec_query_stats":         func() ([]catalog.Column, [][]any) { return dmExecQueryStatsRows() },
+		"dm_os_waiting_tasks":         func() ([]catalog.Column, [][]any) { return dmOsWaitingTasksRows() },
 	}
 }
 
 // SupportedViews returns every wired sys.* view name, lower-cased and sorted.
 func SupportedViews() []string {
-	builders := viewBuilders(catalog.Schema{}, nil, nil, tds.Principal{})
+	builders := viewBuilders(catalog.Schema{}, nil, nil, tds.Principal{}, nil)
 	names := make([]string, 0, len(builders))
 	for name := range builders {
 		names = append(names, name)
@@ -82,11 +87,11 @@ func SupportedViews() []string {
 
 // Resolve answers a query against sys.* catalog views from a backend's declared schema and stored
 // routines. Returns handled=false when the query does not target the sys schema.
-func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, q *tds.Query) (tds.Rows, bool, error) {
+func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess *tds.SessionInfo, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
-	build, ok := viewBuilders(schema, rts, dbs, p)[strings.ToLower(q.Table)]
+	build, ok := viewBuilders(schema, rts, dbs, p, sess)[strings.ToLower(q.Table)]
 	if !ok {
 		return nil, true, fmt.Errorf("sysviews: sys.%s not supported", q.Table)
 	}
@@ -971,4 +976,70 @@ func boolInt(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+func tcol(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Time}} }
+
+// Stage 1 runtime DMVs: project the current session from ctx, or the correct empty shape when absent.
+func dmExecSessionsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("session_id"), sname("login_name"), sname("host_name"), sname("program_name"),
+		tcol("login_time"), sname("status"), intc("cpu_time"), intc("memory_usage"),
+		intc("total_elapsed_time"), intc("reads"), intc("writes"), intc("logical_reads"),
+		intc("database_id"), intc("is_user_process"),
+	}
+	if sess == nil {
+		return cols, nil
+	}
+	return cols, [][]any{{
+		int64(sess.SessionID), sess.LoginName, sess.Host, sess.Program,
+		sess.LoginTime, "running", int64(0), int64(0),
+		int64(0), int64(0), int64(0), int64(0), int64(0), int64(1),
+	}}
+}
+
+func dmExecConnectionsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("session_id"), tcol("connect_time"), sname("net_transport"), sname("protocol_type"),
+		sname("auth_scheme"), sname("client_net_address"), sname("local_net_address"),
+		intc("local_tcp_port"), intc("most_recent_session_id"),
+	}
+	if sess == nil {
+		return cols, nil
+	}
+	return cols, [][]any{{
+		int64(sess.SessionID), sess.LoginTime, "TCP", "TSQL",
+		"SQL", "127.0.0.1", "127.0.0.1", int64(1433), int64(sess.SessionID),
+	}}
+}
+
+func dmExecRequestsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("session_id"), sname("status"), sname("command"), intc("database_id"),
+		tcol("start_time"), intc("cpu_time"), intc("total_elapsed_time"), intc("reads"),
+		intc("writes"), intc("logical_reads"), nsname("wait_type"), intc("blocking_session_id"),
+	}
+	if sess == nil {
+		return cols, nil
+	}
+	return cols, [][]any{{
+		int64(sess.SessionID), "running", "SELECT", int64(0),
+		sess.LoginTime, int64(0), int64(0), int64(0),
+		int64(0), int64(0), nil, int64(0),
+	}}
+}
+
+func dmExecQueryStatsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{
+		nsname("sql_handle"), nsname("plan_handle"), intc("execution_count"), intc("total_worker_time"),
+		intc("total_elapsed_time"), intc("total_logical_reads"), intc("total_physical_reads"),
+		tcol("creation_time"), tcol("last_execution_time"),
+	}, nil
+}
+
+func dmOsWaitingTasksRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{
+		nsname("waiting_task_address"), intc("session_id"), sname("wait_type"),
+		intc("wait_duration_ms"), intc("blocking_session_id"), nsname("resource_description"),
+	}, nil
 }

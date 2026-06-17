@@ -49,6 +49,24 @@ var procDispatch = map[string]procFunc{
 	"sp_column_privileges": spColumnPrivileges,
 	"sp_helptrigger":       spHelptrigger,
 	"sp_depends":           spDepends,
+	"sp_who":               spWho,
+}
+
+// spWho projects the current session (stage 1) as one row, or none when no session is in ctx.
+func spWho(ctx context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{
+		in16("spid"), in16("ecid"), sn("status"), sn("loginame"),
+		sn("hostname"), sn("blk"), sn("dbname"), sn("cmd"),
+	}
+	var data [][]any
+	if s := sessionOf(ctx); s != nil {
+		data = append(data, []any{
+			int64(s.SessionID), int64(0), "running", s.LoginName,
+			s.Host, "0", currentDB(ctx), "SELECT",
+		})
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
 }
 
 // Registered in init, not the literal, to break the cycle spExecuteSQL -> queryOne -> execProc -> procDispatch.

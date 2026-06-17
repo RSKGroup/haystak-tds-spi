@@ -279,7 +279,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, principalOf(ctx), q)
+		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, principalOf(ctx), sessionOf(ctx), q)
 		if err != nil {
 			return nil, err
 		}

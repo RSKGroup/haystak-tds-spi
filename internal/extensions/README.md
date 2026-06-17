@@ -355,11 +355,11 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 
 | Element | File | Status |
 | --- | --- | --- |
-| `sys.dm_exec_sessions` |  | - |
-| `sys.dm_exec_connections` |  | - |
-| `sys.dm_exec_requests` |  | - |
-| `sys.dm_exec_query_stats` |  | - |
-| `sys.dm_os_waiting_tasks` |  | - |
+| `sys.dm_exec_sessions` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.dm_exec_connections` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.dm_exec_requests` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.dm_exec_query_stats` | `internal/extensions/sysviews/sysviews.go` | Y |
+| `sys.dm_os_waiting_tasks` | `internal/extensions/sysviews/sysviews.go` | Y |
 
 ### Compatibility views
 
@@ -435,7 +435,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `sp_executesql` | `internal/engine/proc.go` | Y |
 | `sp_rename` |  | - |
 | `sp_addextendedproperty` |  | - |
-| `sp_who` |  | - |
+| `sp_who` | `internal/engine/proc.go` | Y |
 | `sp_lock` | `internal/engine/proc.go` | Y |
 | `sp_configure` | `internal/engine/proc.go` | Y |
 
