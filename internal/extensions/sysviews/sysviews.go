@@ -810,6 +810,9 @@ func nsname(n string) catalog.Column {
 }
 
 func sysTypeID(t types.Type) int64 {
+	if t.Name != "" {
+		return sysTypeIDByName(t.Name)
+	}
 	switch t.Kind {
 	case types.Bool:
 		return 104
@@ -896,6 +899,48 @@ func sysTypeIDByName(decl string) int64 {
 
 // sysTypeLen is sys.columns.max_length: the storage width in bytes, -1 for max/unbounded.
 func sysTypeLen(t types.Type) int64 {
+	if t.Name != "" {
+		name := strings.ToLower(strings.TrimSpace(t.Name))
+		if i := strings.IndexByte(name, '('); i >= 0 {
+			name = strings.TrimSpace(name[:i])
+		}
+		switch name {
+		case "bit", "tinyint":
+			return 1
+		case "smallint":
+			return 2
+		case "int":
+			return 4
+		case "bigint", "float", "money", "datetime", "datetime2":
+			return 8
+		case "real", "smallmoney", "smalldatetime":
+			return 4
+		case "decimal", "numeric":
+			return 17
+		case "date":
+			return 3
+		case "time":
+			return 5
+		case "datetimeoffset":
+			return 10
+		case "char", "varchar", "binary", "varbinary":
+			if t.MaxLen > 0 {
+				return int64(t.MaxLen)
+			}
+			return -1
+		case "nchar", "nvarchar":
+			if t.MaxLen > 0 {
+				return int64(t.MaxLen * 2)
+			}
+			return -1
+		case "text", "ntext", "image":
+			return 16
+		case "uniqueidentifier":
+			return 16
+		case "xml":
+			return -1
+		}
+	}
 	switch t.Kind {
 	case types.Bool:
 		return 1

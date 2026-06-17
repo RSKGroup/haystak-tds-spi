@@ -22,6 +22,27 @@ func sampleSchema() catalog.Schema {
 	}}}
 }
 
+func TestTypeNameDeclared(t *testing.T) {
+	cases := []struct {
+		t    types.Type
+		want string
+	}{
+		{types.Type{Kind: types.String, MaxLen: 10, Name: "varchar"}, "varchar"},
+		{types.Type{Kind: types.String, MaxLen: 2, Name: "char"}, "char"},
+		{types.Type{Kind: types.Time, Name: "date"}, "date"},
+		{types.Type{Kind: types.Int32, Name: "smallint"}, "smallint"},
+		{types.Type{Kind: types.Decimal, Name: "MONEY(19,4)"}, "money"},
+		{types.Type{Kind: types.String, MaxLen: 10}, "nvarchar"},
+		{types.Type{Kind: types.Time}, "datetime2"},
+		{types.Type{Kind: types.Int32}, "int"},
+	}
+	for _, c := range cases {
+		if got := TypeName(c.t); got != c.want {
+			t.Errorf("TypeName(%+v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+}
+
 func TestResolveColumns(t *testing.T) {
 	q := &tds.Query{
 		Schema: "INFORMATION_SCHEMA", Table: "COLUMNS",

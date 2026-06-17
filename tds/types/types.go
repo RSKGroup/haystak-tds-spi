@@ -27,4 +27,5 @@ type Type struct {
 	MaxLen    int
 	Precision int
 	Scale     int
+	Name      string // declared T-SQL type ("varchar", "money"); catalog reporters prefer it over the Kind default
 }

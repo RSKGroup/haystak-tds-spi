@@ -149,6 +149,21 @@ func (b *Backend) seedRich() {
 		{int64(1), "All", nil}, {int64(2), "Electronics", int64(1)}, {int64(3), "Phones", int64(2)},
 	})
 
+	// typed declares Type.Name so the catalog reports the exact T-SQL type, not the broader Kind default.
+	b.add(catalog.Table{
+		Name: "typed",
+		Columns: []catalog.Column{
+			{Name: "id", Type: types.Type{Kind: types.Int64}},
+			{Name: "code", Type: types.Type{Kind: types.String, MaxLen: 10, Name: "varchar"}},
+			{Name: "grade", Type: types.Type{Kind: types.String, MaxLen: 2, Name: "char"}},
+			{Name: "born", Type: types.Type{Kind: types.Time, Name: "date"}},
+			{Name: "level", Type: types.Type{Kind: types.Int32, Name: "smallint"}},
+		},
+		PrimaryKey: []string{"id"},
+	}, [][]any{
+		{int64(1), "ABC", "A", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(5)},
+	})
+
 	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vActiveProducts", Kind: tds.RoutineView,
 		Body: "SELECT product_id, name, price FROM products WHERE in_stock = 1"})
 	b.addRoutine(&tds.Routine{Schema: "dbo", Name: "vOrderTotals", Kind: tds.RoutineView,

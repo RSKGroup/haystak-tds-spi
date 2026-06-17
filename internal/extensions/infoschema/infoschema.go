@@ -71,6 +71,9 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, q *tds.Query) (rows tds.
 
 // TypeName maps the canonical type model to the T-SQL type name reported by the catalog.
 func TypeName(t types.Type) string {
+	if n := declTypeName(t.Name); n != "" {
+		return n
+	}
 	switch t.Kind {
 	case types.Bool:
 		return "bit"
@@ -92,6 +95,14 @@ func TypeName(t types.Type) string {
 		return "uniqueidentifier"
 	}
 	return "sql_variant"
+}
+
+func declTypeName(decl string) string {
+	name := strings.ToLower(strings.TrimSpace(decl))
+	if i := strings.IndexByte(name, '('); i >= 0 {
+		name = strings.TrimSpace(name[:i])
+	}
+	return name
 }
 
 func tablesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {

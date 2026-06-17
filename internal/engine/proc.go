@@ -904,7 +904,65 @@ func likeMatch(s, pat string) bool {
 	return false
 }
 
+func declBase(decl string) string {
+	name := strings.ToLower(strings.TrimSpace(decl))
+	if i := strings.IndexByte(name, '('); i >= 0 {
+		name = strings.TrimSpace(name[:i])
+	}
+	return name
+}
+
 func odbcType(t types.Type) int64 {
+	switch declBase(t.Name) {
+	case "bit":
+		return -7
+	case "tinyint":
+		return -6
+	case "smallint":
+		return 5
+	case "int":
+		return 4
+	case "bigint":
+		return -5
+	case "real":
+		return 7
+	case "float":
+		return 8
+	case "decimal", "money", "smallmoney":
+		return 3
+	case "numeric":
+		return 2
+	case "char":
+		return 1
+	case "varchar":
+		return 12
+	case "nchar":
+		return -8
+	case "nvarchar":
+		return -9
+	case "binary":
+		return -2
+	case "varbinary":
+		return -3
+	case "uniqueidentifier":
+		return -11
+	case "date":
+		return 91
+	case "time":
+		return 92
+	case "datetime", "smalldatetime", "datetime2":
+		return 93
+	case "datetimeoffset":
+		return -155
+	case "text":
+		return -1
+	case "ntext":
+		return -10
+	case "image":
+		return -4
+	case "xml":
+		return -152
+	}
 	switch t.Kind {
 	case types.Bool:
 		return -7
@@ -950,6 +1008,26 @@ func typePrecision(t types.Type) int64 {
 }
 
 func typeLength(t types.Type) int64 {
+	switch declBase(t.Name) {
+	case "tinyint":
+		return 1
+	case "smallint":
+		return 2
+	case "bigint":
+		return 8
+	case "real":
+		return 4
+	case "char", "varchar", "binary", "varbinary":
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen)
+		}
+		return 0
+	case "nchar", "nvarchar":
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen * 2)
+		}
+		return 0
+	}
 	switch t.Kind {
 	case types.Int32:
 		return 4
@@ -984,6 +1062,18 @@ func typeRadix(t types.Type) any {
 }
 
 func charOctetLen(t types.Type) any {
+	switch declBase(t.Name) {
+	case "char", "varchar":
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen)
+		}
+		return nil
+	case "nchar", "nvarchar":
+		if t.MaxLen > 0 {
+			return int64(t.MaxLen * 2)
+		}
+		return nil
+	}
 	if t.Kind == types.String && t.MaxLen > 0 {
 		return int64(t.MaxLen * 2)
 	}

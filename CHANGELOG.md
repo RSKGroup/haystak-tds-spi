@@ -9,6 +9,10 @@ Queries:
 - `TOP (n)` / `TOP (n) PERCENT` with a parenthesized count, as Power BI / Tableau / ODBC drivers emit by default.
 - `JOIN` of derived tables on either side: `FROM (SELECT …) a JOIN (SELECT …) b ON …`. Also fixes a silent wrong result where a derived `FROM` combined with joins dropped the joins.
 
+Types:
+
+- `types.Type.Name` (public, optional): the declared T-SQL type (`varchar`, `money`, `date`, `smallint`, …). When set, the catalog reporters — `INFORMATION_SCHEMA.COLUMNS`, `sys.columns`, the `sys.types` join, and the ODBC `sp_columns` proc — report that exact type, its system type id, ODBC code, and byte length instead of the broader Kind default. Backends that do not set `Name` are unchanged.
+
 ## v1.5.0
 
 A broad SQL Server surface expansion — additive, no breaking changes. The one public API addition is
