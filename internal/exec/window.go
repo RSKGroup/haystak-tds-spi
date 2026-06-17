@@ -5,6 +5,7 @@ package exec
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/RSKGroup/haystak-tds-spi/tds"
@@ -13,7 +14,7 @@ import (
 )
 
 // windowFuncs are the wired window functions; keep in lockstep with the applyWindow switch.
-var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE"}
+var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "PERCENTILE_CONT", "PERCENTILE_DISC"}
 
 // WindowFuncNames returns the wired window-function names, sorted.
 func WindowFuncNames() []string {
@@ -64,7 +65,7 @@ func windowColType(w *tds.WindowSpec, cols []catalog.Column, idx map[string]int)
 	switch w.Func {
 	case "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE":
 		return types.Type{Kind: types.Int64}
-	case "PERCENT_RANK", "CUME_DIST":
+	case "PERCENT_RANK", "CUME_DIST", "PERCENTILE_CONT", "PERCENTILE_DISC":
 		return types.Type{Kind: types.Float64}
 	case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE":
 		if len(w.Args) > 0 {
@@ -299,10 +300,72 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 			}
 			out[m] = v
 		}
+	case "PERCENTILE_CONT", "PERCENTILE_DISC":
+		return percentileWindow(w, members, rows, idx, out)
 	default:
 		return fmt.Errorf("exec: unsupported window function %q", w.Func)
 	}
 	return nil
+}
+
+// percentileWindow computes PERCENTILE_CONT/DISC over a partition and assigns the one result to every row.
+func percentileWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]int, out []any) error {
+	if len(w.WithinGroup) == 0 {
+		return fmt.Errorf("exec: %s requires WITHIN GROUP (ORDER BY …)", w.Func)
+	}
+	oc := w.WithinGroup[0]
+	ci, ok := resolveCol(idx, oc.Column)
+	if !ok {
+		return fmt.Errorf("exec: unknown WITHIN GROUP column %q", oc.Column)
+	}
+	vals := make([]float64, 0, len(members))
+	for _, m := range members {
+		if v, ok := toFloatOk(rows[m][ci]); ok {
+			vals = append(vals, v)
+		}
+	}
+	if oc.Desc {
+		sort.Sort(sort.Reverse(sort.Float64Slice(vals)))
+	} else {
+		sort.Float64s(vals)
+	}
+	p := float64(0)
+	if len(w.Args) > 0 {
+		p, _ = toFloatOk(asLit(w.Args[0]))
+	}
+	var result any
+	if len(vals) > 0 {
+		if w.Func == "PERCENTILE_DISC" {
+			result = percentileDisc(vals, p)
+		} else {
+			result = percentileCont(vals, p)
+		}
+	}
+	for _, m := range members {
+		out[m] = result
+	}
+	return nil
+}
+
+func percentileDisc(vals []float64, p float64) float64 {
+	i := int(math.Ceil(p*float64(len(vals)))) - 1
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(vals) {
+		i = len(vals) - 1
+	}
+	return vals[i]
+}
+
+func percentileCont(vals []float64, p float64) float64 {
+	n := len(vals)
+	if n == 1 {
+		return vals[0]
+	}
+	rank := p * float64(n-1)
+	lo, hi := int(math.Floor(rank)), int(math.Ceil(rank))
+	return vals[lo] + (rank-float64(lo))*(vals[hi]-vals[lo])
 }
 
 func keysEqual(a, b []any) bool {

@@ -543,6 +543,13 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 	if err != nil {
 		return tds.SelectItem{}, err
 	}
+	if ve.Kind == tds.ValFunc && p.peekIs("WITHIN") {
+		win, err := p.withinGroupWindow(ve)
+		if err != nil {
+			return tds.SelectItem{}, err
+		}
+		return tds.SelectItem{Window: win, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+	}
 	if ve.Kind == tds.ValFunc && p.peek().kind == tIdent && strings.EqualFold(p.peek().text, "OVER") {
 		win, err := p.overClause(ve)
 		if err != nil {
@@ -591,6 +598,42 @@ func (p *parser) overClause(fn *tds.ValueExpr) (*tds.WindowSpec, error) {
 		return nil, fmt.Errorf("tsql: expected ')' after OVER clause, got %q", p.peek().text)
 	}
 	p.next()
+	return w, nil
+}
+
+// withinGroupWindow parses an ordered-set aggregate: FUNC(p) WITHIN GROUP (ORDER BY …) OVER (PARTITION BY …).
+func (p *parser) withinGroupWindow(fn *tds.ValueExpr) (*tds.WindowSpec, error) {
+	p.next() // WITHIN
+	if !p.peekIs("GROUP") {
+		return nil, fmt.Errorf("tsql: expected GROUP after WITHIN, got %q", p.peek().text)
+	}
+	p.next()
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after WITHIN GROUP, got %q", p.peek().text)
+	}
+	p.next()
+	if err := p.expectKeyword("ORDER"); err != nil {
+		return nil, err
+	}
+	if err := p.expectKeyword("BY"); err != nil {
+		return nil, err
+	}
+	order, err := p.orderList()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after WITHIN GROUP, got %q", p.peek().text)
+	}
+	p.next()
+	if !p.peekIs("OVER") {
+		return nil, fmt.Errorf("tsql: expected OVER after WITHIN GROUP, got %q", p.peek().text)
+	}
+	w, err := p.overClause(fn)
+	if err != nil {
+		return nil, err
+	}
+	w.WithinGroup = order
 	return w, nil
 }
 

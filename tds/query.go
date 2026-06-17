@@ -85,6 +85,7 @@ type WindowSpec struct {
 	Args        []*ValueExpr
 	PartitionBy []string
 	OrderBy     []OrderItem
+	WithinGroup []OrderItem // PERCENTILE_CONT/DISC ordered-set aggregate: WITHIN GROUP (ORDER BY …)
 }
 
 // ValueKind tags the variant of a ValueExpr scalar expression.

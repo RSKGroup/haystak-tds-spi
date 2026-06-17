@@ -245,8 +245,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `LAST_VALUE` | `internal/exec/window.go` | Y |
 | `PERCENT_RANK` | `internal/exec/window.go` | Y |
 | `CUME_DIST` | `internal/exec/window.go` | Y |
-| `PERCENTILE_CONT` |  | - |
-| `PERCENTILE_DISC` |  | - |
+| `PERCENTILE_CONT` | `internal/exec/window.go` | Y |
+| `PERCENTILE_DISC` | `internal/exec/window.go` | Y |
 
 ### JSON
 

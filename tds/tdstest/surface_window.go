@@ -16,4 +16,6 @@ var windowCases = []Case{
 	{Element: "win:LAST_VALUE", SQL: "SELECT DISTINCT lv FROM (SELECT LAST_VALUE(schema_id) OVER (ORDER BY name) AS lv FROM sys.types) t", Want: []any{4}},
 	{Element: "win:PERCENT_RANK", SQL: "SELECT DISTINCT pr FROM (SELECT PERCENT_RANK() OVER (ORDER BY schema_id) AS pr FROM sys.types) t", Want: []any{approx(0)}},
 	{Element: "win:CUME_DIST", SQL: "SELECT DISTINCT cd FROM (SELECT CUME_DIST() OVER (ORDER BY schema_id) AS cd FROM sys.types) t", Want: []any{approx(1)}},
+	{Element: "win:PERCENTILE_CONT", SQL: "SELECT DISTINCT m FROM (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY schema_id) OVER () AS m FROM sys.types) t", Want: []any{approx(4)}},
+	{Element: "win:PERCENTILE_DISC", SQL: "SELECT DISTINCT m FROM (SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY schema_id) OVER () AS m FROM sys.types) t", Want: []any{approx(4)}},
 }
