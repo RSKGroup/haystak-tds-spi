@@ -69,5 +69,23 @@ SQL knowledge to support stored objects — it just keeps and returns the text.
 supplies through an SPI seam — the `catalog.Schema` (tables, plus optional `Indexes`/`Checks`/`TableTypes`)
 and the authenticated `tds.Principal` (identity-aware `sys.database_principals` etc.) — and degrades to the
 correct empty shape otherwise. A backend lights up a view by *declaring data*, not by writing view code.
+Relationship views (`sys.foreign_keys`, `INFORMATION_SCHEMA.*_CONSTRAINTS`) light up when the backend
+declares `PrimaryKey`/`ForeignKeys`; where it sources them (sampled, or a reserved catalog store it
+bootstraps) is the adapter's choice.
+
+## Runtime sessions and audit
+
+Live-session state is the server's, not the backend's. The server keeps an in-memory session registry
+(spid assigned at LOGIN7; login/host/app/time captured; removed on disconnect). It feeds `@@SPID`, the
+runtime DMVs (`sys.dm_exec_sessions`/`dm_exec_connections`/`dm_exec_requests`), and `sp_who` — which
+enumerate the registry and degrade to the correct empty shape when there is no server. Nothing to enable,
+nothing to store; it is ephemeral connection state.
+
+Audit is a hook, not a store. `Server.Audit func(tds.SessionEvent)` fires on every login and logout with
+`{Kind, Session{SessionID, LoginName, Host, Program, LoginTime}, At}`. The core never persists it — a
+read-only backend just leaves the hook unset. An adapter "turns on audit" by assigning the hook to append
+events to a store it owns and names (its retention/ILM, its index/collection), kept separate from the
+catalog store. The event maps directly to SQL Server's audit fields (`At`→event time, `Kind`→action,
+`SessionID`→session_id, `LoginName`→server principal, `Host`/`Program`→client host/app).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the step-by-step recipes.
