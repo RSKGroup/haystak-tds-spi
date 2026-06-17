@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/batch"
@@ -32,10 +33,11 @@ func principalOf(ctx context.Context) tds.Principal {
 	return p
 }
 
-// Session carries per-connection state (the current database) across a batch sequence.
+// Session carries per-connection state (current database, SET ROWCOUNT) across a batch sequence.
 type Session struct {
-	b  tds.Backend
-	db string
+	b        tds.Backend
+	db       string
+	rowCount int // SET ROWCOUNT n; 0 = unlimited
 }
 
 // NewSession makes a session whose current database defaults to db (or "master" if empty).
@@ -73,17 +75,53 @@ func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string
 			lastRows, lastAffected = nil, -1
 			continue
 		}
+		if n, ok := parseRowcount(stmt); ok {
+			s.rowCount = n
+			lastRows, lastAffected = nil, -1
+			continue
+		}
 		rs, aff, err := queryOne(WithDatabase(ctx, s.db), s.b, stmt)
 		if err != nil {
 			return nil, -1, envDB, err
 		}
 		if rs != nil {
+			if s.rowCount > 0 {
+				rs = &limitRows{Rows: rs, n: s.rowCount}
+			}
 			lastRows, lastAffected = rs, -1
 		} else if aff >= 0 {
 			lastRows, lastAffected = nil, aff
 		}
 	}
 	return lastRows, lastAffected, envDB, nil
+}
+
+// parseRowcount returns n from a `SET ROWCOUNT n` statement.
+func parseRowcount(sql string) (int, bool) {
+	f := strings.Fields(strings.TrimSuffix(strings.TrimSpace(sql), ";"))
+	if len(f) == 3 && strings.EqualFold(f[0], "SET") && strings.EqualFold(f[1], "ROWCOUNT") {
+		if n, err := strconv.Atoi(f[2]); err == nil && n >= 0 {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// limitRows caps a result at n rows for SET ROWCOUNT.
+type limitRows struct {
+	tds.Rows
+	n, seen int
+}
+
+func (l *limitRows) Next() bool {
+	if l.seen >= l.n {
+		return false
+	}
+	if l.Rows.Next() {
+		l.seen++
+		return true
+	}
+	return false
 }
 
 // parseUse returns the target database of a `USE [db]` statement.

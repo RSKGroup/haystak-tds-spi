@@ -547,7 +547,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `SELECT @v = col` | `internal/extensions/procedures/control/` | Y |
 | `DECLARE @t TABLE (...)` |  | - |
 | `sp_executesql` / dynamic SQL | `internal/engine/proc.go` | Y |
-| `SET` options with effect (`ANSI_NULLS`, `QUOTED_IDENTIFIER`, `ROWCOUNT`, `IDENTITY_INSERT`) |  | - |
+| `SET` options (`ROWCOUNT` capped; `ANSI_NULLS` / `QUOTED_IDENTIFIER` accepted) | `internal/engine/session.go` | Y |
 
 ### Transactions
 

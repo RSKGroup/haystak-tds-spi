@@ -20,6 +20,7 @@ Procedures:
 Catalog:
 
 - `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
+- `SET ROWCOUNT n` now caps the rows returned by later statements in the batch (`SET ROWCOUNT 0` resets). Other `SET` options (`ANSI_NULLS`, `QUOTED_IDENTIFIER`) are accepted as no-ops.
 
 Functions:
 
