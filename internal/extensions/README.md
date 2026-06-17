@@ -257,7 +257,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `JSON_QUERY` | `internal/extensions/functions/json.go` | Y |
 | `JSON_MODIFY` | `internal/extensions/functions/json.go` | Y |
 | `JSON_PATH_EXISTS` | `internal/extensions/functions/json.go` | Y |
-| `JSON_OBJECT` |  | - |
+| `JSON_OBJECT` | `internal/extensions/functions/json.go` | Y |
 | `JSON_ARRAY` | `internal/extensions/functions/json.go` | Y |
 | `OPENJSON` | `internal/exec/tablefunc.go` | Y |
 

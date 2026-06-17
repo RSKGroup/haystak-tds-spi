@@ -13,4 +13,5 @@ var jsonCases = []Case{
 	{Element: "func:JSON_PATH_EXISTS", Name: "JSON_PATH_EXISTS/yes", SQL: `SELECT JSON_PATH_EXISTS('{"a":1}','$.a')`, Want: []any{1}},
 	{Element: "func:JSON_PATH_EXISTS", Name: "JSON_PATH_EXISTS/no", SQL: `SELECT JSON_PATH_EXISTS('{"a":1}','$.x')`, Want: []any{0}},
 	{Element: "func:JSON_ARRAY", SQL: "SELECT JSON_ARRAY(1, 2, 3)", Want: []any{"[1,2,3]"}},
+	{Element: "func:JSON_OBJECT", SQL: "SELECT JSON_OBJECT('a':1, 'b':'x')", Want: []any{`{"a":1,"b":"x"}`}},
 }

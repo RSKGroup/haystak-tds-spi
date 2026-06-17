@@ -17,6 +17,10 @@ Procedures:
 
 - `sp_executesql` (dynamic SQL): runs a parameterized statement string, substituting named params (`@p = value`) as literals before executing. Drivers emit this for nearly every parameterized query.
 
+Functions:
+
+- `JSON_OBJECT('key':value, …)`: builds a JSON object string, preserving key order and omitting `NULL` values (ABSENT ON NULL).
+
 Types:
 
 - `types.Type.Name` (public, optional): the declared T-SQL type (`varchar`, `money`, `date`, `smallint`, …). When set, the catalog reporters — `INFORMATION_SCHEMA.COLUMNS`, `sys.columns`, the `sys.types` join, and the ODBC `sp_columns` proc — report that exact type, its system type id, ODBC code, and byte length instead of the broader Kind default. Backends that do not set `Name` are unchanged.

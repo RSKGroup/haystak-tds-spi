@@ -19,6 +19,7 @@ const (
 	tStar
 	tComma
 	tDot
+	tColon
 	tLParen
 	tRParen
 	tOp
@@ -67,6 +68,9 @@ func lex(s string) ([]token, error) {
 			i++
 		case c == '.':
 			toks = append(toks, token{tDot, "."})
+			i++
+		case c == ':':
+			toks = append(toks, token{tColon, ":"})
 			i++
 		case c == '(':
 			toks = append(toks, token{tLParen, "("})

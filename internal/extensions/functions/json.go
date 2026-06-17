@@ -80,6 +80,37 @@ func jsonValueText(v any) any {
 	}
 }
 
+// jsonObject builds JSON_OBJECT from flattened key/value args, dropping NULL values.
+func jsonObject(a []any) any {
+	var sb strings.Builder
+	sb.WriteByte('{')
+	first := true
+	for i := 0; i+1 < len(a); i += 2 {
+		val := a[i+1]
+		if val == nil {
+			continue
+		}
+		key, ok := a[i].(string)
+		if !ok {
+			continue
+		}
+		if !first {
+			sb.WriteByte(',')
+		}
+		first = false
+		kb, _ := json.Marshal(key)
+		vb, err := json.Marshal(val)
+		if err != nil {
+			return nil
+		}
+		sb.Write(kb)
+		sb.WriteByte(':')
+		sb.Write(vb)
+	}
+	sb.WriteByte('}')
+	return sb.String()
+}
+
 func init() {
 	register("ISJSON", func(a []any) any {
 		s, ok := jsonInput(a)
@@ -128,6 +159,7 @@ func init() {
 		}
 		return string(b)
 	})
+	register("JSON_OBJECT", jsonObject)
 	register("JSON_MODIFY", func(a []any) any {
 		if len(a) < 3 || a[0] == nil || a[1] == nil {
 			return nil

@@ -785,6 +785,7 @@ func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
 	p.next() // name
 	p.next() // (
 	var args []*tds.ValueExpr
+	jsonObject := name == "JSON_OBJECT"
 	if p.peek().kind != tRParen {
 		for {
 			if p.peek().kind == tStar {
@@ -796,6 +797,17 @@ func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
 					return nil, err
 				}
 				args = append(args, a)
+				if jsonObject {
+					if p.peek().kind != tColon {
+						return nil, fmt.Errorf("tsql: expected ':' in JSON_OBJECT, got %q", p.peek().text)
+					}
+					p.next()
+					v, err := p.valueExpr()
+					if err != nil {
+						return nil, err
+					}
+					args = append(args, v)
+				}
 			}
 			if p.peek().kind == tComma {
 				p.next()
