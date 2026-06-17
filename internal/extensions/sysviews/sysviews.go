@@ -21,7 +21,7 @@ const dbName = "haystak"
 type viewBuilder func() ([]catalog.Column, [][]any)
 
 // viewBuilders is the sys.* dispatch table; its keys are the wired set SupportedViews reports.
-func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess *tds.SessionInfo) map[string]viewBuilder {
+func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess []tds.SessionInfo) map[string]viewBuilder {
 	return map[string]viewBuilder{
 		"databases":                   func() ([]catalog.Column, [][]any) { return databasesRows(dbs) },
 		"schemas":                     schemasRows,
@@ -87,7 +87,7 @@ func SupportedViews() []string {
 
 // Resolve answers a query against sys.* catalog views from a backend's declared schema and stored
 // routines. Returns handled=false when the query does not target the sys schema.
-func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess *tds.SessionInfo, q *tds.Query) (tds.Rows, bool, error) {
+func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess []tds.SessionInfo, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
@@ -980,53 +980,56 @@ func boolInt(b bool) int64 {
 
 func tcol(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Time}} }
 
-// Stage 1 runtime DMVs: project the current session from ctx, or the correct empty shape when absent.
-func dmExecSessionsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+// Runtime DMVs enumerate every live session from the server's registry snapshot in ctx.
+func dmExecSessionsRows(sessions []tds.SessionInfo) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		intc("session_id"), sname("login_name"), sname("host_name"), sname("program_name"),
 		tcol("login_time"), sname("status"), intc("cpu_time"), intc("memory_usage"),
 		intc("total_elapsed_time"), intc("reads"), intc("writes"), intc("logical_reads"),
 		intc("database_id"), intc("is_user_process"),
 	}
-	if sess == nil {
-		return cols, nil
+	var rows [][]any
+	for _, s := range sessions {
+		rows = append(rows, []any{
+			int64(s.SessionID), s.LoginName, s.Host, s.Program,
+			s.LoginTime, "running", int64(0), int64(0),
+			int64(0), int64(0), int64(0), int64(0), int64(0), int64(1),
+		})
 	}
-	return cols, [][]any{{
-		int64(sess.SessionID), sess.LoginName, sess.Host, sess.Program,
-		sess.LoginTime, "running", int64(0), int64(0),
-		int64(0), int64(0), int64(0), int64(0), int64(0), int64(1),
-	}}
+	return cols, rows
 }
 
-func dmExecConnectionsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+func dmExecConnectionsRows(sessions []tds.SessionInfo) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		intc("session_id"), tcol("connect_time"), sname("net_transport"), sname("protocol_type"),
 		sname("auth_scheme"), sname("client_net_address"), sname("local_net_address"),
 		intc("local_tcp_port"), intc("most_recent_session_id"),
 	}
-	if sess == nil {
-		return cols, nil
+	var rows [][]any
+	for _, s := range sessions {
+		rows = append(rows, []any{
+			int64(s.SessionID), s.LoginTime, "TCP", "TSQL",
+			"SQL", "127.0.0.1", "127.0.0.1", int64(1433), int64(s.SessionID),
+		})
 	}
-	return cols, [][]any{{
-		int64(sess.SessionID), sess.LoginTime, "TCP", "TSQL",
-		"SQL", "127.0.0.1", "127.0.0.1", int64(1433), int64(sess.SessionID),
-	}}
+	return cols, rows
 }
 
-func dmExecRequestsRows(sess *tds.SessionInfo) ([]catalog.Column, [][]any) {
+func dmExecRequestsRows(sessions []tds.SessionInfo) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
 		intc("session_id"), sname("status"), sname("command"), intc("database_id"),
 		tcol("start_time"), intc("cpu_time"), intc("total_elapsed_time"), intc("reads"),
 		intc("writes"), intc("logical_reads"), nsname("wait_type"), intc("blocking_session_id"),
 	}
-	if sess == nil {
-		return cols, nil
+	var rows [][]any
+	for _, s := range sessions {
+		rows = append(rows, []any{
+			int64(s.SessionID), "running", "SELECT", int64(0),
+			s.LoginTime, int64(0), int64(0), int64(0),
+			int64(0), int64(0), nil, int64(0),
+		})
 	}
-	return cols, [][]any{{
-		int64(sess.SessionID), "running", "SELECT", int64(0),
-		sess.LoginTime, int64(0), int64(0), int64(0),
-		int64(0), int64(0), nil, int64(0),
-	}}
+	return cols, rows
 }
 
 func dmExecQueryStatsRows() ([]catalog.Column, [][]any) {

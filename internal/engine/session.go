@@ -33,12 +33,10 @@ func principalOf(ctx context.Context) tds.Principal {
 	return p
 }
 
-// sessionOf returns the current session info from ctx, or nil for the runtime DMVs' empty shape.
-func sessionOf(ctx context.Context) *tds.SessionInfo {
-	if s, ok := tds.SessionInfoFromContext(ctx); ok {
-		return &s
-	}
-	return nil
+// sessionOf returns the live-session snapshot from ctx, or nil for the runtime DMVs' empty shape.
+func sessionOf(ctx context.Context) []tds.SessionInfo {
+	s, _ := tds.SessionsFromContext(ctx)
+	return s
 }
 
 // Session carries per-connection state (current database, SET ROWCOUNT) across a batch sequence.

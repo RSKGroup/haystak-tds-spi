@@ -17,15 +17,22 @@ type SessionInfo struct {
 	LoginTime time.Time
 }
 
-type sessionInfoKey struct{}
-
-// WithSessionInfo returns a context carrying the current session's info.
-func WithSessionInfo(ctx context.Context, s SessionInfo) context.Context {
-	return context.WithValue(ctx, sessionInfoKey{}, s)
+// SessionEvent is a login or logout, delivered to the server's audit hook.
+type SessionEvent struct {
+	Kind    string // "login" or "logout"
+	Session SessionInfo
+	At      time.Time
 }
 
-// SessionInfoFromContext returns the current session info carried in ctx, if any.
-func SessionInfoFromContext(ctx context.Context) (SessionInfo, bool) {
-	s, ok := ctx.Value(sessionInfoKey{}).(SessionInfo)
+type sessionsKey struct{}
+
+// WithSessions returns a context carrying a snapshot of the live sessions for the runtime DMVs.
+func WithSessions(ctx context.Context, sessions []SessionInfo) context.Context {
+	return context.WithValue(ctx, sessionsKey{}, sessions)
+}
+
+// SessionsFromContext returns the live-session snapshot carried in ctx, if any.
+func SessionsFromContext(ctx context.Context) ([]SessionInfo, bool) {
+	s, ok := ctx.Value(sessionsKey{}).([]SessionInfo)
 	return s, ok
 }

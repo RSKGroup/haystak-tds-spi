@@ -13,13 +13,11 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
-func sessionCtx() context.Context {
-	return tds.WithSessionInfo(context.Background(), tds.SessionInfo{
-		SessionID: 7, LoginName: "sa", Host: "client01", Program: "app", LoginTime: time.Unix(0, 0).UTC(),
-	})
+func sessionsCtx(s ...tds.SessionInfo) context.Context {
+	return tds.WithSessions(context.Background(), s)
 }
 
-// With no session in ctx the runtime DMVs return the correct empty shape.
+// With no registry snapshot in ctx the runtime DMVs return the correct empty shape.
 func TestDMVEmptyShape(t *testing.T) {
 	for _, v := range []string{"dm_exec_sessions", "dm_exec_connections", "dm_exec_requests", "dm_exec_query_stats", "dm_os_waiting_tasks"} {
 		if n := len(qry(t, "SELECT * FROM sys."+v)); n != 0 {
@@ -31,23 +29,35 @@ func TestDMVEmptyShape(t *testing.T) {
 	}
 }
 
-// With a session in ctx the DMVs and sp_who project the current session (covers WHERE session_id = @@SPID).
-func TestDMVCurrentSession(t *testing.T) {
-	ctx := sessionCtx()
-	rs, err := engine.Query(ctx, inmem.New(), "SELECT session_id, login_name, host_name FROM sys.dm_exec_sessions WHERE session_id = 7")
+// The DMVs and sp_who enumerate every live session in the registry snapshot.
+func TestDMVAllSessions(t *testing.T) {
+	ctx := sessionsCtx(
+		tds.SessionInfo{SessionID: 51, LoginName: "ada", Host: "h1", Program: "app1", LoginTime: time.Unix(0, 0).UTC()},
+		tds.SessionInfo{SessionID: 52, LoginName: "alan", Host: "h2", Program: "app2", LoginTime: time.Unix(0, 0).UTC()},
+	)
+	rs, err := engine.Query(ctx, inmem.New(), "SELECT session_id, login_name, host_name FROM sys.dm_exec_sessions ORDER BY session_id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := collect(t, rs)
-	if len(got) != 1 || got[0][0] != int64(7) || cell(got[0][1]) != "sa" || cell(got[0][2]) != "client01" {
-		t.Fatalf("dm_exec_sessions = %v, want [[7 sa client01]]", got)
+	if len(got) != 2 || got[0][0] != int64(51) || cell(got[0][1]) != "ada" || got[1][0] != int64(52) || cell(got[1][1]) != "alan" {
+		t.Fatalf("dm_exec_sessions = %v, want sessions 51/ada and 52/alan", got)
 	}
+
+	// A health check filters to one session by id.
+	one, err := engine.Query(ctx, inmem.New(), "SELECT login_name FROM sys.dm_exec_sessions WHERE session_id = 52")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := collect(t, one); len(g) != 1 || cell(g[0][0]) != "alan" {
+		t.Fatalf("WHERE session_id = 52 = %v, want [[alan]]", g)
+	}
+
 	rw, err := engine.Query(ctx, inmem.New(), "EXEC sp_who")
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := collect(t, rw)
-	if len(w) != 1 || w[0][0] != int64(7) || cell(w[0][3]) != "sa" {
-		t.Fatalf("sp_who = %v, want one row for spid 7 / sa", w)
+	if w := collect(t, rw); len(w) != 2 {
+		t.Fatalf("sp_who = %d rows, want 2", len(w))
 	}
 }

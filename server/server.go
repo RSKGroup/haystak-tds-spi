@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/engine"
 	"github.com/RSKGroup/haystak-tds-spi/internal/wire"
@@ -25,6 +27,22 @@ type Server struct {
 	Database   string            // reported as the current database (default "master")
 	TLSConfig  *tls.Config       // non-nil enables TLS-in-TDS
 	Logf       func(string, ...any)
+	Audit      func(tds.SessionEvent) // optional: called on each login and logout
+
+	regOnce sync.Once
+	reg     *sessionRegistry
+}
+
+func (s *Server) registry() *sessionRegistry {
+	s.regOnce.Do(func() { s.reg = newSessionRegistry() })
+	return s.reg
+}
+
+func (s *Server) audit(kind string, info tds.SessionInfo, at time.Time) {
+	s.logf("audit: %s spid=%d user=%q host=%q app=%q", kind, info.SessionID, info.LoginName, info.Host, info.Program)
+	if s.Audit != nil {
+		s.Audit(tds.SessionEvent{Kind: kind, Session: info, At: at})
+	}
 }
 
 // ListenAndServe serves b on addr (host:port) with default settings: no TLS, anonymous auth.
@@ -62,24 +80,29 @@ func (s *Server) logf(format string, args ...any) {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	s.logf("conn from %s", conn.RemoteAddr())
-	sess, princ, db, err := s.handshake(conn)
+	sess, princ, db, info, err := s.handshake(conn)
 	if err != nil {
 		s.logf("handshake error: %v", err)
 		return
 	}
-	s.logf("handshake complete (user=%q db=%q)", princ.Username, db)
-	s.serve(sess, princ, db)
+	defer func() {
+		s.registry().remove(info.SessionID)
+		s.audit("logout", info, time.Now())
+	}()
+	s.logf("handshake complete (user=%q db=%q spid=%d)", princ.Username, db, info.SessionID)
+	s.serve(sess, princ, db, info)
 }
 
-func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, error) {
+func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.SessionInfo, error) {
 	var none tds.Principal
+	var nosess tds.SessionInfo
 	pre, err := wire.ReadMessage(conn)
 	if err != nil {
-		return nil, none, "", err
+		return nil, none, "", nosess, err
 	}
 	s.logf("recv PRELOGIN type=0x%02X len=%d", byte(pre.Type), len(pre.Payload))
 	if pre.Type != wire.PacketPreLogin {
-		return nil, none, "", errors.New("server: expected PRELOGIN")
+		return nil, none, "", nosess, errors.New("server: expected PRELOGIN")
 	}
 
 	useTLS := false
@@ -95,14 +118,14 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, erro
 		respEnc = wire.EncryptOn
 	}
 	if err := s.send(conn, wire.ServerPreloginResponse(respEnc)); err != nil {
-		return nil, none, "", err
+		return nil, none, "", nosess, err
 	}
 	s.logf("sent PRELOGIN response (enc=%d)", respEnc)
 
 	if useTLS {
 		tlsConn, terr := wire.ServerTLS(conn, s.TLSConfig)
 		if terr != nil {
-			return nil, none, "", fmt.Errorf("server: tls handshake: %w", terr)
+			return nil, none, "", nosess, fmt.Errorf("server: tls handshake: %w", terr)
 		}
 		s.logf("TLS established")
 		conn = tlsConn
@@ -110,15 +133,15 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, erro
 
 	login, err := wire.ReadMessage(conn)
 	if err != nil {
-		return nil, none, "", err
+		return nil, none, "", nosess, err
 	}
 	s.logf("recv LOGIN7 type=0x%02X len=%d", byte(login.Type), len(login.Payload))
 	if login.Type != wire.PacketLogin7 {
-		return nil, none, "", errors.New("server: expected LOGIN7")
+		return nil, none, "", nosess, errors.New("server: expected LOGIN7")
 	}
 	l, err := wire.ParseLogin7(login.Payload)
 	if err != nil {
-		return nil, none, "", err
+		return nil, none, "", nosess, err
 	}
 	s.logf("login user=%q db=%q app=%q tls=%v", l.UserName, l.Database, l.AppName, useTLS)
 
@@ -129,7 +152,7 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, erro
 	if autherr != nil {
 		s.logf("auth rejected user=%q: %v", l.UserName, autherr)
 		_ = s.send(conn, wire.LoginError("Login failed for user '"+l.UserName+"'."))
-		return nil, none, "", autherr
+		return nil, none, "", nosess, autherr
 	}
 
 	loginDB := s.database()
@@ -137,10 +160,12 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, erro
 		loginDB = l.Database
 	}
 	if err := s.send(conn, wire.BuildLoginResponse(s.serverName(), loginDB)); err != nil {
-		return nil, none, "", err
+		return nil, none, "", nosess, err
 	}
 	s.logf("sent LOGIN response")
-	return conn, princ, loginDB, nil
+	info := s.registry().add(l.UserName, l.HostName, l.AppName, time.Now())
+	s.audit("login", info, info.LoginTime)
+	return conn, princ, loginDB, info, nil
 }
 
 // authenticate runs the configured Authenticator, else a Backend that implements one; with neither
@@ -168,7 +193,7 @@ func StaticAuth(creds map[string]string) tds.Authenticator {
 	})
 }
 
-func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string) {
+func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, _ tds.SessionInfo) {
 	ctx := tds.WithPrincipal(context.Background(), princ)
 	sess := engine.NewSession(s.Backend, initialDB)
 	for {
@@ -194,7 +219,8 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string) {
 			continue
 		}
 		s.logf("stmt: %q", sql)
-		rows, affected, envDB, err := sess.Exec(ctx, sql)
+		qctx := tds.WithSessions(ctx, s.registry().snapshot())
+		rows, affected, envDB, err := sess.Exec(qctx, sql)
 		if err != nil {
 			s.logf("query error: %v", err)
 			_ = s.send(conn, wire.BuildError(err.Error()))

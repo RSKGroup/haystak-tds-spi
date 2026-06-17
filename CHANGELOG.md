@@ -19,7 +19,7 @@ Procedures:
 
 Catalog:
 
-- Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who`: project the current session from a `tds.SessionInfo` carried in context (set by the server at login), and the correct empty shape when absent. (Listing all live sessions needs the server session registry.)
+- Live-session management: the server now keeps a concurrency-safe session registry (spid assigned at LOGIN7, login/host/app/time captured, removed on disconnect) and audits each login/logout (`Server.Audit` hook). Runtime DMVs `sys.dm_exec_sessions` / `dm_exec_connections` / `dm_exec_requests` / `dm_exec_query_stats`, `sys.dm_os_waiting_tasks`, and `sp_who` enumerate every live session from that registry; with no server (e.g. direct engine use) they return the correct empty shape. (`@@SPID` still reports a fixed id, so filter by literal `session_id` rather than `= @@SPID` for now.)
 - `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
 - `SET ROWCOUNT n` now caps the rows returned by later statements in the batch (`SET ROWCOUNT 0` resets). Other `SET` options (`ANSI_NULLS`, `QUOTED_IDENTIFIER`) are accepted as no-ops.
 
