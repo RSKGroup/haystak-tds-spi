@@ -7,7 +7,9 @@ package tdstest
 var systemCases = []Case{
 	{Element: "func:SERVERPROPERTY", Name: "SERVERPROPERTY/Edition", SQL: "SELECT SERVERPROPERTY('Edition')", Want: []any{"Developer Edition (64-bit)"}},
 	{Element: "func:SERVERPROPERTY", Name: "SERVERPROPERTY/ProductVersion", SQL: "SELECT SERVERPROPERTY('ProductVersion')", Want: []any{"16.0.1000.6"}},
-	{Element: "func:DATABASEPROPERTYEX", SQL: "SELECT DATABASEPROPERTYEX('master','Status')", Want: []any{"ON"}},
+	{Element: "func:DATABASEPROPERTYEX", Name: "DATABASEPROPERTYEX/Status", SQL: "SELECT DATABASEPROPERTYEX('master','Status')", Want: []any{"ONLINE"}},
+	{Element: "func:DATABASEPROPERTYEX", Name: "DATABASEPROPERTYEX/Updateability", SQL: "SELECT DATABASEPROPERTYEX('master','Updateability')", Want: []any{"READ_WRITE"}},
+	{Element: "func:DATABASEPROPERTYEX", Name: "DATABASEPROPERTYEX/Recovery", SQL: "SELECT DATABASEPROPERTYEX('master','Recovery')", Want: []any{"SIMPLE"}},
 	{Element: "func:NEWID", SQL: "SELECT NEWID()", Want: []any{P(isGUID)}},
 	{Element: "func:SCOPE_IDENTITY", SQL: "SELECT SCOPE_IDENTITY()", Want: []any{P(isNull)}},
 	{Element: "func:IDENT_CURRENT", SQL: "SELECT IDENT_CURRENT('products')", Want: []any{P(isNull)}},

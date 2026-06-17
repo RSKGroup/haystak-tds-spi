@@ -13,6 +13,10 @@ Types:
 
 - `types.Type.Name` (public, optional): the declared T-SQL type (`varchar`, `money`, `date`, `smallint`, …). When set, the catalog reporters — `INFORMATION_SCHEMA.COLUMNS`, `sys.columns`, the `sys.types` join, and the ODBC `sp_columns` proc — report that exact type, its system type id, ODBC code, and byte length instead of the broader Kind default. Backends that do not set `Name` are unchanged.
 
+Connect-time metadata:
+
+- `DATABASEPROPERTYEX(db, property)` answers per property (`Status` -> `ONLINE`, `Updateability` -> `READ_WRITE`, `UserAccess` -> `MULTI_USER`, `Recovery` -> `SIMPLE`, `Collation`, `LCID`, the `Is*` flags, …) instead of returning `ON` for every property.
+
 ## v1.5.0
 
 A broad SQL Server surface expansion — additive, no breaking changes. The one public API addition is

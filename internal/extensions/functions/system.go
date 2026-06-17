@@ -11,7 +11,7 @@ import (
 
 func init() {
 	register("SERVERPROPERTY", func(a []any) any { return serverProperty(argStr(a, 0)) })
-	register("DATABASEPROPERTYEX", func([]any) any { return "ON" })
+	register("DATABASEPROPERTYEX", func(a []any) any { return databaseProperty(argStr(a, 1)) })
 	register("NEWID", func([]any) any { return newID() })
 	// no identity tracking: NULL outside scope. The ERROR_* family is env-resolved (it reads the caught
 	// error from the request context inside a CATCH block) -- see internal/exec/value.go.
@@ -73,4 +73,40 @@ func serverProperty(name string) any {
 		return "v4.0.30319"
 	}
 	return ""
+}
+
+// databaseProperty answers DATABASEPROPERTYEX(db, property) for an online, read-write, simple-recovery database.
+func databaseProperty(name string) any {
+	switch strings.ToUpper(name) {
+	case "STATUS":
+		return "ONLINE"
+	case "UPDATEABILITY":
+		return "READ_WRITE"
+	case "USERACCESS":
+		return "MULTI_USER"
+	case "RECOVERY":
+		return "SIMPLE"
+	case "COLLATION":
+		return "SQL_Latin1_General_CP1_CI_AS"
+	case "LCID":
+		return int64(1033)
+	case "COMPARISONSTYLE":
+		return int64(196609)
+	case "SQLSORTORDER":
+		return int64(52)
+	case "VERSION":
+		return int64(904)
+	case "MAXSIZEINBYTES":
+		return int64(-1)
+	case "ISAUTOCREATESTATISTICS", "ISAUTOUPDATESTATISTICS", "ISFULLTEXTENABLED":
+		return int64(1)
+	case "ISAUTOCLOSE", "ISAUTOSHRINK", "ISINSTANDBY", "ISMERGEPUBLISHED", "ISSUBSCRIBED",
+		"ISSYNCWITHBACKUP", "ISTORNPAGEDETECTIONENABLED", "ISPARAMETERIZATIONFORCED",
+		"ISANSINULLDEFAULT", "ISANSINULLSENABLED", "ISANSIPADDINGENABLED", "ISANSIWARNINGSENABLED",
+		"ISARITHMETICABORTENABLED", "ISCLOSECURSORSONCOMMITENABLED", "ISLOCALCURSORSDEFAULT",
+		"ISNULLCONCAT", "ISNUMERICROUNDABORTENABLED", "ISQUOTEDIDENTIFIERSENABLED",
+		"ISRECURSIVETRIGGERSENABLED":
+		return int64(0)
+	}
+	return nil
 }
