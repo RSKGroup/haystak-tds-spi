@@ -473,7 +473,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | common table expression (`WITH`) | `internal/tsql/parser.go + internal/exec` | Y |
 | subquery (scalar / `IN` / `EXISTS`) | `internal/tsql/parser.go + internal/exec` | Y |
 | recursive CTE (at depth) | `internal/engine/engine.go` | Y |
-| `PIVOT` / `UNPIVOT` |  | - |
+| `PIVOT` / `UNPIVOT` | `internal/tsql/parser.go + internal/exec/pivot.go` | Y |
 | `CROSS APPLY` / `OUTER APPLY` | `internal/tsql/parser.go + internal/engine/engine.go` | Y |
 | `GROUPING SETS` / `ROLLUP` / `CUBE` | `internal/tsql/parser.go + internal/exec/aggregate.go` | Y |
 | `OVER` (window clause) | `internal/exec/window.go` | Y |

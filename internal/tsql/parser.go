@@ -362,6 +362,9 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 			q.Table = tbl
 			q.FromAlias = p.optTableAlias()
 		}
+		if err := p.pivotClause(q); err != nil {
+			return nil, err
+		}
 	}
 	for {
 		j, err := p.optJoin()
@@ -972,6 +975,123 @@ func aggOf(s string) tds.AggFunc {
 func (p *parser) peekIs(s string) bool {
 	t := p.peek()
 	return (t.kind == tIdent || t.kind == tKeyword) && strings.EqualFold(t.text, s)
+}
+
+func (p *parser) pivotClause(q *tds.Query) error {
+	switch {
+	case p.peekIs("PIVOT"):
+		p.next()
+		spec, err := p.parsePivot()
+		if err != nil {
+			return err
+		}
+		q.Pivot = spec
+	case p.peekIs("UNPIVOT"):
+		p.next()
+		spec, err := p.parseUnpivot()
+		if err != nil {
+			return err
+		}
+		q.Unpivot = spec
+	}
+	return nil
+}
+
+// parsePivot parses ( Agg(valueCol) FOR pivotCol IN (v1, v2, …) ) AS alias.
+func (p *parser) parsePivot() (*tds.PivotSpec, error) {
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after PIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	if !p.identLike() {
+		return nil, fmt.Errorf("tsql: expected aggregate in PIVOT, got %q", p.peek().text)
+	}
+	agg := strings.ToUpper(p.peek().text)
+	p.next()
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after %s, got %q", agg, p.peek().text)
+	}
+	p.next()
+	valCol := "*"
+	if p.peek().kind == tStar {
+		p.next()
+	} else {
+		name, ok := p.qualifiedName()
+		if !ok {
+			return nil, fmt.Errorf("tsql: expected column in PIVOT aggregate, got %q", p.peek().text)
+		}
+		valCol = name
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after PIVOT aggregate, got %q", p.peek().text)
+	}
+	p.next()
+	if !p.peekIs("FOR") {
+		return nil, fmt.Errorf("tsql: expected FOR in PIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	pivotCol, ok := p.qualifiedName()
+	if !ok {
+		return nil, fmt.Errorf("tsql: expected pivot column, got %q", p.peek().text)
+	}
+	values, err := p.inValueList()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after PIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	return &tds.PivotSpec{Agg: agg, ValueCol: valCol, PivotCol: pivotCol, Values: values, Alias: p.optTableAlias()}, nil
+}
+
+// parseUnpivot parses ( valueCol FOR nameCol IN (c1, c2, …) ) AS alias.
+func (p *parser) parseUnpivot() (*tds.UnpivotSpec, error) {
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after UNPIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	valCol, ok := p.qualifiedName()
+	if !ok {
+		return nil, fmt.Errorf("tsql: expected value column in UNPIVOT, got %q", p.peek().text)
+	}
+	if !p.peekIs("FOR") {
+		return nil, fmt.Errorf("tsql: expected FOR in UNPIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	nameCol, ok := p.qualifiedName()
+	if !ok {
+		return nil, fmt.Errorf("tsql: expected name column in UNPIVOT, got %q", p.peek().text)
+	}
+	cols, err := p.inValueList()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after UNPIVOT, got %q", p.peek().text)
+	}
+	p.next()
+	return &tds.UnpivotSpec{ValueCol: valCol, NameCol: nameCol, Columns: cols, Alias: p.optTableAlias()}, nil
+}
+
+// inValueList parses `IN ( a, b, … )`, the column/value list shared by PIVOT and UNPIVOT.
+func (p *parser) inValueList() ([]string, error) {
+	if err := p.expectKeyword("IN"); err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tLParen {
+		return nil, fmt.Errorf("tsql: expected '(' after IN, got %q", p.peek().text)
+	}
+	p.next()
+	list, err := p.identList()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tRParen {
+		return nil, fmt.Errorf("tsql: expected ')' after IN list, got %q", p.peek().text)
+	}
+	p.next()
+	return list, nil
 }
 
 // groupByClause parses a plain column list or ROLLUP/CUBE/GROUPING SETS into q.GroupingSets + q.GroupBy.

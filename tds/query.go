@@ -159,6 +159,23 @@ type Join struct {
 	On       *Expr // nil for CROSS JOIN / APPLY
 }
 
+// PivotSpec rotates rows to columns: PIVOT (Agg(ValueCol) FOR PivotCol IN (Values…)) AS Alias.
+type PivotSpec struct {
+	Agg      string // SUM, COUNT, MIN, MAX, …
+	ValueCol string // aggregated column ("*" for COUNT(*))
+	PivotCol string // column whose distinct values become output columns
+	Values   []string
+	Alias    string
+}
+
+// UnpivotSpec rotates columns to rows: UNPIVOT (ValueCol FOR NameCol IN (Columns…)) AS Alias.
+type UnpivotSpec struct {
+	ValueCol string // new column holding each source cell's value
+	NameCol  string // new column holding the source column's name
+	Columns  []string
+	Alias    string
+}
+
 // SetOp is the junction between SELECTs in a UNION/INTERSECT/EXCEPT chain.
 type SetOp int
 
@@ -176,6 +193,8 @@ type Query struct {
 	Table        string
 	FromSub      *Query     // derived table: FROM (SELECT …) (Table empty when set)
 	FromFunc     *TableFunc // table-valued function: FROM STRING_SPLIT(…)/OPENJSON(…)
+	Pivot        *PivotSpec // PIVOT crosstab over the FROM source (nil if none)
+	Unpivot      *UnpivotSpec
 	FromAlias    string
 	Joins        []Join
 	Distinct     bool

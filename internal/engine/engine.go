@@ -288,6 +288,10 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 
+	if q.Pivot != nil || q.Unpivot != nil {
+		return runPivot(ctx, b, q)
+	}
+
 	if q.Table != "" && len(q.Joins) == 0 && q.FromSub == nil && !isSystemSchema(q.Schema) {
 		if rs, handled, err := expandViewIfAny(ctx, b, q); handled {
 			return rs, err
@@ -968,6 +972,33 @@ func concatRow(a, b []any) []any {
 	out := make([]any, 0, len(a)+len(b))
 	out = append(out, a...)
 	return append(out, b...)
+}
+
+// runPivot materializes the FROM source in full, rotates it (PIVOT/UNPIVOT), then applies the outer
+// SELECT/WHERE/ORDER to the rotated rowset.
+func runPivot(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
+	srcCols, srcData, err := materializeFromSource(ctx, b, q)
+	if err != nil {
+		return nil, err
+	}
+	var cols []catalog.Column
+	var data [][]any
+	if q.Pivot != nil {
+		cols, data, err = exec.Pivot(srcCols, srcData, q.Pivot)
+	} else {
+		cols, data, err = exec.Unpivot(srcCols, srcData, q.Unpivot)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
+}
+
+func materializeFromSource(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.Column, [][]any, error) {
+	if q.FromSub != nil {
+		return runMaterialize(ctx, b, q.FromSub)
+	}
+	return scanJoinSide(ctx, b, &tds.Query{Database: q.Database, Schema: q.Schema, Table: q.Table})
 }
 
 func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Column, [][]any, error) {

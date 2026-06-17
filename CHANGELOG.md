@@ -10,6 +10,7 @@ Queries:
 - `JOIN` of derived tables on either side: `FROM (SELECT …) a JOIN (SELECT …) b ON …`. Also fixes a silent wrong result where a derived `FROM` combined with joins dropped the joins.
 - `CROSS APPLY` / `OUTER APPLY` (lateral join): the right side — a correlated derived table or a table-valued function (`STRING_SPLIT`, `OPENJSON`) — is evaluated once per left row. `CROSS APPLY` drops a left row with no right rows; `OUTER APPLY` keeps it with right `NULL`s.
 - `GROUP BY ROLLUP` / `CUBE` / `GROUPING SETS` (multi-grouping aggregation): subtotal and grand-total rows, with rolled-up columns reported as `NULL`. Unlocks `GROUPING(col)` and `GROUPING_ID(c1, …)` to tell a subtotal `NULL` from a data `NULL`.
+- `PIVOT` / `UNPIVOT` (crosstabs): `PIVOT` rotates a column's values into columns, aggregating per cell; `UNPIVOT` rotates columns back into `(name, value)` rows, dropping `NULL` cells.
 
 Types:
 

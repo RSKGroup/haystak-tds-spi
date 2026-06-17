@@ -103,6 +103,26 @@ func litOf(v any) any {
 	return v
 }
 
+func TestParsePivot(t *testing.T) {
+	q, err := Parse("SELECT region, [A] FROM sales PIVOT (SUM(amount) FOR product IN ([A], [B])) AS p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv := q.Pivot
+	if pv == nil || pv.Agg != "SUM" || pv.ValueCol != "amount" || pv.PivotCol != "product" ||
+		len(pv.Values) != 2 || pv.Values[0] != "A" || pv.Values[1] != "B" || pv.Alias != "p" {
+		t.Errorf("Pivot = %+v", pv)
+	}
+	u, err := Parse("SELECT * FROM src UNPIVOT (amount FOR quarter IN (q1, q2)) AS u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := u.Unpivot
+	if up == nil || up.ValueCol != "amount" || up.NameCol != "quarter" || len(up.Columns) != 2 || up.Alias != "u" {
+		t.Errorf("Unpivot = %+v", up)
+	}
+}
+
 func TestParseGroupingSets(t *testing.T) {
 	r, err := Parse("SELECT a FROM t GROUP BY ROLLUP(a, b)")
 	if err != nil {
