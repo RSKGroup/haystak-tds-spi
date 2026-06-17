@@ -193,8 +193,8 @@ func StaticAuth(creds map[string]string) tds.Authenticator {
 	})
 }
 
-func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, _ tds.SessionInfo) {
-	ctx := tds.WithPrincipal(context.Background(), princ)
+func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, info tds.SessionInfo) {
+	ctx := tds.WithCurrentSession(tds.WithPrincipal(context.Background(), princ), info)
 	sess := engine.NewSession(s.Backend, initialDB)
 	for {
 		msg, err := wire.ReadMessage(conn)

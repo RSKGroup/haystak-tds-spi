@@ -227,6 +227,7 @@ type Env struct {
 	ObjectKind func(int64) (string, bool)        // "U"/"V"/"P"/"FN"/"TR" by object id
 	RoutineDef func(int64) (string, bool)        // CREATE text by object id (OBJECT_DEFINITION)
 	CurrentDB  string
+	SPID       int            // @@SPID; 0 = no session
 	Error      *tds.ErrorInfo // the caught error inside a CATCH block (nil otherwise), for ERROR_*
 }
 

@@ -122,7 +122,7 @@ func splitBatch(sql string) []string {
 
 func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, error) {
 	db := currentDB(ctx)
-	if rs, handled, err := probe(sql, db); handled {
+	if rs, handled, err := probe(sql, db, currentSPID(ctx)); handled {
 		return rs, -1, err
 	}
 	if rs, handled, err := execProc(ctx, b, sql); handled {
@@ -279,7 +279,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, principalOf(ctx), sessionOf(ctx), q)
+		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, principalOf(ctx), sessionOf(ctx), currentSPID(ctx), q)
 		if err != nil {
 			return nil, err
 		}
@@ -488,8 +488,15 @@ func colRefsOuter(col, alias, table string) bool {
 
 // catalogEnv builds the exec env for a query: the current db (so DB_NAME() resolves) plus, only when
 // the query actually calls OBJECT_NAME/DB_NAME(id), the id→name resolvers from the live catalog.
+func currentSPID(ctx context.Context) int {
+	if s, ok := tds.CurrentSessionFromContext(ctx); ok {
+		return s.SessionID
+	}
+	return 0
+}
+
 func catalogEnv(ctx context.Context, b tds.Backend, q *tds.Query, sub exec.SubFn) *exec.Env {
-	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx), Error: tds.ErrorFromContext(ctx)}
+	env := &exec.Env{Sub: sub, CurrentDB: currentDB(ctx), SPID: currentSPID(ctx), Error: tds.ErrorFromContext(ctx)}
 	if queryUsesCatalogFn(q) {
 		if schema, dbs, err := introspectSchema(ctx, b, q); err == nil {
 			rts := listRoutines(ctx, b, currentDB(ctx))
@@ -1247,7 +1254,7 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 	return agg, dbs, nil
 }
 
-func probe(sql, db string) (tds.Rows, bool, error) {
+func probe(sql, db string, spid int) (tds.Rows, bool, error) {
 	u := strings.TrimSuffix(strings.TrimSpace(sql), ";")
 	u = strings.ToUpper(strings.TrimSpace(u))
 	if u == "" || strings.HasPrefix(u, "SET ") || strings.HasPrefix(u, "USE ") {
@@ -1260,7 +1267,7 @@ func probe(sql, db string) (tds.Rows, bool, error) {
 	if i := strings.Index(e, " AS "); i >= 0 {
 		e = strings.TrimSpace(e[:i])
 	}
-	val, ok := probeValue(e, db)
+	val, ok := probeValue(e, db, spid)
 	if !ok {
 		return nil, false, nil
 	}
@@ -1277,13 +1284,17 @@ func probe(sql, db string) (tds.Rows, bool, error) {
 
 // probeValue answers a bare-SELECT scalar (e.g. `SELECT @@VERSION`). The current-database ones resolve
 // here; every other recognized scalar sources its value from the funcs registry (its family file).
-func probeValue(e, db string) (any, bool) {
+func probeValue(e, db string, spid int) (any, bool) {
 	if db == "" {
 		db = "master"
 	}
 	switch e {
 	case "DB_NAME()", "ORIGINAL_DB_NAME()":
 		return db, true
+	case "@@SPID":
+		if spid != 0 {
+			return int64(spid), true
+		}
 	}
 	name, args := probeCall(e)
 	if !isProbeScalar(name) {

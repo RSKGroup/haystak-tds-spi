@@ -428,6 +428,9 @@ func evalFunc(name string, a []any, env *Env) any {
 		}
 		return nil
 	}
+	if name == "@@SPID" && env != nil && env.SPID != 0 {
+		return int64(env.SPID)
+	}
 	// Everything else (string / numeric / date / logical / catalog scalars) lives in its family file
 	// under catalog/funcs and resolves through the registry — see that package's *.go.
 	if v, ok := functions.Eval(name, a); ok {

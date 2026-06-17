@@ -144,6 +144,13 @@ func lex(s string) ([]token, error) {
 			}
 			toks = append(toks, token{tIdent, s[i+1 : j]})
 			i = j + 1
+		case c == '@': // @@global
+			j := i + 1
+			for j < n && (s[j] == '@' || isIdentPart(s[j])) {
+				j++
+			}
+			toks = append(toks, token{tIdent, s[i:j]})
+			i = j
 		case isDigit(c):
 			j := i
 			for j < n && (isDigit(s[j]) || s[j] == '.') {

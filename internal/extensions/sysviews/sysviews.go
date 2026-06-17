@@ -87,7 +87,7 @@ func SupportedViews() []string {
 
 // Resolve answers a query against sys.* catalog views from a backend's declared schema and stored
 // routines. Returns handled=false when the query does not target the sys schema.
-func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess []tds.SessionInfo, q *tds.Query) (tds.Rows, bool, error) {
+func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess []tds.SessionInfo, spid int, q *tds.Query) (tds.Rows, bool, error) {
 	if !strings.EqualFold(q.Schema, "sys") {
 		return nil, false, nil
 	}
@@ -98,7 +98,7 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Prin
 	cols, data := build()
 	obj, db := exec.CatalogResolvers(schema, rts, dbs)
 	tbl, kind := exec.CatalogObjects(schema, rts)
-	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, RoutineDef: exec.RoutineDefs(rts), CurrentDB: q.Database}
+	env := &exec.Env{ObjectName: obj, DBName: db, Table: tbl, ObjectKind: kind, RoutineDef: exec.RoutineDefs(rts), CurrentDB: q.Database, SPID: spid}
 	r, err := exec.ApplyWith(cols, data, q, env)
 	return r, true, err
 }

@@ -734,6 +734,10 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 		}
 		return &tds.ValueExpr{Kind: tds.ValLit, Lit: v}, nil
 	case p.identLike():
+		if strings.HasPrefix(t.text, "@@") {
+			p.next()
+			return &tds.ValueExpr{Kind: tds.ValFunc, Func: strings.ToUpper(t.text)}, nil
+		}
 		if strings.EqualFold(t.text, "CAST") && p.peekN(1).kind == tLParen {
 			return p.castExpr()
 		}
