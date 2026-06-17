@@ -81,8 +81,9 @@ runtime DMVs (`sys.dm_exec_sessions`/`dm_exec_connections`/`dm_exec_requests`), 
 enumerate the registry and degrade to the correct empty shape when there is no server. Nothing to enable,
 nothing to store; it is ephemeral connection state.
 
-Audit is a hook, not a store. `Server.Audit func(tds.SessionEvent)` fires on every login and logout with
-`{Kind, Session{SessionID, LoginName, Host, Program, LoginTime}, At}`. The core never persists it — a
+Audit is a hook, not a store. `Server.Audit func(tds.SessionEvent)` fires on every login (successful or
+rejected, via `Succeeded` — SQL Server's `AUDIT_LOGIN_FAILED`) and logout with
+`{Kind, Succeeded, Session{SessionID, LoginName, Host, Program, LoginTime}, At}`. The core never persists it — a
 read-only backend just leaves the hook unset. An adapter "turns on audit" by assigning the hook to append
 events to a store it owns and names (its retention/ILM, its index/collection), kept separate from the
 catalog store. The event maps directly to SQL Server's audit fields (`At`→event time, `Kind`→action,

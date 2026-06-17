@@ -19,9 +19,10 @@ type SessionInfo struct {
 
 // SessionEvent is a login or logout, delivered to the server's audit hook.
 type SessionEvent struct {
-	Kind    string // "login" or "logout"
-	Session SessionInfo
-	At      time.Time
+	Kind      string // "login" or "logout"
+	Succeeded bool   // false for a rejected login (SQL Server AUDIT_LOGIN_FAILED)
+	Session   SessionInfo
+	At        time.Time
 }
 
 type sessionsKey struct{}

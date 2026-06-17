@@ -38,10 +38,10 @@ func (s *Server) registry() *sessionRegistry {
 	return s.reg
 }
 
-func (s *Server) audit(kind string, info tds.SessionInfo, at time.Time) {
-	s.logf("audit: %s spid=%d user=%q host=%q app=%q", kind, info.SessionID, info.LoginName, info.Host, info.Program)
+func (s *Server) audit(kind string, ok bool, info tds.SessionInfo, at time.Time) {
+	s.logf("audit: %s ok=%v spid=%d user=%q host=%q app=%q", kind, ok, info.SessionID, info.LoginName, info.Host, info.Program)
 	if s.Audit != nil {
-		s.Audit(tds.SessionEvent{Kind: kind, Session: info, At: at})
+		s.Audit(tds.SessionEvent{Kind: kind, Succeeded: ok, Session: info, At: at})
 	}
 }
 
@@ -87,7 +87,7 @@ func (s *Server) handle(conn net.Conn) {
 	}
 	defer func() {
 		s.registry().remove(info.SessionID)
-		s.audit("logout", info, time.Now())
+		s.audit("logout", true, info, time.Now())
 	}()
 	s.logf("handshake complete (user=%q db=%q spid=%d)", princ.Username, db, info.SessionID)
 	s.serve(sess, princ, db, info)
@@ -151,6 +151,7 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.
 	})
 	if autherr != nil {
 		s.logf("auth rejected user=%q: %v", l.UserName, autherr)
+		s.audit("login", false, tds.SessionInfo{LoginName: l.UserName, Host: l.HostName, Program: l.AppName, LoginTime: time.Now()}, time.Now())
 		_ = s.send(conn, wire.LoginError("Login failed for user '"+l.UserName+"'."))
 		return nil, none, "", nosess, autherr
 	}
@@ -164,7 +165,7 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.
 	}
 	s.logf("sent LOGIN response")
 	info := s.registry().add(l.UserName, l.HostName, l.AppName, time.Now())
-	s.audit("login", info, info.LoginTime)
+	s.audit("login", true, info, info.LoginTime)
 	return conn, princ, loginDB, info, nil
 }
 
