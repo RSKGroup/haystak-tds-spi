@@ -392,7 +392,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `INFORMATION_SCHEMA.DOMAINS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.ROUTINE_COLUMNS` | `internal/extensions/infoschema/infoschema.go` | Y |
 | `INFORMATION_SCHEMA.VIEW_TABLE_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
-| `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE` |  | - |
+| `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE` | `internal/extensions/infoschema/infoschema.go` | Y |
 
 ---
 

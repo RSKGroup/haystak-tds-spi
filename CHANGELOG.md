@@ -17,6 +17,10 @@ Procedures:
 
 - `sp_executesql` (dynamic SQL): runs a parameterized statement string, substituting named params (`@p = value`) as literals before executing. Drivers emit this for nearly every parameterized query.
 
+Catalog:
+
+- `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`: the base-table columns each view references (column-level; `VIEW_TABLE_USAGE` already gave table-level).
+
 Functions:
 
 - `JSON_OBJECT('key':value, …)`: builds a JSON object string, preserving key order and omitting `NULL` values (ABSENT ON NULL).

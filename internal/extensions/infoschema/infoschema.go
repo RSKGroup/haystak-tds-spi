@@ -37,6 +37,7 @@ func viewBuilders(schema catalog.Schema, rts []*tds.Routine) map[string]viewBuil
 		"CHECK_CONSTRAINTS":       func() ([]catalog.Column, [][]any) { return checkConstraintsRows(schema) },
 		"CONSTRAINT_COLUMN_USAGE": func() ([]catalog.Column, [][]any) { return constraintColumnUsageRows(schema) },
 		"VIEW_TABLE_USAGE":        func() ([]catalog.Column, [][]any) { return viewTableUsageRows(schema, rts) },
+		"VIEW_COLUMN_USAGE":       func() ([]catalog.Column, [][]any) { return viewColumnUsageRows(schema, rts) },
 		"ROUTINE_COLUMNS":         routineColumnsRows,
 		"CONSTRAINT_TABLE_USAGE":  func() ([]catalog.Column, [][]any) { return constraintTableUsageRows(schema) },
 		"DOMAINS":                 domainsRows,
@@ -342,6 +343,63 @@ func viewTableUsageRows(schema catalog.Schema, rts []*tds.Routine) ([]catalog.Co
 		}
 	}
 	return cols, rows
+}
+
+// viewColumnUsageRows is INFORMATION_SCHEMA.VIEW_COLUMN_USAGE: base-table columns a view body references.
+func viewColumnUsageRows(schema catalog.Schema, rts []*tds.Routine) ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		strCol("VIEW_CATALOG"), strCol("VIEW_SCHEMA"), strCol("VIEW_NAME"),
+		strCol("TABLE_CATALOG"), strCol("TABLE_SCHEMA"), strCol("TABLE_NAME"), strCol("COLUMN_NAME"),
+	}
+	byName := map[string]*catalog.Table{}
+	for i := range schema.Tables {
+		byName[strings.ToLower(schema.Tables[i].Name)] = &schema.Tables[i]
+	}
+	var rows [][]any
+	for _, r := range rts {
+		if r.Kind != tds.RoutineView {
+			continue
+		}
+		toks := identTokens(r.Body)
+		for _, tname := range routines.ReferencedNames(r.Body) {
+			t, ok := byName[strings.ToLower(tname)]
+			if !ok {
+				continue
+			}
+			for _, c := range t.Columns {
+				if toks[strings.ToLower(c.Name)] {
+					rows = append(rows, []any{catalogName, schemaName, r.Name, catalogName, schemaName, t.Name, c.Name})
+				}
+			}
+		}
+	}
+	return cols, rows
+}
+
+// identTokens collects the lowercased identifier-like tokens in a SQL body.
+func identTokens(body string) map[string]bool {
+	set := map[string]bool{}
+	var sb strings.Builder
+	flush := func() {
+		if sb.Len() > 0 {
+			set[strings.ToLower(sb.String())] = true
+			sb.Reset()
+		}
+	}
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c == '_' || c == '.' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			if c == '.' {
+				flush()
+				continue
+			}
+			sb.WriteByte(c)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return set
 }
 
 // routineColumnsRows is INFORMATION_SCHEMA.ROUTINE_COLUMNS: empty, no table-valued functions exist.
