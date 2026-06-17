@@ -35,7 +35,7 @@ var keywords = map[string]bool{
 	"AND": true, "OR": true, "NOT": true, "IN": true, "LIKE": true, "EXISTS": true,
 	"IS": true, "NULL": true, "BETWEEN": true,
 	"JOIN": true, "INNER": true, "LEFT": true, "RIGHT": true, "FULL": true, "OUTER": true, "CROSS": true, "ON": true, "APPLY": true,
-	"PIVOT": true, "UNPIVOT": true,
+	"PIVOT": true, "UNPIVOT": true, "TABLESAMPLE": true,
 	"OFFSET": true, "FETCH": true, "NEXT": true, "FIRST": true, "ROWS": true, "ROW": true, "ONLY": true,
 	"CASE": true, "WHEN": true, "THEN": true, "ELSE": true, "END": true,
 	"UNION": true, "ALL": true, "INTERSECT": true, "EXCEPT": true,
@@ -48,7 +48,7 @@ var keywords = map[string]bool{
 var nonReserved = map[string]bool{
 	"FIRST": true, "NEXT": true, "ROW": true, "ROWS": true, "ONLY": true,
 	"OFFSET": true, "FETCH": true, "ADD": true, "COLUMN": true, "VALUE": true, "APPLY": true,
-	"PIVOT": true, "UNPIVOT": true,
+	"PIVOT": true, "UNPIVOT": true, "TABLESAMPLE": true,
 }
 
 func lex(s string) ([]token, error) {

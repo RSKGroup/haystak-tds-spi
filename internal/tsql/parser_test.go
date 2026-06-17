@@ -103,6 +103,29 @@ func litOf(v any) any {
 	return v
 }
 
+func TestParseHintsIgnored(t *testing.T) {
+	// Table hints, TABLESAMPLE, and OPTION parse and are discarded — the core query is unaffected.
+	cases := []string{
+		"SELECT name FROM users WITH (NOLOCK) WHERE id = 2",
+		"SELECT id FROM orders TABLESAMPLE (50 PERCENT)",
+		"SELECT id FROM orders TABLESAMPLE SYSTEM (10 ROWS) REPEATABLE (5)",
+		"SELECT u.id FROM users u WITH (NOLOCK) JOIN orders o WITH (NOLOCK, INDEX(1)) ON o.user_id = u.id",
+		"SELECT id FROM orders ORDER BY id OPTION (MAXDOP 1, RECOMPILE)",
+	}
+	for _, sql := range cases {
+		if _, err := Parse(sql); err != nil {
+			t.Errorf("Parse(%q) = %v", sql, err)
+		}
+	}
+	q, err := Parse("SELECT name FROM users WITH (NOLOCK) WHERE id = 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Table != "users" || q.Where == nil {
+		t.Errorf("hint changed the query: Table=%q Where=%v", q.Table, q.Where)
+	}
+}
+
 func TestParsePivot(t *testing.T) {
 	q, err := Parse("SELECT region, [A] FROM sales PIVOT (SUM(amount) FOR product IN ([A], [B])) AS p")
 	if err != nil {

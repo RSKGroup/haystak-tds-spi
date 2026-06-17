@@ -39,6 +39,9 @@ func Parse(sql string) (*tds.Query, error) {
 	if err := p.unionTail(q); err != nil {
 		return nil, err
 	}
+	if err := p.optionClause(); err != nil {
+		return nil, err
+	}
 	if p.peek().kind != tEOF {
 		return nil, fmt.Errorf("tsql: unexpected %q after query", p.peek().text)
 	}
@@ -248,6 +251,9 @@ func (p *parser) optJoin() (*tds.Join, error) {
 		}
 		j = &tds.Join{Type: jt, Database: db, Schema: sch, Table: tbl, Alias: p.optTableAlias()}
 	}
+	if err := p.tableHints(); err != nil {
+		return nil, err
+	}
 	if jt != tds.JoinCross && jt != tds.JoinCrossApply && jt != tds.JoinOuterApply {
 		if err := p.expectKeyword("ON"); err != nil {
 			return nil, err
@@ -361,6 +367,9 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 			q.Schema = sch
 			q.Table = tbl
 			q.FromAlias = p.optTableAlias()
+		}
+		if err := p.tableHints(); err != nil {
+			return nil, err
 		}
 		if err := p.pivotClause(q); err != nil {
 			return nil, err
@@ -975,6 +984,67 @@ func aggOf(s string) tds.AggFunc {
 func (p *parser) peekIs(s string) bool {
 	t := p.peek()
 	return (t.kind == tIdent || t.kind == tKeyword) && strings.EqualFold(t.text, s)
+}
+
+// skipParenGroup consumes a balanced ( … ) group at the current '(' (used to discard query/table hints).
+func (p *parser) skipParenGroup() error {
+	if p.peek().kind != tLParen {
+		return fmt.Errorf("tsql: expected '(', got %q", p.peek().text)
+	}
+	depth := 0
+	for {
+		switch p.peek().kind {
+		case tEOF:
+			return fmt.Errorf("tsql: unterminated '('")
+		case tLParen:
+			depth++
+		case tRParen:
+			depth--
+			if depth == 0 {
+				p.next()
+				return nil
+			}
+		}
+		p.next()
+	}
+}
+
+// tableHints parses and discards a table source's TABLESAMPLE and WITH (…) hints (honored as no-ops).
+func (p *parser) tableHints() error {
+	for {
+		switch {
+		case p.peekIs("TABLESAMPLE"):
+			p.next()
+			if p.peekIs("SYSTEM") {
+				p.next()
+			}
+			if err := p.skipParenGroup(); err != nil {
+				return err
+			}
+			if p.peekIs("REPEATABLE") {
+				p.next()
+				if err := p.skipParenGroup(); err != nil {
+					return err
+				}
+			}
+		case p.isKeyword("WITH") && p.peekN(1).kind == tLParen:
+			p.next()
+			if err := p.skipParenGroup(); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+}
+
+// optionClause parses and discards a trailing OPTION (…) query hint.
+func (p *parser) optionClause() error {
+	if p.peekIs("OPTION") && p.peekN(1).kind == tLParen {
+		p.next()
+		return p.skipParenGroup()
+	}
+	return nil
 }
 
 func (p *parser) pivotClause(q *tds.Query) error {

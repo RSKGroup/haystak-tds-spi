@@ -477,8 +477,8 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `CROSS APPLY` / `OUTER APPLY` | `internal/tsql/parser.go + internal/engine/engine.go` | Y |
 | `GROUPING SETS` / `ROLLUP` / `CUBE` | `internal/tsql/parser.go + internal/exec/aggregate.go` | Y |
 | `OVER` (window clause) | `internal/exec/window.go` | Y |
-| `TABLESAMPLE` |  | - |
-| query hints (`OPTION`, `WITH (NOLOCK)`) |  | - |
+| `TABLESAMPLE` | `internal/tsql/parser.go` | Y |
+| query hints (`OPTION`, `WITH (NOLOCK)`) | `internal/tsql/parser.go` | Y |
 
 ### DML
 
