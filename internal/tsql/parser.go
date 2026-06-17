@@ -542,6 +542,19 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 			return tds.SelectItem{}, fmt.Errorf("tsql: expected ')' after aggregate, got %q", p.peek().text)
 		}
 		p.next()
+		if p.peek().kind == tIdent && strings.EqualFold(p.peek().text, "OVER") {
+			var wargs []*tds.ValueExpr
+			if argExpr != nil {
+				wargs = []*tds.ValueExpr{argExpr}
+			} else if arg != "" && arg != "*" {
+				wargs = []*tds.ValueExpr{{Kind: tds.ValCol, Col: arg}}
+			}
+			win, err := p.overClause(&tds.ValueExpr{Kind: tds.ValFunc, Func: t.text, Args: wargs})
+			if err != nil {
+				return tds.SelectItem{}, err
+			}
+			return tds.SelectItem{Window: win, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+		}
 		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Sep: sep, AggDist: distinct, Alias: aliasOr(leadAlias, p.optAlias())}, nil
 	}
 	ve, err := p.valueExpr()

@@ -18,4 +18,9 @@ var windowCases = []Case{
 	{Element: "win:CUME_DIST", SQL: "SELECT DISTINCT cd FROM (SELECT CUME_DIST() OVER (ORDER BY schema_id) AS cd FROM sys.types) t", Want: []any{approx(1)}},
 	{Element: "win:PERCENTILE_CONT", SQL: "SELECT DISTINCT m FROM (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY schema_id) OVER () AS m FROM sys.types) t", Want: []any{approx(4)}},
 	{Element: "win:PERCENTILE_DISC", SQL: "SELECT DISTINCT m FROM (SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY schema_id) OVER () AS m FROM sys.types) t", Want: []any{approx(4)}},
+	{Element: "win:SUM", SQL: "SELECT DISTINCT s FROM (SELECT SUM(schema_id) OVER () AS s FROM sys.types) t", Want: []any{approx(80)}},
+	{Element: "win:AVG", SQL: "SELECT DISTINCT a FROM (SELECT AVG(schema_id) OVER () AS a FROM sys.types) t", Want: []any{approx(4)}},
+	{Element: "win:COUNT", SQL: "SELECT DISTINCT c FROM (SELECT COUNT(*) OVER () AS c FROM sys.types) t", Want: []any{20}},
+	{Element: "win:MIN", SQL: "SELECT DISTINCT mn FROM (SELECT MIN(schema_id) OVER () AS mn FROM sys.types) t", Want: []any{4}},
+	{Element: "win:MAX", SQL: "SELECT DISTINCT mx FROM (SELECT MAX(schema_id) OVER () AS mx FROM sys.types) t", Want: []any{4}},
 }

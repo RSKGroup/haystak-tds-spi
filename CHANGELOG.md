@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.6.1 — 2026-06-17
+
+- Windowed aggregates: `SUM` / `AVG` / `COUNT` / `MIN` / `MAX (col) OVER (…)` now parse and evaluate —
+  whole-partition with `PARTITION BY`, running (cumulative to the ORDER BY peer group) with `ORDER BY`.
+  Previously only ranking/offset window functions were recognized; aggregate `OVER` raised
+  `tsql: unexpected "OVER"`. Running totals and moving averages now work.
+
 ## v1.6.0 — 2026-06-17
 
 Read-surface additions, additive and non-breaking.

@@ -14,7 +14,7 @@ import (
 )
 
 // windowFuncs are the wired window functions; keep in lockstep with the applyWindow switch.
-var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "PERCENTILE_CONT", "PERCENTILE_DISC"}
+var windowFuncs = []string{"ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "PERCENT_RANK", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "PERCENTILE_CONT", "PERCENTILE_DISC", "SUM", "AVG", "COUNT", "MIN", "MAX"}
 
 // WindowFuncNames returns the wired window-function names, sorted.
 func WindowFuncNames() []string {
@@ -67,10 +67,14 @@ func windowColType(w *tds.WindowSpec, cols []catalog.Column, idx map[string]int)
 		return types.Type{Kind: types.Int64}
 	case "PERCENT_RANK", "CUME_DIST", "PERCENTILE_CONT", "PERCENTILE_DISC":
 		return types.Type{Kind: types.Float64}
-	case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE":
+	case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "MIN", "MAX":
 		if len(w.Args) > 0 {
 			return exprType(w.Args[0], cols, idx)
 		}
+	case "COUNT":
+		return types.Type{Kind: types.Int64}
+	case "SUM", "AVG":
+		return types.Type{Kind: types.Float64}
 	}
 	return types.Type{Kind: types.String, MaxLen: 4000}
 }
@@ -302,10 +306,106 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 		}
 	case "PERCENTILE_CONT", "PERCENTILE_DISC":
 		return percentileWindow(w, members, rows, idx, out)
+	case "SUM", "AVG", "COUNT", "MIN", "MAX":
+		return aggWindow(w, members, rows, idx, env, out)
 	default:
 		return fmt.Errorf("exec: unsupported window function %q", w.Func)
 	}
 	return nil
+}
+
+// aggWindow computes a windowed aggregate: whole partition with no ORDER BY, else cumulative to peers.
+func aggWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]int, env *Env, out []any) error {
+	ends := make([]int, len(members))
+	if len(w.OrderBy) == 0 {
+		for i := range ends {
+			ends[i] = len(members) - 1
+		}
+	} else {
+		for i := 0; i < len(members); {
+			j := i
+			for j+1 < len(members) {
+				ka, err := windowOrderKey(rows[members[j]], idx, w.OrderBy, env)
+				if err != nil {
+					return err
+				}
+				kb, err := windowOrderKey(rows[members[j+1]], idx, w.OrderBy, env)
+				if err != nil {
+					return err
+				}
+				if !keysEqual(ka, kb) {
+					break
+				}
+				j++
+			}
+			for t := i; t <= j; t++ {
+				ends[t] = j
+			}
+			i = j + 1
+		}
+	}
+	countStar := len(w.Args) == 0
+	vals := make([]any, len(members))
+	if !countStar {
+		for i, m := range members {
+			v, err := evalValue(idx, rows[m], w.Args[0], env)
+			if err != nil {
+				return err
+			}
+			vals[i] = v
+		}
+	}
+	for p, m := range members {
+		out[m] = aggregateOver(w.Func, vals[:ends[p]+1], countStar)
+	}
+	return nil
+}
+
+func aggregateOver(fn string, vals []any, countStar bool) any {
+	switch fn {
+	case "COUNT":
+		n := int64(0)
+		for _, v := range vals {
+			if countStar || v != nil {
+				n++
+			}
+		}
+		return n
+	case "SUM", "AVG":
+		sum, n := float64(0), int64(0)
+		for _, v := range vals {
+			if f, ok := toFloatOk(v); ok {
+				sum += f
+				n++
+			}
+		}
+		if n == 0 {
+			return nil
+		}
+		if fn == "AVG" {
+			return sum / float64(n)
+		}
+		return sum
+	default: // MIN, MAX
+		var best any
+		for _, v := range vals {
+			if v == nil {
+				continue
+			}
+			if best == nil {
+				best = v
+				continue
+			}
+			c, ok := compare(v, best)
+			if !ok {
+				continue
+			}
+			if (fn == "MIN" && c < 0) || (fn == "MAX" && c > 0) {
+				best = v
+			}
+		}
+		return best
+	}
 }
 
 // percentileWindow computes PERCENTILE_CONT/DISC over a partition and assigns the one result to every row.
