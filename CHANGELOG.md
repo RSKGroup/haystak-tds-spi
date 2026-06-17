@@ -27,6 +27,7 @@ Catalog:
 Functions:
 
 - `JSON_OBJECT('key':value, …)`: builds a JSON object string, preserving key order and omitting `NULL` values (ABSENT ON NULL).
+- `COUNT(DISTINCT col)` (and `SUM`/`AVG(DISTINCT)`): aggregate over distinct values; never pushed to a backend aggregator that can't honor DISTINCT.
 - `PERCENTILE_CONT` / `PERCENTILE_DISC` (ordered-set aggregates): `FUNC(p) WITHIN GROUP (ORDER BY col) OVER (PARTITION BY …)` — `CONT` interpolates between the two nearest values, `DISC` returns an actual value.
 
 Types:

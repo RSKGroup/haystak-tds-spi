@@ -501,6 +501,11 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 		fn := aggOf(t.text)
 		p.next()
 		p.next()
+		distinct := false
+		if p.isKeyword("DISTINCT") {
+			p.next()
+			distinct = true
+		}
 		arg := ""
 		var argExpr *tds.ValueExpr
 		if p.peek().kind == tStar {
@@ -537,7 +542,7 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 			return tds.SelectItem{}, fmt.Errorf("tsql: expected ')' after aggregate, got %q", p.peek().text)
 		}
 		p.next()
-		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Sep: sep, Alias: aliasOr(leadAlias, p.optAlias())}, nil
+		return tds.SelectItem{Agg: fn, Arg: arg, ArgExpr: argExpr, Sep: sep, AggDist: distinct, Alias: aliasOr(leadAlias, p.optAlias())}, nil
 	}
 	ve, err := p.valueExpr()
 	if err != nil {

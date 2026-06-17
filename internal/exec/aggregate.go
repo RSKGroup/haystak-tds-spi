@@ -16,6 +16,16 @@ import (
 
 func IsAggregate(q *tds.Query) bool { return isAggregate(q) }
 
+// HasDistinctAgg reports whether any select item is a DISTINCT aggregate (COUNT(DISTINCT col)).
+func HasDistinctAgg(q *tds.Query) bool {
+	for _, it := range q.Select {
+		if it.AggDist {
+			return true
+		}
+	}
+	return false
+}
+
 func isAggregate(q *tds.Query) bool {
 	if len(q.GroupBy) > 0 || len(q.GroupingSets) > 0 {
 		return true
@@ -198,7 +208,7 @@ func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, 
 	switch ve.Kind {
 	case tds.ValFunc:
 		if fn := aggFuncFromName(ve.Func); fn != tds.AggNone {
-			return computeAgg(fn, aggArg(ve.Args), aggSep(ve.Args), origIdx, group)
+			return computeAgg(fn, aggArg(ve.Args), aggSep(ve.Args), origIdx, group, false)
 		}
 	case tds.ValBinary:
 		l, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Left, env)
@@ -422,7 +432,7 @@ func aggRowSet(idx map[string]int, sel []tds.SelectItem, rows [][]any, setCols, 
 			}
 			continue
 		}
-		v, err := computeAgg(it.Agg, it.Arg, it.Sep, idx, rows)
+		v, err := computeAgg(it.Agg, it.Arg, it.Sep, idx, rows, it.AggDist)
 		if err != nil {
 			return nil, err
 		}
@@ -470,7 +480,25 @@ func groupingValue(gcols []string, isID bool, setCols map[string]bool) any {
 
 // computeAgg evaluates one aggregate function over a group's rows. arg is the column name ("*" or
 // "" for COUNT-all); idx is the pre-aggregation column index.
-func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]any) (any, error) {
+func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]any, distinct bool) (any, error) {
+	if distinct && arg != "" && arg != "*" {
+		if i, ok := resolveCol(idx, arg); ok {
+			seen := make(map[string]bool, len(rows))
+			deduped := make([][]any, 0, len(rows))
+			for _, r := range rows {
+				if r[i] == nil {
+					continue
+				}
+				k := fmt.Sprintf("%v", r[i])
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				deduped = append(deduped, r)
+			}
+			rows = deduped
+		}
+	}
 	switch fn {
 	case tds.AggChecksumAgg:
 		i, ok := resolveCol(idx, arg)

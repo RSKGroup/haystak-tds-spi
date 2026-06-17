@@ -68,6 +68,7 @@ type SelectItem struct {
 	Arg     string      // aggregate argument column ("*" for COUNT(*))
 	ArgExpr *ValueExpr  // aggregate argument expression (e.g. MAX(CASE …)); nil for a plain column arg
 	Sep     string      // STRING_AGG separator literal
+	AggDist bool        // aggregate over DISTINCT values (COUNT(DISTINCT col), SUM(DISTINCT col))
 	Expr    *ValueExpr  // scalar expression (nil unless this item is computed)
 	Window  *WindowSpec // window function over an OVER clause (nil otherwise)
 	Alias   string      // output column name (optional)

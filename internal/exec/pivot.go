@@ -71,7 +71,7 @@ func Pivot(cols []catalog.Column, data [][]any, spec *tds.PivotSpec) ([]catalog.
 					matched = append(matched, r)
 				}
 			}
-			agg, err := computeAgg(fn, spec.ValueCol, "", idx, matched)
+			agg, err := computeAgg(fn, spec.ValueCol, "", idx, matched, false)
 			if err != nil {
 				return nil, nil, err
 			}
