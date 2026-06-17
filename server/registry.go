@@ -46,3 +46,13 @@ func (r *sessionRegistry) snapshot() []tds.SessionInfo {
 	}
 	return out
 }
+
+// ownSession narrows a snapshot to the caller's own row (the non-privileged DMV view).
+func ownSession(cur tds.SessionInfo, all []tds.SessionInfo) []tds.SessionInfo {
+	for _, s := range all {
+		if s.SessionID == cur.SessionID {
+			return []tds.SessionInfo{s}
+		}
+	}
+	return nil
+}

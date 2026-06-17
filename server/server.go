@@ -28,6 +28,9 @@ type Server struct {
 	TLSConfig  *tls.Config       // non-nil enables TLS-in-TDS
 	Logf       func(string, ...any)
 	Audit      func(tds.SessionEvent) // optional: called on each login and logout
+	// SessionVisibility decides whether a principal may enumerate every live session via the runtime
+	// DMVs / sp_who (SQL Server's VIEW SERVER STATE gate). nil ⇒ a caller sees only its own session.
+	SessionVisibility func(context.Context, tds.Principal) bool
 
 	regOnce sync.Once
 	reg     *sessionRegistry
@@ -196,6 +199,7 @@ func StaticAuth(creds map[string]string) tds.Authenticator {
 
 func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, info tds.SessionInfo) {
 	ctx := tds.WithCurrentSession(tds.WithPrincipal(context.Background(), princ), info)
+	seeAll := s.SessionVisibility != nil && s.SessionVisibility(ctx, princ)
 	sess := engine.NewSession(s.Backend, initialDB)
 	for {
 		msg, err := wire.ReadMessage(conn)
@@ -220,7 +224,11 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, inf
 			continue
 		}
 		s.logf("stmt: %q", sql)
-		qctx := tds.WithSessions(ctx, s.registry().snapshot())
+		visible := s.registry().snapshot()
+		if !seeAll {
+			visible = ownSession(info, visible)
+		}
+		qctx := tds.WithSessions(ctx, visible)
 		rows, affected, envDB, err := sess.Exec(qctx, sql)
 		if err != nil {
 			s.logf("query error: %v", err)
