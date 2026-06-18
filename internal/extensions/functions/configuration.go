@@ -8,6 +8,7 @@ const serverVersion = "Microsoft SQL Server 2022 (haystak-tds-spi gateway) - TDS
 
 func init() {
 	register("@@VERSION", func([]any) any { return serverVersion })
+	register("@@MICROSOFTVERSION", func([]any) any { return int64(268436456) }) // 16.0.1000
 	register("@@SPID", func([]any) any { return int64(1) })
 	register("@@SERVERNAME", func([]any) any { return "haystak-tds-spi" })
 	register("@@LANGUAGE", func([]any) any { return "us_english" })

@@ -121,6 +121,10 @@ func SupportedProcs() []string {
 
 // execProc answers the ODBC catalog procs (sp_databases/sp_tables/sp_columns); other sp_* no-op.
 func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, error) {
+	if inner, ok := parseExecDynamic(sql); ok {
+		rows, _, err := queryOne(ctx, b, inner)
+		return rows, true, err
+	}
 	name, args, ok := parseProcCall(sql)
 	if !ok {
 		return nil, false, nil
@@ -140,6 +144,52 @@ func execProc(ctx context.Context, b tds.Backend, sql string) (tds.Rows, bool, e
 type procArg struct {
 	name string
 	val  any
+}
+
+// parseExecDynamic recognizes EXEC[UTE] ('sql' [+ 'sql']) and returns the literal SQL to run.
+func parseExecDynamic(sql string) (string, bool) {
+	s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sql), ";"))
+	up := strings.ToUpper(s)
+	switch {
+	case strings.HasPrefix(up, "EXECUTE"):
+		s = strings.TrimSpace(s[len("EXECUTE"):])
+	case strings.HasPrefix(up, "EXEC"):
+		s = strings.TrimSpace(s[len("EXEC"):])
+	default:
+		return "", false
+	}
+	if !strings.HasPrefix(s, "(") || !strings.HasSuffix(s, ")") {
+		return "", false
+	}
+	inner := strings.TrimSpace(s[1 : len(s)-1])
+	var b strings.Builder
+	for i := 0; i < len(inner); {
+		switch inner[i] {
+		case '\'':
+			j := i + 1
+			for j < len(inner) {
+				if inner[j] == '\'' {
+					if j+1 < len(inner) && inner[j+1] == '\'' {
+						b.WriteByte('\'')
+						j += 2
+						continue
+					}
+					break
+				}
+				b.WriteByte(inner[j])
+				j++
+			}
+			i = j + 1
+		case '+', ' ', '\t', '\r', '\n':
+			i++
+		default:
+			return "", false
+		}
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
 }
 
 // parseProcCall recognizes `EXEC[UTE] proc args` and bare `sp_proc args`; ok is false otherwise.

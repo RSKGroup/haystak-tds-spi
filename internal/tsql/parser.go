@@ -1009,7 +1009,7 @@ func (p *parser) typeName() (string, error) {
 func (p *parser) optAlias() string {
 	if p.isKeyword("AS") {
 		p.next()
-		if p.peek().kind == tIdent {
+		if k := p.peek().kind; k == tIdent || k == tString {
 			a := p.peek().text
 			p.next()
 			return a

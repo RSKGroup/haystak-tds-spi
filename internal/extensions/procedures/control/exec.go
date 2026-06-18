@@ -30,8 +30,8 @@ const (
 )
 
 type state struct {
-	flow flowKind
-	last tds.Rows
+	flow    flowKind
+	results []tds.Rows
 }
 
 type scope struct{ vars map[string]string } // @name -> SQL-literal value
@@ -62,14 +62,14 @@ func HasControlFlow(sql string) bool {
 				atStart = true
 			}
 		case tWord:
-			if atStart && depth == 0 {
+			if depth == 0 {
 				kw := strings.ToUpper(t.text)
 				beginTxn := kw == "BEGIN" && i+1 < len(toks) && (eqKw(toks[i+1], "TRAN") || eqKw(toks[i+1], "TRANSACTION"))
 				if !beginTxn && controlLead[kw] {
 					return true
 				}
 				// SELECT @v = … is a variable assignment (procedural), not a result-set query.
-				if kw == "SELECT" && i+2 < len(toks) && strings.HasPrefix(toks[i+1].text, "@") && toks[i+2].text == "=" {
+				if atStart && kw == "SELECT" && i+2 < len(toks) && strings.HasPrefix(toks[i+1].text, "@") && toks[i+2].text == "=" {
 					return true
 				}
 			}
@@ -81,8 +81,15 @@ func HasControlFlow(sql string) bool {
 	return false
 }
 
-// Run parses and executes a control-flow batch, returning its last result set.
 func Run(ctx context.Context, sql string, run routines.Runner) (tds.Rows, error) {
+	rows, err := RunAll(ctx, sql, run)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return rows[len(rows)-1], nil
+}
+
+func RunAll(ctx context.Context, sql string, run routines.Runner) ([]tds.Rows, error) {
 	blk, err := parse(sql)
 	if err != nil {
 		return nil, err
@@ -92,7 +99,7 @@ func Run(ctx context.Context, sql string, run routines.Runner) (tds.Rows, error)
 	if err := execStmt(ctx, blk, sc, run, st); err != nil {
 		return nil, err
 	}
-	return st.last, nil
+	return st.results, nil
 }
 
 func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *state) error {
@@ -115,7 +122,7 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 			return err
 		}
 		if rows != nil {
-			st.last = rows
+			st.results = append(st.results, rows)
 		}
 	case *Waitfor:
 		return execWaitfor(ctx, n)
@@ -184,9 +191,10 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 			}
 		}
 	case *Try:
+		mark := len(st.results)
 		if err := execStmt(ctx, n.Body, sc, run, st); err != nil {
-			st.flow = flowNone // the error aborts the TRY body; the CATCH handles it
-			st.last = nil
+			st.flow = flowNone
+			st.results = st.results[:mark]
 			catchCtx := tds.WithError(ctx, errorInfoOf(err))
 			return execStmt(catchCtx, n.Catch, sc, run, st)
 		}

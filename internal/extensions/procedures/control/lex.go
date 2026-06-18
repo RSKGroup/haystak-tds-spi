@@ -30,7 +30,11 @@ func lex(s string) []tok {
 		switch {
 		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
 			i++
-		case c == '\'':
+		case c == '\'' || ((c == 'N' || c == 'n') && i+1 < len(s) && s[i+1] == '\''):
+			start := i
+			if c != '\'' {
+				i++ // keep the national-literal N prefix with the string
+			}
 			j := i + 1
 			for j < len(s) {
 				if s[j] == '\'' {
@@ -43,7 +47,7 @@ func lex(s string) []tok {
 				}
 				j++
 			}
-			out = append(out, tok{tString, s[i:j]})
+			out = append(out, tok{tString, s[start:j]})
 			i = j
 		case c == '[':
 			j := i + 1

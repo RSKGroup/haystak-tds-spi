@@ -54,4 +54,5 @@ var sysviewCases = []Case{
 	{Element: "sys:dm_exec_requests", SQL: "SELECT * FROM sys.dm_exec_requests", Check: checks(wantCols("session_id", "status", "command"), exactRows(0))},
 	{Element: "sys:dm_exec_query_stats", SQL: "SELECT * FROM sys.dm_exec_query_stats", Check: checks(wantCols("execution_count", "total_worker_time"), exactRows(0))},
 	{Element: "sys:dm_os_waiting_tasks", SQL: "SELECT * FROM sys.dm_os_waiting_tasks", Check: checks(wantCols("session_id", "wait_type", "wait_duration_ms"), exactRows(0))},
+	{Element: "sys:dm_os_host_info", SQL: "SELECT * FROM sys.dm_os_host_info", Check: checks(wantCols("host_platform"), exactRows(1))},
 }

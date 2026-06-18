@@ -71,6 +71,7 @@ func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds
 		"dm_exec_requests":            func() ([]catalog.Column, [][]any) { return dmExecRequestsRows(sess) },
 		"dm_exec_query_stats":         func() ([]catalog.Column, [][]any) { return dmExecQueryStatsRows() },
 		"dm_os_waiting_tasks":         func() ([]catalog.Column, [][]any) { return dmOsWaitingTasksRows() },
+		"dm_os_host_info":             func() ([]catalog.Column, [][]any) { return dmOsHostInfoRows() },
 	}
 }
 
@@ -1045,4 +1046,13 @@ func dmOsWaitingTasksRows() ([]catalog.Column, [][]any) {
 		nsname("waiting_task_address"), intc("session_id"), sname("wait_type"),
 		intc("wait_duration_ms"), intc("blocking_session_id"), nsname("resource_description"),
 	}, nil
+}
+
+func dmOsHostInfoRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{
+			sname("host_platform"), sname("host_distribution"), sname("host_release"),
+			sname("host_service_pack_level"), intc("host_sku"), intc("os_language_version"),
+		}, [][]any{
+			{"Windows", "Windows", "10.0", "", int64(8), int64(1033)},
+		}
 }

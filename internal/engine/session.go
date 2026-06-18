@@ -57,20 +57,37 @@ func NewSession(b tds.Backend, db string) *Session {
 // Database is the session's current database.
 func (s *Session) Database() string { return s.db }
 
-// Exec runs a batch under the session's current database; envDB is the new db when USE changed it.
+type Result struct {
+	Rows     tds.Rows
+	Affected int64
+}
+
 func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string, error) {
-	// Opt-in: a batch with control flow runs through the procedural interpreter; everything else keeps
-	// the flat path untouched.
+	res, envDB, err := s.ExecBatch(ctx, sql)
+	if err != nil || len(res) == 0 {
+		return nil, -1, envDB, err
+	}
+	last := res[len(res)-1]
+	return last.Rows, last.Affected, envDB, nil
+}
+
+func (s *Session) ExecBatch(ctx context.Context, sql string) ([]Result, string, error) {
 	if control.HasControlFlow(sql) {
-		rows, err := control.Run(WithDatabase(ctx, s.db), sql, engineRunner{s.b})
-		return rows, -1, "", err
+		rows, err := control.RunAll(WithDatabase(ctx, s.db), sql, engineRunner{s.b})
+		if err != nil {
+			return nil, "", err
+		}
+		res := make([]Result, len(rows))
+		for i, r := range rows {
+			res[i] = Result{Rows: r, Affected: -1}
+		}
+		return res, "", nil
 	}
 	sql, err := batch.Resolve(sql) // bind + substitute DECLARE/SET @var batch variables
 	if err != nil {
-		return nil, -1, "", err
+		return nil, "", err
 	}
-	var lastRows tds.Rows
-	lastAffected := int64(-1)
+	var res []Result
 	envDB := ""
 	for _, stmt := range splitBatch(sql) {
 		if strings.TrimSpace(stmt) == "" {
@@ -78,28 +95,26 @@ func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string
 		}
 		if db, ok := parseUse(stmt); ok {
 			s.db, envDB = db, db
-			lastRows, lastAffected = nil, -1
 			continue
 		}
 		if n, ok := parseRowcount(stmt); ok {
 			s.rowCount = n
-			lastRows, lastAffected = nil, -1
 			continue
 		}
 		rs, aff, err := queryOne(WithDatabase(ctx, s.db), s.b, stmt)
 		if err != nil {
-			return nil, -1, envDB, err
+			return nil, envDB, err
 		}
 		if rs != nil {
 			if s.rowCount > 0 {
 				rs = &limitRows{Rows: rs, n: s.rowCount}
 			}
-			lastRows, lastAffected = rs, -1
+			res = append(res, Result{Rows: rs, Affected: -1})
 		} else if aff >= 0 {
-			lastRows, lastAffected = nil, aff
+			res = append(res, Result{Affected: aff})
 		}
 	}
-	return lastRows, lastAffected, envDB, nil
+	return res, envDB, nil
 }
 
 // parseRowcount returns n from a `SET ROWCOUNT n` statement.

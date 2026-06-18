@@ -274,10 +274,28 @@ func (p *parser) setStmt() (Stmt, error) {
 	return &Set{Name: strings.ToLower(strings.TrimPrefix(name, "@")), Expr: strings.TrimSpace(body[eq+1:])}, nil
 }
 
+// boundaryWord bounds a statement, tracking CASE…END so a CASE's ELSE/END isn't taken as a boundary.
+func boundaryWord(t tok, depth int, caseDepth *int) bool {
+	if t.kind != tWord {
+		return false
+	}
+	switch strings.ToUpper(t.text) {
+	case "CASE":
+		*caseDepth++
+		return false
+	case "END":
+		if *caseDepth > 0 {
+			*caseDepth--
+			return false
+		}
+	}
+	return depth == 0 && *caseDepth == 0 && isStmtKeyword(t)
+}
+
 // readCond reads a condition: tokens until a statement keyword at paren depth 0.
 func (p *parser) readCond() string {
 	var ts []tok
-	depth := 0
+	depth, caseDepth := 0, 0
 	for !p.eof() {
 		t := p.peek()
 		switch t.kind {
@@ -291,7 +309,7 @@ func (p *parser) readCond() string {
 			p.advance()
 			return render(ts)
 		}
-		if depth == 0 && isStmtKeyword(t) {
+		if boundaryWord(t, depth, &caseDepth) {
 			break
 		}
 		ts = append(ts, t)
@@ -304,7 +322,7 @@ func (p *parser) readCond() string {
 // at paren depth 0 (left for the next statement).
 func (p *parser) readToStmtBound() string {
 	var ts []tok
-	depth := 0
+	depth, caseDepth := 0, 0
 	for !p.eof() {
 		t := p.peek()
 		if t.kind == tSemi {
@@ -317,7 +335,7 @@ func (p *parser) readToStmtBound() string {
 		if t.kind == tParenR && depth > 0 {
 			depth--
 		}
-		if depth == 0 && isStmtKeyword(t) {
+		if boundaryWord(t, depth, &caseDepth) {
 			break
 		}
 		ts = append(ts, t)
@@ -329,7 +347,7 @@ func (p *parser) readToStmtBound() string {
 // rawStmt reads a plain SQL statement: its leading keyword, then until ';' or the next statement keyword.
 func (p *parser) rawStmt() string {
 	var ts []tok
-	depth := 0
+	depth, caseDepth := 0, 0
 	first := true
 	for !p.eof() {
 		t := p.peek()
@@ -343,7 +361,7 @@ func (p *parser) rawStmt() string {
 		if t.kind == tParenR && depth > 0 {
 			depth--
 		}
-		if !first && depth == 0 && isStmtKeyword(t) {
+		if b := boundaryWord(t, depth, &caseDepth); !first && b {
 			break
 		}
 		ts = append(ts, t)

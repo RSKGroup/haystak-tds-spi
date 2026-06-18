@@ -45,6 +45,10 @@ func DecodeSQLBatch(payload []byte) string {
 
 // BuildResultResponse builds COLMETADATA + ROWs + DONE(count) for a result set.
 func BuildResultResponse(cols []catalog.Column, rows [][]any) ([]byte, error) {
+	return BuildResultSet(cols, rows, false), nil
+}
+
+func BuildResultSet(cols []catalog.Column, rows [][]any, more bool) []byte {
 	out := colMetadata(cols)
 	for _, row := range rows {
 		out = append(out, tokenRow)
@@ -52,7 +56,18 @@ func BuildResultResponse(cols []catalog.Column, rows [][]any) ([]byte, error) {
 			out = append(out, encodeValue(c.Type, row[i])...)
 		}
 	}
-	return append(out, done(DoneFinal|DoneCount, 0, uint64(len(rows)))...), nil
+	return append(out, done(doneStatus(more)|DoneCount, 0, uint64(len(rows)))...)
+}
+
+func DoneRows(n uint64, more bool) []byte {
+	return done(doneStatus(more)|DoneCount, 0, n)
+}
+
+func doneStatus(more bool) uint16 {
+	if more {
+		return DoneMore
+	}
+	return DoneFinal
 }
 
 // BuildError builds an ERROR token + DONE(error) for a failed batch.

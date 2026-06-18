@@ -21,6 +21,7 @@ var systemCases = []Case{
 	{Element: "func:ERROR_PROCEDURE", SQL: "SELECT ERROR_PROCEDURE()", Want: []any{P(isNull)}},
 
 	{Element: "func:@@VERSION", SQL: "SELECT @@VERSION", Want: []any{contains("SQL Server")}},
+	{Element: "func:@@MICROSOFTVERSION", SQL: "SELECT @@MICROSOFTVERSION", Want: []any{268436456}},
 	{Element: "func:@@SPID", SQL: "SELECT @@SPID", Want: []any{1}},
 	{Element: "func:@@SERVERNAME", SQL: "SELECT @@SERVERNAME", Want: []any{"haystak-tds-spi"}},
 	{Element: "func:@@LANGUAGE", SQL: "SELECT @@LANGUAGE", Want: []any{"us_english"}},

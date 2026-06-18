@@ -229,13 +229,13 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, inf
 			visible = ownSession(info, visible)
 		}
 		qctx := tds.WithSessions(ctx, visible)
-		rows, affected, envDB, err := sess.Exec(qctx, sql)
+		results, envDB, err := sess.ExecBatch(qctx, sql)
 		if err != nil {
 			s.logf("query error: %v", err)
 			_ = s.send(conn, wire.BuildError(err.Error()))
 			continue
 		}
-		resp, err := buildResponse(rows, affected, envDB)
+		resp, err := buildResponse(results, envDB)
 		if err != nil {
 			s.logf("response error: %v", err)
 			_ = s.send(conn, wire.BuildError(err.Error()))
@@ -247,36 +247,43 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, inf
 	}
 }
 
-// buildResponse renders a result set or rows-affected, led by an ENVCHANGE when USE changed the db.
-func buildResponse(rows tds.Rows, affected int64, envDB string) ([]byte, error) {
-	var lead []byte
+// buildResponse renders every result set in order (DONE_MORE between them), led by an ENVCHANGE on USE.
+func buildResponse(results []engine.Result, envDB string) ([]byte, error) {
+	var out []byte
 	if envDB != "" {
-		lead = wire.EnvChangeDatabase(envDB)
+		out = wire.EnvChangeDatabase(envDB)
 	}
-	if rows == nil {
-		if affected >= 0 {
-			return append(lead, wire.DoneWithCount(uint64(affected))...), nil
+	if len(results) == 0 {
+		return append(out, wire.EmptyDone()...), nil
+	}
+	for i, r := range results {
+		more := i < len(results)-1
+		if r.Rows == nil {
+			n := uint64(0)
+			if r.Affected > 0 {
+				n = uint64(r.Affected)
+			}
+			out = append(out, wire.DoneRows(n, more)...)
+			continue
 		}
-		return append(lead, wire.EmptyDone()...), nil
-	}
-	defer rows.Close()
-	cols := rows.Columns()
-	var data [][]any
-	for rows.Next() {
-		v, err := rows.Values()
+		cols := r.Rows.Columns()
+		var data [][]any
+		for r.Rows.Next() {
+			v, err := r.Rows.Values()
+			if err != nil {
+				r.Rows.Close()
+				return nil, err
+			}
+			data = append(data, v)
+		}
+		err := r.Rows.Err()
+		r.Rows.Close()
 		if err != nil {
 			return nil, err
 		}
-		data = append(data, v)
+		out = append(out, wire.BuildResultSet(cols, data, more)...)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	body, err := wire.BuildResultResponse(cols, data)
-	if err != nil {
-		return nil, err
-	}
-	return append(lead, body...), nil
+	return out, nil
 }
 
 func (s *Server) send(conn net.Conn, payload []byte) error {
