@@ -669,8 +669,11 @@ func castValue(v any, typ string) any {
 func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) types.Type {
 	switch ve.Kind {
 	case tds.ValLit:
-		switch ve.Lit.(type) {
+		switch n := ve.Lit.(type) {
 		case int64:
+			if n >= -2147483648 && n <= 2147483647 {
+				return types.Type{Kind: types.Int32}
+			}
 			return types.Type{Kind: types.Int64}
 		case float64:
 			return types.Type{Kind: types.Float64}
@@ -695,6 +698,12 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		switch ve.Func {
 		case "LEN", "DATALEN", "YEAR", "MONTH", "DAY":
 			return types.Type{Kind: types.Int64}
+		case "@@MICROSOFTVERSION", "@@SPID", "@@ERROR", "@@ROWCOUNT", "@@TRANCOUNT", "@@FETCH_STATUS":
+			return types.Type{Kind: types.Int32}
+		case "SERVERPROPERTY":
+			if serverPropertyInt(ve.Args) {
+				return types.Type{Kind: types.Int32}
+			}
 		case "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME":
 			return types.Type{Kind: types.Time}
 		case "ABS":
@@ -727,6 +736,21 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		return types.Type{Kind: types.String, MaxLen: 255}
 	}
 	return types.Type{Kind: types.String, MaxLen: 255}
+}
+
+func serverPropertyInt(args []*tds.ValueExpr) bool {
+	if len(args) != 1 || args[0].Kind != tds.ValLit {
+		return false
+	}
+	s, ok := args[0].Lit.(string)
+	if !ok {
+		return false
+	}
+	switch strings.ToUpper(s) {
+	case "ENGINEEDITION", "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED":
+		return true
+	}
+	return false
 }
 
 func toStr(v any) string {
