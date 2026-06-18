@@ -104,7 +104,10 @@ func lex(s string) ([]token, error) {
 				toks = append(toks, token{tOp, ">"})
 				i++
 			}
-		case c == '\'':
+		case c == '\'' || ((c == 'N' || c == 'n') && i+1 < n && s[i+1] == '\''):
+			if c != '\'' {
+				i++ // skip the N prefix on a national (Unicode) string literal
+			}
 			j := i + 1
 			var b strings.Builder
 			for j < n {
