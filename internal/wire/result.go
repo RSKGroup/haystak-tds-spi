@@ -130,7 +130,8 @@ func typeInfo(t types.Type) []byte {
 		} else {
 			binary.LittleEndian.PutUint16(out[1:3], uint16(t.MaxLen*2))
 		}
-		return append(out, 0, 0, 0, 0, 0) // collation
+		// SQL_Latin1_General_CP1_CI_AS; a zero collation breaks strict TDS clients.
+		return append(out, 0x09, 0x04, 0xD0, 0x00, 0x34)
 	}
 }
 
