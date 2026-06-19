@@ -987,14 +987,14 @@ func dmExecSessionsRows(sessions []tds.SessionInfo) ([]catalog.Column, [][]any) 
 		intc("session_id"), sname("login_name"), sname("host_name"), sname("program_name"),
 		tcol("login_time"), sname("status"), intc("cpu_time"), intc("memory_usage"),
 		intc("total_elapsed_time"), intc("reads"), intc("writes"), intc("logical_reads"),
-		intc("database_id"), intc("is_user_process"),
+		intc("database_id"), intc("is_user_process"), intc("authenticating_database_id"),
 	}
 	var rows [][]any
 	for _, s := range sessions {
 		rows = append(rows, []any{
 			int64(s.SessionID), s.LoginName, s.Host, s.Program,
 			s.LoginTime, "running", int64(0), int64(0),
-			int64(0), int64(0), int64(0), int64(0), int64(0), int64(1),
+			int64(0), int64(0), int64(0), int64(0), int64(0), int64(1), int64(1),
 		})
 	}
 	return cols, rows
