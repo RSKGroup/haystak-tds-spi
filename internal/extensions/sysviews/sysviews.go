@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/exec"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
@@ -17,6 +18,8 @@ import (
 )
 
 const dbName = "haystak"
+
+var dbCreateDate = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 type viewBuilder func() ([]catalog.Column, [][]any)
 
@@ -73,6 +76,31 @@ func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds
 		"dm_exec_query_stats":         func() ([]catalog.Column, [][]any) { return dmExecQueryStatsRows() },
 		"dm_os_waiting_tasks":         func() ([]catalog.Column, [][]any) { return dmOsWaitingTasksRows() },
 		"dm_os_host_info":             func() ([]catalog.Column, [][]any) { return dmOsHostInfoRows() },
+		"internal_tables":             internalTablesRows,
+		"data_spaces":                 dataSpacesRows,
+		"partition_schemes":           partitionSchemesRows,
+		"xml_schema_collections":      xmlSchemaCollectionsRows,
+		"column_encryption_keys":      columnEncryptionKeysRows,
+		"masked_columns":              maskedColumnsRows,
+		"xml_indexes":                 xmlIndexesRows,
+		"spatial_indexes":             spatialIndexesRows,
+		"assembly_modules":            assemblyModulesRows,
+		"trigger_events":              triggerEventsRows,
+		"system_sql_modules":          systemSQLModulesRows,
+		"master_files":                masterFilesRows,
+		"partition_functions":         partitionFunctionsRows,
+		"partition_range_values":      partitionRangeValuesRows,
+		"partition_parameters":        partitionParametersRows,
+		"destination_data_spaces":     destinationDataSpacesRows,
+		"allocation_units":            allocationUnitsRows,
+		"dm_db_partition_stats":       dmDbPartitionStatsRows,
+		"availability_replicas":       availabilityReplicasRows,
+		"availability_groups":         availabilityGroupsRows,
+		"dm_hadr_database_replica_states": dmHadrDatabaseReplicaStatesRows,
+		"database_mirroring":          databaseMirroringRows,
+		"dm_hadr_cluster":             dmHadrClusterRows,
+		"dm_hadr_availability_replica_states": dmHadrAvailabilityReplicaStatesRows,
+		"dm_hadr_availability_group_states":   dmHadrAvailabilityGroupStatesRows,
 	}
 }
 
@@ -107,12 +135,12 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Prin
 
 func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
-		sname("name"), intc("database_id"), intc("source_database_id"), intc("state"), sname("state_desc"),
-		bitc("is_read_only"), sname("collation_name"), intc("compatibility_level"),
-		intc("containment"), intc("recovery_model"), intc("user_access"),
+		sname("name"), int32c("database_id"), nint32c("source_database_id"), tinyc("state"), sname("state_desc"),
+		bitc("is_read_only"), sname("collation_name"), tinyc("compatibility_level"),
+		tinyc("containment"), tinyc("recovery_model"), tinyc("user_access"),
 		bitc("is_in_standby"), bitc("is_fulltext_enabled"),
 		bitc("is_distributor"), bitc("is_published"), bitc("is_subscribed"), bitc("is_merge_published"),
-		intc("catalog_collation_type"),
+		tinyc("catalog_collation_type"), bitc("is_ledger_on"), dtc("create_date"),
 		{Name: "owner_sid", Type: types.Type{Kind: types.Bytes, Nullable: true}},
 	}
 	mk := func(name string, id int64) []any {
@@ -121,7 +149,7 @@ func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 			int64(0), int64(1), int64(0),
 			false, false,
 			false, false, false, false,
-			int64(0),
+			int64(0), false, dbCreateDate,
 			nil}
 	}
 	if len(dbs) == 0 { // single-database backend: keep reporting the default catalog
@@ -150,12 +178,45 @@ func objectCols() []catalog.Column {
 	}
 }
 
+// tablesRows is the full sys.tables surface SMO/Power BI read for the Tables node (name+object_id per table, the rest static).
 func tablesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
+	defs := []struct {
+		col catalog.Column
+		val any
+	}{
+		{sname("name"), nil}, {int32c("object_id"), nil}, {nint32c("principal_id"), nil},
+		{int32c("schema_id"), int64(1)}, {int32c("parent_object_id"), int64(0)},
+		{sname("type"), "U "}, {sname("type_desc"), "USER_TABLE"},
+		{dtc("create_date"), dbCreateDate}, {dtc("modify_date"), dbCreateDate},
+		{bitc("is_ms_shipped"), false}, {bitc("is_published"), false}, {bitc("is_schema_published"), false},
+		{nint32c("lob_data_space_id"), int64(0)}, {nint32c("filestream_data_space_id"), nil},
+		{int32c("max_column_id_used"), int64(0)}, {bitc("lock_on_bulk_load"), false}, {bitc("uses_ansi_nulls"), true},
+		{bitc("is_replicated"), false}, {bitc("has_replication_filter"), false}, {bitc("is_merge_published"), false},
+		{bitc("is_sync_tran_subscribed"), false}, {bitc("has_unchecked_assembly_data"), false},
+		{int32c("text_in_row_limit"), int64(0)}, {bitc("large_value_types_out_of_row"), false}, {bitc("is_tracked_by_cdc"), false},
+		{tinyc("lock_escalation"), int64(0)}, {sname("lock_escalation_desc"), "TABLE"},
+		{bitc("is_filetable"), false}, {bitc("is_memory_optimized"), false},
+		{tinyc("durability"), int64(0)}, {sname("durability_desc"), "SCHEMA_AND_DATA"},
+		{tinyc("temporal_type"), int64(0)}, {sname("temporal_type_desc"), "NON_TEMPORAL_TABLE"}, {nint32c("history_table_id"), nil},
+		{bitc("is_remote_data_archive_enabled"), false}, {bitc("is_external"), false},
+		{nint32c("history_retention_period"), nil}, {nint32c("history_retention_period_unit"), nil}, {nsname("history_retention_period_unit_desc"), nil},
+		{bitc("is_node"), false}, {bitc("is_edge"), false},
+		{nint32c("data_retention_period"), int64(-1)}, {nint32c("data_retention_period_unit"), int64(0)}, {nsname("data_retention_period_unit_desc"), "INFINITE"},
+		{tinyc("ledger_type"), int64(0)}, {sname("ledger_type_desc"), "NONE"}, {nint32c("ledger_view_id"), nil}, {bitc("is_dropped_ledger_table"), false},
+	}
+	cols := make([]catalog.Column, len(defs))
+	base := make([]any, len(defs))
+	for i, d := range defs {
+		cols[i], base[i] = d.col, d.val
+	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		rows = append(rows, []any{t.Name, oid(t.Name), int64(1), "U ", "USER_TABLE", int64(0)})
+		row := make([]any, len(defs))
+		copy(row, base)
+		row[0], row[1] = t.Name, oid(t.Name)
+		rows = append(rows, row)
 	}
-	return objectCols(), rows
+	return cols, rows
 }
 
 // objectsRows is sys.objects: tables plus the stored views and procedures (sys.objects spans all object kinds).
@@ -231,9 +292,18 @@ func parametersRows(rts []*tds.Routine) ([]catalog.Column, [][]any) {
 
 func columnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
-		intc("object_id"), sname("name"), intc("column_id"),
-		intc("system_type_id"), intc("user_type_id"), intc("max_length"),
-		intc("precision"), intc("scale"), intc("is_nullable"),
+		int32c("object_id"), sname("name"), int32c("column_id"),
+		tinyc("system_type_id"), int32c("user_type_id"), smallc("max_length"),
+		tinyc("precision"), tinyc("scale"), bitc("is_nullable"), bitc("is_sparse"),
+		nsname("collation_name"), bitc("is_ansi_padded"), bitc("is_rowguidcol"), bitc("is_identity"),
+		bitc("is_computed"), bitc("is_filestream"), bitc("is_replicated"), bitc("is_non_sql_subscribed"),
+		bitc("is_merge_published"), bitc("is_dts_replicated"), bitc("is_xml_document"),
+		int32c("xml_collection_id"), int32c("default_object_id"), int32c("rule_object_id"), bitc("is_column_set"),
+		tinyc("generated_always_type"), sname("generated_always_type_desc"),
+		nint32c("encryption_type"), nsname("encryption_type_desc"), nsname("encryption_algorithm_name"),
+		nint32c("column_encryption_key_id"), nsname("column_encryption_key_database_name"),
+		bitc("is_hidden"), bitc("is_masked"), nint32c("graph_type"), nsname("graph_type_desc"),
+		tinyc("ledger_view_column_type"), nsname("ledger_view_column_type_desc"), bitc("is_dropped_ledger_column"),
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
@@ -242,7 +312,16 @@ func columnsRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 			rows = append(rows, []any{
 				oid(t.Name), c.Name, int64(j + 1),
 				st, st, sysTypeLen(c.Type),
-				int64(c.Type.Precision), int64(c.Type.Scale), boolInt(c.Type.Nullable),
+				int64(c.Type.Precision), int64(c.Type.Scale), c.Type.Nullable, false,
+				nil, true, false, false,
+				false, false, false, false,
+				false, false, false,
+				int64(0), int64(0), int64(0), false,
+				int64(0), "NOT_APPLICABLE",
+				nil, nil, nil,
+				nil, nil,
+				false, false, nil, nil,
+				int64(0), nil, false,
 			})
 		}
 	}
@@ -317,19 +396,31 @@ func TableIndexes(t catalog.Table) []catalog.Index {
 
 func indexesRows(schema catalog.Schema) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
-		intc("object_id"), sname("name"), intc("index_id"), intc("type"), sname("type_desc"),
+		intc("object_id"), nsname("name"), intc("index_id"), intc("type"), sname("type_desc"),
 		intc("is_unique"), intc("is_primary_key"), intc("is_unique_constraint"), intc("is_disabled"),
+		int32c("data_space_id"), bitc("is_hypothetical"),
 	}
 	var rows [][]any
 	for _, t := range schema.Tables {
-		for i, ix := range TableIndexes(t) {
-			typ, desc := int64(2), "NONCLUSTERED"
+		ixs := TableIndexes(t)
+		clustered := false
+		for _, ix := range ixs {
+			clustered = clustered || ix.Clustered
+		}
+		if !clustered { // a table with no clustered index is a heap: one row at index_id 0 (SMO joins this)
+			rows = append(rows, []any{oid(t.Name), nil, int64(0), int64(0), "HEAP", int64(0), int64(0), int64(0), int64(0), int64(1), false})
+		}
+		next := int64(2)
+		for _, ix := range ixs {
+			id, typ, desc := next, int64(2), "NONCLUSTERED"
 			if ix.Clustered {
-				typ, desc = 1, "CLUSTERED"
+				id, typ, desc = int64(1), int64(1), "CLUSTERED"
+			} else {
+				next++
 			}
 			rows = append(rows, []any{
-				oid(t.Name), ix.Name, int64(i + 1), typ, desc,
-				boolInt(ix.Unique), boolInt(ix.Primary), boolInt(ix.Unique && !ix.Primary), int64(0),
+				oid(t.Name), ix.Name, id, typ, desc,
+				boolInt(ix.Unique), boolInt(ix.Primary), boolInt(ix.Unique && !ix.Primary), int64(0), int64(1), false,
 			})
 		}
 	}
@@ -820,6 +911,18 @@ func sname(n string) catalog.Column {
 func intc(n string) catalog.Column {
 	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64}}
 }
+func int32c(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32}}
+}
+func nint32c(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int32, Nullable: true}}
+}
+func tinyc(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int8}}
+}
+func smallc(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int16}}
+}
 func nintc(n string) catalog.Column {
 	return catalog.Column{Name: n, Type: types.Type{Kind: types.Int64, Nullable: true}}
 }
@@ -993,6 +1096,115 @@ func boolInt(b bool) int64 {
 
 func tcol(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Time}} }
 func bitc(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Bool}} }
+func dtc(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.Time, Nullable: true}}
+}
+func uidc(n string) catalog.Column {
+	return catalog.Column{Name: n, Type: types.Type{Kind: types.UUID, Nullable: true}}
+}
+
+// AlwaysOn/mirroring catalog stubs the SSMS database-list query reads; a backend without HA reports none, so empty.
+func availabilityReplicasRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{uidc("replica_id"), uidc("group_id"), sname("replica_server_name")}, nil
+}
+
+func availabilityGroupsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{uidc("group_id"), sname("name")}, nil
+}
+
+func dmHadrDatabaseReplicaStatesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{uidc("group_database_id"), tinyc("synchronization_state"), bitc("is_local"), uidc("group_id"), int32c("database_id")}, nil
+}
+
+func databaseMirroringRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("database_id"), int32c("mirroring_role"), int32c("mirroring_state"), uidc("mirroring_guid")}, nil
+}
+
+func dmHadrClusterRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{sname("cluster_name"), tinyc("quorum_type"), nsname("quorum_type_desc"), tinyc("quorum_state"), nsname("quorum_state_desc")}, nil
+}
+
+func dmHadrAvailabilityReplicaStatesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{uidc("replica_id"), uidc("group_id"), bitc("is_local"), tinyc("role"), nsname("role_desc"), tinyc("operational_state"), nsname("operational_state_desc"), tinyc("connected_state"), nsname("connected_state_desc"), tinyc("recovery_health"), tinyc("synchronization_health"), nsname("synchronization_health_desc")}, nil
+}
+
+func dmHadrAvailabilityGroupStatesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{uidc("group_id"), sname("primary_replica"), tinyc("primary_recovery_health"), tinyc("secondary_recovery_health"), tinyc("synchronization_health"), nsname("synchronization_health_desc")}, nil
+}
+
+// Storage/partitioning/feature-metadata catalog stubs SMO and Power BI LEFT JOIN; a storage-less backend reports them empty.
+func internalTablesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), sname("name"), int32c("schema_id"), int32c("parent_object_id"), int32c("parent_id"), int32c("parent_minor_id"), int32c("internal_type"), sname("internal_type_desc"), int32c("lob_data_space_id")}, nil
+}
+
+func dataSpacesRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{sname("name"), int32c("data_space_id"), sname("type"), sname("type_desc"), bitc("is_default"), bitc("is_system")}
+	return cols, [][]any{{"PRIMARY", int64(1), "FG", "ROWS_FILEGROUP", true, false}}
+}
+
+func partitionSchemesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{sname("name"), int32c("data_space_id"), sname("type"), sname("type_desc"), bitc("is_default"), bitc("is_system"), int32c("function_id")}, nil
+}
+
+func xmlSchemaCollectionsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("xml_collection_id"), int32c("schema_id"), sname("name"), nint32c("principal_id"), dtc("create_date"), dtc("modify_date")}, nil
+}
+
+func columnEncryptionKeysRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("column_encryption_key_id"), sname("name"), dtc("create_date"), dtc("modify_date")}, nil
+}
+
+func maskedColumnsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), int32c("column_id"), sname("name"), bitc("is_masked"), nsname("masking_function")}, nil
+}
+
+func xmlIndexesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), int32c("index_id"), sname("name"), nint32c("using_xml_index_id"), nsname("secondary_type"), nsname("secondary_type_desc"), tinyc("xml_index_type"), nsname("xml_index_type_description")}, nil
+}
+
+func spatialIndexesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), int32c("index_id"), sname("name"), tinyc("spatial_index_type"), nsname("spatial_index_type_desc"), nsname("tessellation_scheme")}, nil
+}
+
+func assemblyModulesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), int32c("assembly_id"), nsname("assembly_class"), nsname("assembly_method"), nint32c("execute_as_principal_id")}, nil
+}
+
+func triggerEventsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), int32c("type"), sname("type_desc"), bitc("is_first"), bitc("is_last")}, nil
+}
+
+func systemSQLModulesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("object_id"), nsname("definition"), bitc("uses_ansi_nulls"), bitc("uses_quoted_identifier")}, nil
+}
+
+func masterFilesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("database_id"), int32c("file_id"), tinyc("type"), sname("type_desc"), int32c("data_space_id"), sname("name"), sname("physical_name"), tinyc("state"), sname("state_desc"), int32c("size"), int32c("max_size"), int32c("growth"), bitc("is_percent_growth"), bitc("is_read_only")}, nil
+}
+
+func partitionFunctionsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{sname("name"), int32c("function_id"), sname("type"), sname("type_desc"), int32c("fanout"), bitc("boundary_value_on_right"), dtc("create_date"), dtc("modify_date")}, nil
+}
+
+func partitionRangeValuesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("function_id"), int32c("boundary_id"), int32c("parameter_id"), nsname("value")}, nil
+}
+
+func partitionParametersRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("function_id"), int32c("parameter_id"), tinyc("system_type_id"), int32c("user_type_id"), int32c("max_length"), tinyc("precision"), tinyc("scale")}, nil
+}
+
+func destinationDataSpacesRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{int32c("partition_scheme_id"), int32c("destination_id"), int32c("data_space_id")}, nil
+}
+
+func allocationUnitsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{intc("allocation_unit_id"), tinyc("type"), sname("type_desc"), intc("container_id"), int32c("data_space_id"), intc("total_pages"), intc("used_pages"), intc("data_pages")}, nil
+}
+
+func dmDbPartitionStatsRows() ([]catalog.Column, [][]any) {
+	return []catalog.Column{intc("partition_id"), int32c("object_id"), int32c("index_id"), int32c("partition_number"), intc("in_row_data_page_count"), intc("in_row_used_page_count"), intc("in_row_reserved_page_count"), intc("lob_used_page_count"), intc("lob_reserved_page_count"), intc("row_overflow_used_page_count"), intc("row_overflow_reserved_page_count"), intc("used_page_count"), intc("reserved_page_count"), intc("row_count")}, nil
+}
 
 func configurationsRows() ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{

@@ -18,6 +18,8 @@ const (
 	Bytes
 	Time
 	UUID
+	Int8  // TINYINT; SMO reads sys.databases tinyint columns as Byte
+	Int16 // SMALLINT; SMO reads sys.columns.max_length as Int16
 )
 
 // Type is a column type: its Kind plus optional nullability, length, and decimal precision/scale.

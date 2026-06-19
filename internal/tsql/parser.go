@@ -862,6 +862,13 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 			return p.funcCall(strings.ToUpper(t.text))
 		}
 		name, _ := p.qualifiedName()
+		if p.peek().kind == tLParen { // db.schema.func(args) — qualified function call
+			fn := name
+			if i := strings.LastIndexByte(fn, '.'); i >= 0 {
+				fn = fn[i+1:]
+			}
+			return p.funcArgs(strings.ToUpper(fn))
+		}
 		return &tds.ValueExpr{Kind: tds.ValCol, Col: name}, nil
 	}
 	return nil, fmt.Errorf("tsql: unexpected %q in expression", t.text)
@@ -926,6 +933,11 @@ func (p *parser) datePartCall(name string) (*tds.ValueExpr, error) {
 // funcCall parses NAME(args), including reserved-keyword names like LEFT/RIGHT.
 func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
 	p.next() // name
+	return p.funcArgs(name)
+}
+
+// funcArgs parses ( args ) starting at the '(' (the function name is already consumed).
+func (p *parser) funcArgs(name string) (*tds.ValueExpr, error) {
 	p.next() // (
 	var args []*tds.ValueExpr
 	jsonObject := name == "JSON_OBJECT"

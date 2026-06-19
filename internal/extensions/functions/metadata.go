@@ -35,6 +35,20 @@ func init() {
 		return nil
 	})
 	register("STATS_DATE", func([]any) any { return nil }) // no statistics maintained
+	register("FN_SYSPOLICY_IS_AUTOMATION_ENABLED", func([]any) any { return int64(0) })
+	register("COLLATIONPROPERTY", func(a []any) any {
+		switch strings.ToUpper(argStr(a, 1)) {
+		case "CODEPAGE":
+			return int64(1252)
+		case "LCID":
+			return int64(1033)
+		case "COMPARISONSTYLE":
+			return int64(196609)
+		case "VERSION":
+			return int64(2)
+		}
+		return nil
+	})
 }
 
 // ObjectID maps an object name (bare, schema-qualified, or bracketed) to the stable id SQL Server

@@ -109,3 +109,35 @@ func TestDecodeRPCDeclines(t *testing.T) {
 		t.Fatal("expected ok=false for malformed/non-sp_executesql RPC")
 	}
 }
+
+// bNTextParam builds an NTEXT (0x63) parameter — the form SMO uses for the large enumeration
+// query's SQL-text arg: token + LONGLEN max + collation + 4-byte datalen + UCS-2 data.
+func bNTextParam(name, val string) []byte {
+	u := utf16.Encode([]rune(val))
+	data := make([]byte, 0, len(u)*2)
+	for _, c := range u {
+		data = append(data, byte(c), byte(c>>8))
+	}
+	b := append([]byte{}, bVarchar(name)...)
+	b = append(b, 0x00, typeNTEXT)
+	var n [4]byte
+	binary.LittleEndian.PutUint32(n[:], uint32(len(data)))
+	b = append(b, n[:]...)                     // LONGLEN max
+	b = append(b, 0x09, 0x04, 0xD0, 0x00, 0x34) // collation
+	b = append(b, n[:]...)                     // datalen
+	return append(b, data...)
+}
+
+func TestDecodeExecuteSQL_NTextStmt(t *testing.T) {
+	stmt := "SELECT dtb.name FROM master.sys.databases AS dtb WHERE 1=1"
+	b := []byte{0xFF, 0xFF, 0x0A, 0x00, 0x00, 0x00}
+	b = append(b, bNTextParam("", stmt)...)
+	b = append(b, bNTextParam("", "")...)
+	sql, ok := DecodeRPC(append([]byte{4, 0, 0, 0}, b...))
+	if !ok {
+		t.Fatal("DecodeRPC declined NTEXT sp_executesql")
+	}
+	if sql != stmt {
+		t.Fatalf("got %q, want %q", sql, stmt)
+	}
+}

@@ -35,7 +35,7 @@ type Try struct{ Body, Catch Stmt }
 type Throw struct{ Args string }
 type Raiserror struct{ Args string }
 
-type declVar struct{ name, init string }
+type declVar struct{ name, typ, init string }
 
 func (*Block) isStmt()     {}
 func (*Raw) isStmt()       {}
@@ -249,8 +249,12 @@ func (p *parser) declare() (Stmt, error) {
 			return nil, fmt.Errorf("control: DECLARE expects @name, got %q", part)
 		}
 		v := declVar{name: strings.ToLower(strings.TrimPrefix(name, "@"))}
-		if eq := topEq(part); eq >= 0 {
-			v.init = strings.TrimSpace(part[eq+1:])
+		rest := strings.TrimSpace(part[len(name):])
+		if eq := topEq(rest); eq >= 0 {
+			v.typ = strings.TrimSpace(rest[:eq])
+			v.init = strings.TrimSpace(rest[eq+1:])
+		} else {
+			v.typ = rest
 		}
 		vars = append(vars, v)
 	}
@@ -350,6 +354,7 @@ func (p *parser) rawStmt() string {
 	depth, caseDepth := 0, 0
 	first := true
 	lead := ""
+	sawValues := false
 	for !p.eof() {
 		t := p.peek()
 		if t.kind == tSemi {
@@ -366,9 +371,12 @@ func (p *parser) rawStmt() string {
 		if first && t.kind == tWord {
 			lead = strings.ToUpper(t.text)
 		}
-		if b && lead == "INSERT" { // INSERT … SELECT/EXEC/VALUES is one statement, not a boundary
+		if lead == "INSERT" && t.kind == tWord && strings.EqualFold(t.text, "VALUES") {
+			sawValues = true
+		}
+		if b && lead == "INSERT" && !sawValues { // INSERT … SELECT/EXEC is one statement; a SELECT after VALUES is the next
 			switch strings.ToUpper(t.text) {
-			case "SELECT", "EXEC", "EXECUTE", "VALUES":
+			case "SELECT", "EXEC", "EXECUTE":
 				b = false
 			}
 		}

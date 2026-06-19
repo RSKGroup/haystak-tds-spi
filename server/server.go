@@ -10,7 +10,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -82,6 +84,11 @@ func (s *Server) logf(format string, args ...any) {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			s.logf("PANIC in connection: %v\n%s", r, debug.Stack())
+		}
+	}()
 	s.logf("conn from %s", conn.RemoteAddr())
 	sess, princ, db, info, err := s.handshake(conn)
 	if err != nil {
@@ -204,50 +211,63 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, inf
 	for {
 		msg, err := wire.ReadMessage(conn)
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				s.logf("read error: %v", err)
+			}
 			return
 		}
-		s.logf("recv type=0x%02X len=%d", byte(msg.Type), len(msg.Payload))
-		var sql string
-		switch msg.Type {
-		case wire.PacketSQLBatch:
-			sql = wire.DecodeSQLBatch(msg.Payload)
-		case wire.PacketRPC:
-			expanded, ok := wire.DecodeRPC(msg.Payload)
-			if !ok {
-				if err := s.send(conn, wire.EmptyDone()); err != nil {
-					return
-				}
-				continue
-			}
-			sql = expanded
-		case wire.PacketAttention:
-			_ = s.send(conn, wire.AttentionAck()) // ack the cancel so the client doesn't wait forever
-			continue
-		default:
-			continue
-		}
-		s.logf("stmt: %q", sql)
-		visible := s.registry().snapshot()
-		if !seeAll {
-			visible = ownSession(info, visible)
-		}
-		qctx := tds.WithSessions(ctx, visible)
-		results, envDB, err := sess.ExecBatch(qctx, sql)
-		if err != nil {
-			s.logf("query error: %v", err)
-			_ = s.send(conn, wire.BuildError(err.Error()))
-			continue
-		}
-		resp, err := buildResponse(results, envDB)
-		if err != nil {
-			s.logf("response error: %v", err)
-			_ = s.send(conn, wire.BuildError(err.Error()))
-			continue
-		}
-		if err := s.send(conn, resp); err != nil {
+		if !s.handleMessage(conn, sess, ctx, info, seeAll, msg) {
 			return
 		}
 	}
+}
+
+// handleMessage processes one client message (false ⇒ close the connection); a panic is recovered and returned as a SQL error.
+func (s *Server) handleMessage(conn net.Conn, sess *engine.Session, ctx context.Context, info tds.SessionInfo, seeAll bool, msg wire.Message) (keepGoing bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logf("PANIC handling message: %v\n%s", r, debug.Stack())
+			_ = s.send(conn, wire.BuildError(fmt.Sprintf("internal error: %v", r)))
+			keepGoing = true
+		}
+	}()
+	s.logf("recv type=0x%02X len=%d", byte(msg.Type), len(msg.Payload))
+	var sql string
+	switch msg.Type {
+	case wire.PacketSQLBatch:
+		sql = wire.DecodeSQLBatch(msg.Payload)
+	case wire.PacketRPC:
+		expanded, ok := wire.DecodeRPC(msg.Payload)
+		if !ok {
+			s.logf("rpc decode declined: %s", wire.RPCDiag(msg.Payload))
+			return s.send(conn, wire.EmptyDone()) == nil
+		}
+		sql = expanded
+	case wire.PacketAttention:
+		_ = s.send(conn, wire.AttentionAck()) // ack the cancel so the client doesn't wait forever
+		return true
+	default:
+		return true
+	}
+	s.logf("stmt: %q", sql)
+	visible := s.registry().snapshot()
+	if !seeAll {
+		visible = ownSession(info, visible)
+	}
+	qctx := tds.WithSessions(ctx, visible)
+	results, envDB, err := sess.ExecBatch(qctx, sql)
+	if err != nil {
+		s.logf("query error: %v", err)
+		_ = s.send(conn, wire.BuildError(err.Error()))
+		return true
+	}
+	resp, err := buildResponse(results, envDB)
+	if err != nil {
+		s.logf("response error: %v", err)
+		_ = s.send(conn, wire.BuildError(err.Error()))
+		return true
+	}
+	return s.send(conn, resp) == nil
 }
 
 // buildResponse renders every result set in order (DONE_MORE between them), led by an ENVCHANGE on USE.

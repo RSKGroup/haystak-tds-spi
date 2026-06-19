@@ -196,7 +196,9 @@ func (p *parser) parseTableDef() (*catalog.Table, error) {
 		if err != nil {
 			return nil, err
 		}
-		t.Columns = append(t.Columns, catalog.Column{Name: col, Type: sqlTypeToKind(typ)})
+		colDef := catalog.Column{Name: col, Type: sqlTypeToKind(typ)}
+		p.parseColumnConstraints(&colDef)
+		t.Columns = append(t.Columns, colDef)
 		if p.peek().kind == tComma {
 			p.next()
 			continue
@@ -208,6 +210,36 @@ func (p *parser) parseTableDef() (*catalog.Table, error) {
 	}
 	p.next()
 	return t, nil
+}
+
+// parseColumnConstraints consumes trailing column options (NULL/NOT NULL, COLLATE, DEFAULT, …) to the next comma or ')'.
+func (p *parser) parseColumnConstraints(col *catalog.Column) {
+	for {
+		t := p.peek()
+		if t.kind == tComma || t.kind == tRParen || t.kind == tEOF {
+			return
+		}
+		switch strings.ToUpper(t.text) {
+		case "NOT":
+			p.next()
+			if strings.EqualFold(p.peek().text, "NULL") {
+				p.next()
+			}
+			col.Type.Nullable = false
+		case "NULL":
+			p.next()
+			col.Type.Nullable = true
+		case "COLLATE":
+			p.next()
+			p.next() // collation name
+		default:
+			if t.kind == tLParen {
+				_ = p.skipParenGroup()
+			} else {
+				p.next()
+			}
+		}
+	}
 }
 
 func (p *parser) parseAlter() (*tds.AlterTable, error) {

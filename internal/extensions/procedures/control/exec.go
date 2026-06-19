@@ -128,7 +128,7 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 		return execWaitfor(ctx, n)
 	case *Declare:
 		for _, v := range n.Vars {
-			lit := "NULL"
+			lit := nullLiteralForType(v.typ) // typed NULL so columns built from the (unset) var keep their SQL type
 			if v.init != "" {
 				l, err := evalLit(ctx, run, v.init, sc)
 				if err != nil {
@@ -378,6 +378,18 @@ func toInt(v any) int64 {
 		return i
 	}
 	return 0
+}
+
+// nullLiteralForType renders an uninitialized variable as a typed NULL so result columns keep its SQL type.
+func nullLiteralForType(typ string) string {
+	t := strings.TrimSpace(typ)
+	if t == "" {
+		return "NULL"
+	}
+	if strings.EqualFold(t, "sysname") {
+		t = "nvarchar(128)"
+	}
+	return "CAST(NULL AS " + t + ")"
 }
 
 // subst replaces @vars with their bound literal, skipping '…' strings and [bracketed] names.

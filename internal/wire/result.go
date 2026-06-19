@@ -23,6 +23,8 @@ const (
 	typeBITN     = 0x68
 	typeFLTN     = 0x6D
 	typeNVARCHAR = 0xE7
+	typeNTEXT    = 0x63 // SMO sends large sp_executesql SQL-text params as NTEXT
+	typeTEXT     = 0x23
 
 	typeGUID         = 0x24
 	typeDECIMALN     = 0x6A
@@ -116,6 +118,10 @@ func typeInfo(t types.Type) []byte {
 		return []byte{typeINTN, 8}
 	case types.Int32:
 		return []byte{typeINTN, 4}
+	case types.Int8:
+		return []byte{typeINTN, 1}
+	case types.Int16:
+		return []byte{typeINTN, 2}
 	case types.Bool:
 		return []byte{typeBITN, 1}
 	case types.Float64:
@@ -162,6 +168,10 @@ func encodeValue(t types.Type, v any) []byte {
 		return encodeIntN(v, 8)
 	case types.Int32:
 		return encodeIntN(v, 4)
+	case types.Int8:
+		return encodeIntN(v, 1)
+	case types.Int16:
+		return encodeIntN(v, 2)
 	case types.Bool:
 		if v == nil {
 			return []byte{0}

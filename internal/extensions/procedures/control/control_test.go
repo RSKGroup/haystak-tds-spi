@@ -40,3 +40,20 @@ func TestHasControlFlowIsolation(t *testing.T) {
 		}
 	}
 }
+
+// A bare INSERT … VALUES must not absorb a following SELECT as if it were INSERT … SELECT.
+func TestInsertValuesThenSelectSplit(t *testing.T) {
+	blk, err := parse("insert into #t values(6)\nselect a from #t")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var raws []string
+	for _, s := range blk.Stmts {
+		if r, ok := s.(*Raw); ok {
+			raws = append(raws, r.SQL)
+		}
+	}
+	if len(raws) != 2 {
+		t.Fatalf("got %d statements %v, want 2 (INSERT, SELECT split)", len(raws), raws)
+	}
+}

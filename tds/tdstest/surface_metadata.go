@@ -15,6 +15,8 @@ var metadataCases = []Case{
 	{Element: "func:TYPE_NAME", SQL: "SELECT TYPE_NAME(56)", Want: []any{"int"}},
 	{Element: "func:TYPE_ID", SQL: "SELECT TYPE_ID('int')", Want: []any{56}},
 	{Element: "func:STATS_DATE", SQL: "SELECT STATS_DATE(1,1)", Want: []any{P(isNull)}},
+	{Element: "func:COLLATIONPROPERTY", SQL: "SELECT COLLATIONPROPERTY('SQL_Latin1_General_CP1_CI_AS', 'CodePage')", Want: []any{1252}},
+	{Element: "func:FN_SYSPOLICY_IS_AUTOMATION_ENABLED", SQL: "SELECT fn_syspolicy_is_automation_enabled()", Want: []any{0}},
 
 	{Element: "func:OBJECT_NAME", SQL: "SELECT OBJECT_NAME(0)", Want: []any{P(isNull)}},
 	{Element: "func:DB_NAME", SQL: "SELECT DB_NAME()", Want: []any{"master"}},

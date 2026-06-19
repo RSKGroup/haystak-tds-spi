@@ -676,6 +676,8 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 	switch ve.Kind {
 	case tds.ValLit:
 		switch n := ve.Lit.(type) {
+		case nil:
+			return types.Type{Kind: types.Unknown, Nullable: true} // untyped NULL — ISNULL/COALESCE takes the other arg's type
 		case int64:
 			if n >= -2147483648 && n <= 2147483647 {
 				return types.Type{Kind: types.Int32}
@@ -707,9 +709,12 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		switch ve.Func {
 		case "LEN", "DATALEN", "YEAR", "MONTH", "DAY":
 			return types.Type{Kind: types.Int64}
-		case "@@MICROSOFTVERSION", "@@SPID", "@@ERROR", "@@ROWCOUNT", "@@TRANCOUNT", "@@FETCH_STATUS", "@@MAX_PRECISION":
+		case "@@MICROSOFTVERSION", "@@SPID", "@@ERROR", "@@ROWCOUNT", "@@TRANCOUNT", "@@FETCH_STATUS", "@@MAX_PRECISION", "COLLATIONPROPERTY":
 			return types.Type{Kind: types.Int32}
 		case "SERVERPROPERTY":
+			if serverPropertyArg(ve.Args) == "ISFULLTEXTINSTALLED" {
+				return types.Type{Kind: types.Bool} // SMO reads Database.IsFullTextEnabled as bit
+			}
 			if serverPropertyInt(ve.Args) {
 				return types.Type{Kind: types.Int32}
 			}
@@ -724,7 +729,11 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 			}
 		case "ISNULL", "COALESCE", "NULLIF":
 			if len(ve.Args) > 0 {
-				return exprType(ve.Args[0], cols, idx)
+				t := exprType(ve.Args[0], cols, idx)
+				for _, a := range ve.Args[1:] {
+					t = widerType(t, exprType(a, cols, idx))
+				}
+				return t
 			}
 		}
 		return types.Type{Kind: types.String, MaxLen: 255}
@@ -808,6 +817,44 @@ func valuesColType(data [][]any, i int) types.Type {
 	return types.Type{Kind: types.String, MaxLen: 4000}
 }
 
+// widerType returns the higher-precedence type for ISNULL/COALESCE, following SQL numeric promotion
+// (tinyint < smallint < int < bigint < float < decimal); non-numeric mixes keep the first arg.
+func widerType(a, b types.Type) types.Type {
+	if a.Kind == types.Unknown {
+		return b
+	}
+	if b.Kind == types.Unknown {
+		return a
+	}
+	rank := func(k types.Kind) int {
+		switch k {
+		case types.Bool:
+			return 1
+		case types.Int8:
+			return 2
+		case types.Int16:
+			return 3
+		case types.Int32:
+			return 4
+		case types.Int64:
+			return 5
+		case types.Float64:
+			return 6
+		case types.Decimal:
+			return 7
+		}
+		return 0
+	}
+	ra, rb := rank(a.Kind), rank(b.Kind)
+	if ra == 0 || rb == 0 {
+		return a
+	}
+	if rb > ra {
+		return b
+	}
+	return a
+}
+
 func serverPropertyArg(args []*tds.ValueExpr) string {
 	if len(args) != 1 || args[0].Kind != tds.ValLit {
 		return ""
@@ -822,7 +869,7 @@ func serverPropertyArg(args []*tds.ValueExpr) string {
 func serverPropertyInt(args []*tds.ValueExpr) bool {
 	switch serverPropertyArg(args) {
 	case "ENGINEEDITION", "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED",
-		"COLLATIONID", "COMPARISONSTYLE", "SQLCHARSET", "SQLSORTORDER":
+		"COLLATIONID", "COMPARISONSTYLE", "SQLCHARSET", "SQLSORTORDER", "HADRMANAGERSTATUS":
 		return true
 	}
 	return false

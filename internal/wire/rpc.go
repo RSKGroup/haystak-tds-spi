@@ -5,6 +5,7 @@ package wire
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -213,8 +214,39 @@ func (c *cur) typeValue() (any, bool) {
 			return nil, false
 		}
 		return ucs2(raw), true
+	case typeNTEXT, typeTEXT:
+		if _, ok := c.take(4); !ok { // LONGLEN declared max length
+			return nil, false
+		}
+		if _, ok := c.take(5); !ok { // collation (TEXT and NTEXT both carry it)
+			return nil, false
+		}
+		dlen, ok := c.u32()
+		if !ok {
+			return nil, false
+		}
+		if dlen == 0xFFFFFFFF { // NULL
+			return nil, true
+		}
+		raw, ok := c.take(int(dlen))
+		if !ok {
+			return nil, false
+		}
+		if tok == typeNTEXT {
+			return ucs2(raw), true
+		}
+		return string(raw), true
 	}
 	return nil, false
+}
+
+func (c *cur) u32() (uint32, bool) {
+	if c.pos+4 > len(c.b) {
+		return 0, false
+	}
+	v := binary.LittleEndian.Uint32(c.b[c.pos:])
+	c.pos += 4
+	return v, true
 }
 
 func (c *cur) varInt() (any, bool) {
@@ -334,4 +366,65 @@ func sqlLiteral(v any) string {
 		return "0"
 	}
 	return "NULL"
+}
+
+// RPCDiag explains why DecodeRPC declined a payload: proc, each param's name/type token, where it stopped.
+func RPCDiag(payload []byte) string {
+	body, hdr := payload, 0
+	if len(payload) >= 4 {
+		if total := int(binary.LittleEndian.Uint32(payload[0:4])); total >= 4 && total <= len(payload) {
+			body, hdr = payload[total:], total
+		}
+	}
+	r := &cur{b: body}
+	var sb strings.Builder
+	head := body
+	if len(head) > 32 {
+		head = head[:32]
+	}
+	fmt.Fprintf(&sb, "hdr=%d body=%d head=%x ", hdr, len(body), head)
+	nameLen, ok := r.u16()
+	if !ok {
+		return sb.String() + "stop=nameLen"
+	}
+	if nameLen == 0xFFFF {
+		pid, _ := r.u16()
+		fmt.Fprintf(&sb, "procid=%d ", pid)
+	} else {
+		fmt.Fprintf(&sb, "procname=%q ", r.ucs2n(int(nameLen)))
+	}
+	if _, ok := r.u16(); !ok {
+		return sb.String() + "stop=optflags"
+	}
+	for i := 0; r.remaining() > 0; i++ {
+		nlen, ok := r.byte()
+		if !ok {
+			fmt.Fprintf(&sb, "stop=p%d-nlen", i)
+			break
+		}
+		name := r.ucs2n(int(nlen))
+		if _, ok := r.byte(); !ok {
+			fmt.Fprintf(&sb, "stop=p%d-status", i)
+			break
+		}
+		tok := byte(0)
+		if r.pos < len(r.b) {
+			tok = r.b[r.pos]
+		}
+		val, ok := r.typeValue()
+		if !ok {
+			fmt.Fprintf(&sb, "stop=p%d{name=%q tok=0x%02X}", i, name, tok)
+			break
+		}
+		if s, isStr := val.(string); isStr {
+			pre := s
+			if len(pre) > 300 {
+				pre = pre[:300]
+			}
+			fmt.Fprintf(&sb, "p%d{name=%q tok=0x%02X strlen=%d text=%q} ", i, name, tok, len(s), pre)
+		} else {
+			fmt.Fprintf(&sb, "p%d{name=%q tok=0x%02X val=%v} ", i, name, tok, val)
+		}
+	}
+	return sb.String()
 }
