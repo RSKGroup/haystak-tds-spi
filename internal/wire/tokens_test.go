@@ -10,17 +10,22 @@ func TestLoginResponseStructure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(toks) != 4 {
-		t.Fatalf("tokens = %d, want 4 (ENVCHANGE, ENVCHANGE, LOGINACK, DONE)", len(toks))
+	if len(toks) != 5 {
+		t.Fatalf("tokens = %d, want 5 (ENVCHANGE db, ENVCHANGE collation, ENVCHANGE packet, LOGINACK, DONE)", len(toks))
 	}
-	if toks[0].Type != tokenEnvChange || toks[1].Type != tokenEnvChange {
-		t.Errorf("want two ENVCHANGE, got %#x %#x", toks[0].Type, toks[1].Type)
+	for i := 0; i < 3; i++ {
+		if toks[i].Type != tokenEnvChange {
+			t.Errorf("token[%d] = %#x, want ENVCHANGE", i, toks[i].Type)
+		}
 	}
-	if toks[2].Type != tokenLoginAck {
-		t.Errorf("want LOGINACK, got %#x", toks[2].Type)
+	if toks[1].Data[0] != envSQLCollation {
+		t.Errorf("want collation ENVCHANGE at [1], got env type %d", toks[1].Data[0])
 	}
-	if toks[3].Type != tokenDone || len(toks[3].Data) != 12 {
-		t.Errorf("want DONE with 12-byte body, got %#x len=%d", toks[3].Type, len(toks[3].Data))
+	if toks[3].Type != tokenLoginAck {
+		t.Errorf("want LOGINACK, got %#x", toks[3].Type)
+	}
+	if toks[4].Type != tokenDone || len(toks[4].Data) != 12 {
+		t.Errorf("want DONE with 12-byte body, got %#x len=%d", toks[4].Type, len(toks[4].Data))
 	}
 }
 
@@ -30,7 +35,17 @@ func TestLoginAckVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := toks[2].Data[1:5]
+	var ack *Token
+	for i := range toks {
+		if toks[i].Type == tokenLoginAck {
+			ack = &toks[i]
+			break
+		}
+	}
+	if ack == nil {
+		t.Fatal("no LOGINACK token")
+	}
+	v := ack.Data[1:5]
 	if want := []byte{0x74, 0x00, 0x00, 0x04}; string(v) != string(want) {
 		t.Fatalf("LOGINACK version = % x, want % x", v, want)
 	}

@@ -26,9 +26,13 @@ const (
 )
 
 const (
-	envDatabase   = 1
-	envPacketSize = 4
+	envDatabase     = 1
+	envPacketSize   = 4
+	envSQLCollation = 7
 )
+
+// defaultCollation is SQL_Latin1_General_CP1_CI_AS; sent at login so clients can encode string RPC params.
+var defaultCollation = []byte{0x09, 0x04, 0xD0, 0x00, 0x34}
 
 // LOGINACK TDS 7.4: the bytes real SQL Server sends; go-mssqldb reads them big-endian as verTDS74 (0x74000004).
 var tdsVersion74 = [4]byte{0x74, 0x00, 0x00, 0x04}
@@ -46,10 +50,20 @@ type Token struct {
 func BuildLoginResponse(serverName, database string) []byte {
 	var b []byte
 	b = append(b, envChange(envDatabase, database, "")...)
+	b = append(b, envChangeCollation()...)
 	b = append(b, envChange(envPacketSize, "4096", "4096")...)
 	b = append(b, loginAck(serverName)...)
 	b = append(b, done(DoneFinal, 0, 0)...)
 	return b
+}
+
+// envChangeCollation is the ENVCHANGE(SQL collation) token; its value is binary, not a UCS-2 string.
+func envChangeCollation() []byte {
+	data := []byte{envSQLCollation}
+	data = append(data, byte(len(defaultCollation))) // new value: 5-byte collation
+	data = append(data, defaultCollation...)
+	data = append(data, 0x00) // old value: empty B_VARCHAR
+	return mkToken(tokenEnvChange, data)
 }
 
 func loginAck(serverName string) []byte {
