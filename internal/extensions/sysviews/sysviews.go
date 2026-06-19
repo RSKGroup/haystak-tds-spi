@@ -111,13 +111,16 @@ func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 		bitc("is_read_only"), sname("collation_name"), intc("compatibility_level"),
 		intc("containment"), intc("recovery_model"), intc("user_access"),
 		bitc("is_in_standby"), bitc("is_fulltext_enabled"),
+		bitc("is_distributor"), bitc("is_published"), bitc("is_subscribed"), bitc("is_merge_published"),
 		{Name: "owner_sid", Type: types.Type{Kind: types.Bytes, Nullable: true}},
 	}
 	mk := func(name string, id int64) []any {
 		return []any{name, id, nil, int64(0), "ONLINE",
 			false, "SQL_Latin1_General_CP1_CI_AS", int64(160),
 			int64(0), int64(1), int64(0),
-			false, false, nil}
+			false, false,
+			false, false, false, false,
+			nil}
 	}
 	if len(dbs) == 0 { // single-database backend: keep reporting the default catalog
 		dbs = []string{dbName}
