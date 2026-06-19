@@ -7,6 +7,8 @@ package tdstest
 var procCases = []Case{
 	{Element: "proc:sp_databases", SQL: "EXEC sp_databases", Check: wantCols("DATABASE_NAME", "REMARKS")},
 	{Element: "proc:xp_msver", SQL: "EXEC xp_msver", Check: wantCols("Index", "Name", "Internal_Value", "Character_Value")},
+	{Element: "proc:xp_instance_regread", SQL: "EXEC xp_instance_regread N'HKEY_LOCAL_MACHINE', N'Software', N'x'", Check: exactRows(0)},
+	{Element: "proc:xp_regread", SQL: "EXEC xp_regread N'HKEY_LOCAL_MACHINE', N'Software', N'x'", Check: exactRows(0)},
 	{Element: "proc:sp_tables", SQL: "EXEC sp_tables", Check: wantCols("TABLE_NAME", "TABLE_TYPE")},
 	{Element: "proc:sp_columns", SQL: "EXEC sp_columns 'zzz_surface_none'", Check: checks(wantCols("TABLE_NAME", "COLUMN_NAME", "DATA_TYPE"), exactRows(0))},
 	{Element: "proc:sp_columns_90", SQL: "EXEC sp_columns_90 'zzz_surface_none'", Check: checks(wantCols("TABLE_NAME", "COLUMN_NAME", "DATA_TYPE"), exactRows(0))},

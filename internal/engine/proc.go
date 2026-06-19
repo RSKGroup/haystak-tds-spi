@@ -73,6 +73,13 @@ func spWho(ctx context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, err
 func init() {
 	procDispatch["sp_executesql"] = spExecuteSQL
 	procDispatch["xp_msver"] = xpMsver
+	// Registry reads: a missing key returns nothing in SQL Server, so a no-op lets SMO fall back to defaults.
+	procDispatch["xp_instance_regread"] = xpRegreadNoop
+	procDispatch["xp_regread"] = xpRegreadNoop
+}
+
+func xpRegreadNoop(ctx context.Context, b tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	return nil, true, nil
 }
 
 func xpMsver(ctx context.Context, b tds.Backend, _ []procArg) (tds.Rows, bool, error) {
