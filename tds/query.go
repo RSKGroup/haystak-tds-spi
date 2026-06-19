@@ -151,14 +151,21 @@ const (
 
 // Join is one joined table in a multi-table FROM.
 type Join struct {
-	Type     JoinType
-	Database string
-	Schema   string
-	Table    string
-	FromSub  *Query     // derived table on the right side: JOIN/APPLY (SELECT …) (Table empty when set)
-	FromFunc *TableFunc // table-valued function on the right side: APPLY STRING_SPLIT(…)/OPENJSON(…)
-	Alias    string
-	On       *Expr // nil for CROSS JOIN / APPLY
+	Type       JoinType
+	Database   string
+	Schema     string
+	Table      string
+	FromSub    *Query        // derived table on the right side: JOIN/APPLY (SELECT …) (Table empty when set)
+	FromFunc   *TableFunc    // table-valued function on the right side: APPLY STRING_SPLIT(…)/OPENJSON(…)
+	FromValues *ValuesClause // table-value constructor on the right side: APPLY (VALUES …) t(c1,c2)
+	Alias      string
+	On         *Expr // nil for CROSS JOIN / APPLY
+}
+
+// ValuesClause is a row-value-constructor source: (VALUES (…),(…)) alias(col1,col2,…).
+type ValuesClause struct {
+	Columns []string
+	Rows    [][]*ValueExpr
 }
 
 // PivotSpec rotates rows to columns: PIVOT (Agg(ValueCol) FOR PivotCol IN (Values…)) AS Alias.

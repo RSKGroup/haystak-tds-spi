@@ -660,10 +660,10 @@ func castValue(v any, typ string) any {
 		return nil
 	case "BIT":
 		if i, ok := toInt(v); ok {
-			if i != 0 {
-				return int64(1)
-			}
-			return int64(0)
+			return i != 0
+		}
+		if s, ok := v.(string); ok && s != "" {
+			return !strings.EqualFold(s, "false") && s != "0"
 		}
 		return nil
 	case "VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "TEXT", "NTEXT":
@@ -735,8 +735,10 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		return types.Type{Kind: types.String, MaxLen: 255}
 	case tds.ValCast:
 		switch ve.Cast {
-		case "INT", "SMALLINT", "TINYINT", "BIT":
+		case "INT", "SMALLINT", "TINYINT":
 			return types.Type{Kind: types.Int32}
+		case "BIT":
+			return types.Type{Kind: types.Bool}
 		case "BIGINT":
 			return types.Type{Kind: types.Int64}
 		case "FLOAT", "REAL", "DECIMAL", "NUMERIC", "MONEY", "SMALLMONEY":
@@ -745,6 +747,62 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		return types.Type{Kind: types.String, MaxLen: 255}
 	}
 	return types.Type{Kind: types.String, MaxLen: 255}
+}
+
+// EvalValues materializes a VALUES constructor, resolving refs against the outer row (nil → NULLs).
+func EvalValues(outerCols []catalog.Column, outerRow []any, names []string, rows [][]*tds.ValueExpr) ([]catalog.Column, [][]any, error) {
+	var idx map[string]int
+	if outerRow != nil {
+		idx = indexCols(outerCols)
+	}
+	data := make([][]any, 0, len(rows))
+	for _, r := range rows {
+		vals := make([]any, len(r))
+		for i, e := range r {
+			v, err := evalValue(idx, outerRow, e, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			vals[i] = v
+		}
+		data = append(data, vals)
+	}
+	width := len(names)
+	if width == 0 && len(rows) > 0 {
+		width = len(rows[0])
+	}
+	cols := make([]catalog.Column, width)
+	for i := 0; i < width; i++ {
+		name := fmt.Sprintf("col%d", i+1)
+		if i < len(names) {
+			name = names[i]
+		}
+		cols[i] = catalog.Column{Name: name, Type: valuesColType(data, i)}
+	}
+	return cols, data, nil
+}
+
+func valuesColType(data [][]any, i int) types.Type {
+	for _, r := range data {
+		if i >= len(r) || r[i] == nil {
+			continue
+		}
+		switch n := r[i].(type) {
+		case int64:
+			if n >= -2147483648 && n <= 2147483647 {
+				return types.Type{Kind: types.Int32}
+			}
+			return types.Type{Kind: types.Int64}
+		case int:
+			return types.Type{Kind: types.Int32}
+		case float64:
+			return types.Type{Kind: types.Float64}
+		case bool:
+			return types.Type{Kind: types.Bool}
+		}
+		return types.Type{Kind: types.String, MaxLen: 4000}
+	}
+	return types.Type{Kind: types.String, MaxLen: 4000}
 }
 
 func serverPropertyInt(args []*tds.ValueExpr) bool {

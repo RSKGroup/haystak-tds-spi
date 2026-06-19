@@ -43,4 +43,5 @@ var systemCases = []Case{
 	{Element: "func:XACT_STATE", SQL: "SELECT XACT_STATE()", Want: []any{0}},
 	{Element: "func:CURSOR_STATUS", SQL: "SELECT CURSOR_STATUS('global','c')", Want: []any{-3}},
 	{Element: "func:CONNECTIONPROPERTY", SQL: "SELECT CONNECTIONPROPERTY('net_transport')", Want: []any{"TCP"}},
+	{Element: "func:FULLTEXTSERVICEPROPERTY", SQL: "SELECT FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')", Want: []any{0}},
 }

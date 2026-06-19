@@ -43,10 +43,21 @@ func init() {
 		return nil
 	})
 	register("QUOTENAME", func(a []any) any {
-		if len(a) >= 1 {
-			return "[" + strings.ReplaceAll(toStr(a[0]), "]", "]]") + "]"
+		if len(a) < 1 {
+			return nil
 		}
-		return nil
+		s := toStr(a[0])
+		q := "["
+		if len(a) >= 2 {
+			q = argStr(a, 1)
+		}
+		switch q {
+		case "'":
+			return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+		case "\"":
+			return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+		}
+		return "[" + strings.ReplaceAll(s, "]", "]]") + "]"
 	})
 	register("CHARINDEX", func(a []any) any {
 		if len(a) < 2 {

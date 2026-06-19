@@ -275,7 +275,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 			return runParsed(ctx, b, &q2)
 		}
 	}
-	if strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") {
+	if strings.EqualFold(q.Schema, "INFORMATION_SCHEMA") && len(q.Joins) == 0 {
 		if q.Database == "" {
 			q.Database = currentDB(ctx)
 		}
@@ -292,7 +292,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 
-	if strings.EqualFold(q.Schema, "sys") {
+	if strings.EqualFold(q.Schema, "sys") && len(q.Joins) == 0 {
 		if q.Database == "" && !strings.EqualFold(q.Table, "databases") {
 			q.Database = currentDB(ctx)
 		}
@@ -945,6 +945,9 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 }
 
 func scanJoinSide(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.Column, [][]any, error) {
+	if isTempName(q.Table) || isSystemSchema(q.Schema) {
+		return runMaterialize(ctx, b, q)
+	}
 	sc, ok := b.(tds.Scanner)
 	if !ok {
 		return nil, nil, fmt.Errorf("engine: backend cannot scan %q for join", q.Table)
@@ -959,7 +962,7 @@ func applyJoin(ctx context.Context, b tds.Backend, lcols []catalog.Column, lrows
 	var rcols []catalog.Column
 	var out [][]any
 	for _, lr := range lrows {
-		brcols, brrows, err := applyRight(ctx, b, j, lr, leftIdx)
+		brcols, brrows, err := applyRight(ctx, b, j, lr, lcols, leftIdx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -974,16 +977,18 @@ func applyJoin(ctx context.Context, b tds.Backend, lcols []catalog.Column, lrows
 		}
 	}
 	if rcols == nil {
-		if brcols, _, err := applyRight(ctx, b, j, nil, leftIdx); err == nil {
+		if brcols, _, err := applyRight(ctx, b, j, nil, lcols, leftIdx); err == nil {
 			rcols = qualify(brcols, jAlias)
 		}
 	}
 	return append(append([]catalog.Column{}, lcols...), rcols...), out, nil
 }
 
-func applyRight(ctx context.Context, b tds.Backend, j tds.Join, lr []any, leftIdx map[string]int) ([]catalog.Column, [][]any, error) {
+func applyRight(ctx context.Context, b tds.Backend, j tds.Join, lr []any, lcols []catalog.Column, leftIdx map[string]int) ([]catalog.Column, [][]any, error) {
 	resolve := leftRowResolver(lr, leftIdx)
 	switch {
+	case j.FromValues != nil:
+		return exec.EvalValues(lcols, lr, j.FromValues.Columns, j.FromValues.Rows)
 	case j.FromSub != nil:
 		return runMaterialize(ctx, b, bindOuter(j.FromSub, resolve))
 	case j.FromFunc != nil:

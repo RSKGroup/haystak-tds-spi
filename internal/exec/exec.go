@@ -58,7 +58,7 @@ func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds
 	cols, filtered, idx = mCols, mRows, indexCols(mCols)
 
 	if len(q.OrderBy) > 0 {
-		order := q.OrderBy
+		order := resolveOrderAliases(q.OrderBy, mSel)
 		if hasOrderExpr(order) {
 			var err error
 			cols, filtered, idx, order, err = materializeOrderExprs(cols, idx, filtered, order, env)
@@ -188,6 +188,20 @@ func projectItems(cols []catalog.Column, idx map[string]int, sel []tds.SelectIte
 	outCols := make([]catalog.Column, 0, len(sel))
 	proj := make([]int, 0, len(sel))
 	for _, it := range sel {
+		if strings.HasSuffix(it.Column, ".*") {
+			prefix := strings.ToLower(it.Column[:len(it.Column)-1])
+			for i, c := range cols {
+				if strings.HasPrefix(strings.ToLower(c.Name), prefix) {
+					cc := c
+					if dot := strings.LastIndex(cc.Name, "."); dot >= 0 {
+						cc.Name = cc.Name[dot+1:]
+					}
+					outCols = append(outCols, cc)
+					proj = append(proj, i)
+				}
+			}
+			continue
+		}
 		i, ok := resolveCol(idx, it.Column)
 		if !ok {
 			return nil, nil, fmt.Errorf("exec: unknown column %q in SELECT", it.Column)
@@ -204,6 +218,23 @@ func projectItems(cols []catalog.Column, idx map[string]int, sel []tds.SelectIte
 		proj = append(proj, i)
 	}
 	return outCols, proj, nil
+}
+
+func resolveOrderAliases(order []tds.OrderItem, sel []tds.SelectItem) []tds.OrderItem {
+	alias := map[string]string{}
+	for _, it := range sel {
+		if it.Alias != "" && it.Column != "" {
+			alias[strings.ToLower(it.Alias)] = it.Column
+		}
+	}
+	out := make([]tds.OrderItem, len(order))
+	for i, o := range order {
+		out[i] = o
+		if col, ok := alias[strings.ToLower(o.Column)]; ok {
+			out[i].Column = col
+		}
+	}
+	return out
 }
 
 func pick(row []any, proj []int) []any {

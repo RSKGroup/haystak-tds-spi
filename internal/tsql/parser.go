@@ -166,6 +166,62 @@ func (p *parser) optTableAlias() string {
 	return ""
 }
 
+// aliasWithCols parses `[AS] alias [(col, col, …)]` for a derived/VALUES table source.
+func (p *parser) aliasWithCols() (string, []string) {
+	alias := p.optTableAlias()
+	var cols []string
+	if p.peek().kind == tLParen {
+		p.next()
+		for p.peek().kind == tIdent {
+			cols = append(cols, p.peek().text)
+			p.next()
+			if p.peek().kind == tComma {
+				p.next()
+			}
+		}
+		if p.peek().kind == tRParen {
+			p.next()
+		}
+	}
+	return alias, cols
+}
+
+// valuesClause parses `VALUES (e, e, …), (…), …` into rows of expressions.
+func (p *parser) valuesClause() (*tds.ValuesClause, error) {
+	p.next() // VALUES
+	vc := &tds.ValuesClause{}
+	for {
+		if p.peek().kind != tLParen {
+			return nil, fmt.Errorf("tsql: expected '(' in VALUES, got %q", p.peek().text)
+		}
+		p.next()
+		var row []*tds.ValueExpr
+		for {
+			ve, err := p.valueExpr()
+			if err != nil {
+				return nil, err
+			}
+			row = append(row, ve)
+			if p.peek().kind == tComma {
+				p.next()
+				continue
+			}
+			break
+		}
+		if p.peek().kind != tRParen {
+			return nil, fmt.Errorf("tsql: expected ')' after VALUES row, got %q", p.peek().text)
+		}
+		p.next()
+		vc.Rows = append(vc.Rows, row)
+		if p.peek().kind == tComma {
+			p.next()
+			continue
+		}
+		break
+	}
+	return vc, nil
+}
+
 func (p *parser) optJoin() (*tds.Join, error) {
 	var jt tds.JoinType
 	switch {
@@ -227,6 +283,19 @@ func (p *parser) optJoin() (*tds.Join, error) {
 	}
 	var j *tds.Join
 	switch {
+	case p.peek().kind == tLParen && p.peekN(1).kind == tKeyword && strings.EqualFold(p.peekN(1).text, "VALUES"):
+		p.next() // (
+		vc, err := p.valuesClause()
+		if err != nil {
+			return nil, err
+		}
+		if p.peek().kind != tRParen {
+			return nil, fmt.Errorf("tsql: expected ')' after VALUES, got %q", p.peek().text)
+		}
+		p.next()
+		alias, cols := p.aliasWithCols()
+		vc.Columns = cols
+		j = &tds.Join{Type: jt, FromValues: vc, Alias: alias}
 	case p.peek().kind == tLParen:
 		p.next()
 		sub, err := p.selectStmt()
@@ -497,6 +566,12 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 		p.next()
 	}
 	t := p.peek()
+	if t.kind == tIdent && p.peekN(1).kind == tDot && p.peekN(2).kind == tStar {
+		p.next()
+		p.next()
+		p.next()
+		return tds.SelectItem{Column: t.text + ".*", Alias: leadAlias}, nil
+	}
 	if t.kind == tIdent && isAggName(t.text) && p.peekN(1).kind == tLParen {
 		fn := aggOf(t.text)
 		p.next()
@@ -720,6 +795,9 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 	switch {
 	case p.isKeyword("CASE"):
 		return p.caseExpr()
+	case p.isKeyword("NULL"):
+		p.next()
+		return &tds.ValueExpr{Kind: tds.ValLit, Lit: nil}, nil
 	case t.kind == tKeyword && p.peekN(1).kind == tLParen:
 		// a reserved keyword that doubles as a function (LEFT/RIGHT/...), disambiguated by the '('
 		return p.funcCall(strings.ToUpper(t.text))

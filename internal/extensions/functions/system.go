@@ -11,6 +11,7 @@ import (
 
 func init() {
 	register("SERVERPROPERTY", func(a []any) any { return serverProperty(argStr(a, 0)) })
+	register("FULLTEXTSERVICEPROPERTY", func([]any) any { return int64(0) })
 	register("DATABASEPROPERTYEX", func(a []any) any { return databaseProperty(argStr(a, 1)) })
 	register("NEWID", func([]any) any { return newID() })
 	// no identity tracking: NULL outside scope. The ERROR_* family is env-resolved (it reads the caught
@@ -63,7 +64,8 @@ func serverProperty(name string) any {
 		return int64(3)
 	case "COLLATION":
 		return "SQL_Latin1_General_CP1_CI_AS"
-	case "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED":
+	case "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED",
+		"ISSINGLEUSER", "ISXTPSUPPORTED", "ISLOCALDB", "ISPOLYBASEINSTALLED":
 		return int64(0)
 	case "MACHINENAME", "SERVERNAME", "COMPUTERNAMEPHYSICALNETBIOS":
 		return "haystak-tds-spi"
