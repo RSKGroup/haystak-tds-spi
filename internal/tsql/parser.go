@@ -1092,6 +1092,12 @@ func (p *parser) optAlias() string {
 			p.next()
 			return a
 		}
+		return ""
+	}
+	if p.peek().kind == tIdent { // bare alias: `expr alias` with no AS
+		a := p.peek().text
+		p.next()
+		return a
 	}
 	return ""
 }

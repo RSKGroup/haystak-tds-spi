@@ -1280,6 +1280,28 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 	return agg, dbs, nil
 }
 
+func hasTopLevelComma(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'':
+			for i++; i < len(s) && s[i] != '\''; i++ {
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func probe(sql, db string, spid int) (tds.Rows, bool, error) {
 	u := strings.TrimSuffix(strings.TrimSpace(sql), ";")
 	u = strings.ToUpper(strings.TrimSpace(u))
@@ -1290,6 +1312,9 @@ func probe(sql, db string, spid int) (tds.Rows, bool, error) {
 		return nil, false, nil
 	}
 	e := strings.TrimSpace(u[len("SELECT "):])
+	if hasTopLevelComma(e) {
+		return nil, false, nil // multiple select items — not a bare scalar; let the parser handle it
+	}
 	if i := strings.Index(e, " AS "); i >= 0 {
 		e = strings.TrimSpace(e[:i])
 	}
