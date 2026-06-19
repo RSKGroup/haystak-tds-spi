@@ -296,11 +296,17 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if q.Database == "" && !strings.EqualFold(q.Table, "databases") {
 			q.Database = currentDB(ctx)
 		}
-		schema, dbs, err := introspectSchema(ctx, b, q)
-		if err != nil {
-			return nil, err
+		var schema catalog.Schema
+		var dbs []string
+		var rts []*tds.Routine
+		if !isRuntimeDMV(q.Table) { // runtime DMVs don't depend on the db schema; skip the costly introspection
+			var err error
+			if schema, dbs, err = introspectSchema(ctx, b, q); err != nil {
+				return nil, err
+			}
+			rts = listRoutines(ctx, b, q.Database)
 		}
-		rows, handled, err := sysviews.Resolve(schema, listRoutines(ctx, b, q.Database), dbs, principalOf(ctx), sessionOf(ctx), currentSPID(ctx), q)
+		rows, handled, err := sysviews.Resolve(schema, rts, dbs, principalOf(ctx), sessionOf(ctx), currentSPID(ctx), q)
 		if err != nil {
 			return nil, err
 		}
@@ -1278,6 +1284,15 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 		}
 	}
 	return agg, dbs, nil
+}
+
+func isRuntimeDMV(table string) bool {
+	switch strings.ToLower(table) {
+	case "dm_exec_sessions", "dm_exec_connections", "dm_exec_requests",
+		"dm_exec_query_stats", "dm_os_waiting_tasks", "dm_os_host_info":
+		return true
+	}
+	return false
 }
 
 func hasTopLevelComma(s string) bool {
