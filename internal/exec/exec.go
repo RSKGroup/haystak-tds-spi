@@ -447,6 +447,13 @@ func compare(a, b any) (int, bool) {
 	if a == nil || b == nil {
 		return 0, false
 	}
+	if _, ok := a.(bool); ok || isBoolType(b) { // bit compared to a number/string coerces both to bit
+		ab, aok := boolish(a)
+		bb, bok := boolish(b)
+		if aok && bok {
+			return cmpBool(ab, bb), true
+		}
+	}
 	switch av := a.(type) {
 	case int64:
 		switch bv := b.(type) {
@@ -494,6 +501,38 @@ func compare(a, b any) (int, bool) {
 		}
 	}
 	return strings.Compare(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b)), true
+}
+
+func isBoolType(v any) bool { _, ok := v.(bool); return ok }
+
+func boolish(v any) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case int64:
+		return x != 0, true
+	case float64:
+		return x != 0, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "1", "true":
+			return true, true
+		case "0", "false":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func cmpBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case !a:
+		return -1
+	default:
+		return 1
+	}
 }
 
 func cmpInt(a, b int64) int {

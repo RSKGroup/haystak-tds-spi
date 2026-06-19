@@ -107,11 +107,17 @@ func Resolve(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Prin
 
 func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 	cols := []catalog.Column{
-		sname("name"), intc("database_id"), intc("state"), sname("state_desc"),
-		intc("is_read_only"), sname("collation_name"), intc("compatibility_level"),
+		sname("name"), intc("database_id"), intc("source_database_id"), intc("state"), sname("state_desc"),
+		bitc("is_read_only"), sname("collation_name"), intc("compatibility_level"),
+		intc("containment"), intc("recovery_model"), intc("user_access"),
+		bitc("is_in_standby"), bitc("is_fulltext_enabled"),
+		{Name: "owner_sid", Type: types.Type{Kind: types.Bytes, Nullable: true}},
 	}
 	mk := func(name string, id int64) []any {
-		return []any{name, id, int64(0), "ONLINE", int64(0), "SQL_Latin1_General_CP1_CI_AS", int64(160)}
+		return []any{name, id, nil, int64(0), "ONLINE",
+			false, "SQL_Latin1_General_CP1_CI_AS", int64(160),
+			int64(0), int64(1), int64(0),
+			false, false, nil}
 	}
 	if len(dbs) == 0 { // single-database backend: keep reporting the default catalog
 		dbs = []string{dbName}
