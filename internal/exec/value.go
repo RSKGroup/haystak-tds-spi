@@ -249,6 +249,12 @@ func evalBinary(op string, l, r any) any {
 					return nil
 				}
 				return li % ri
+			case "&":
+				return li & ri
+			case "|":
+				return li | ri
+			case "^":
+				return li ^ ri
 			}
 		}
 	}

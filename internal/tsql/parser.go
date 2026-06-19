@@ -667,7 +667,7 @@ func (p *parser) valueExpr() (*tds.ValueExpr, error) {
 	if err != nil {
 		return nil, err
 	}
-	for p.peek().kind == tOp && (p.peek().text == "+" || p.peek().text == "-") {
+	for p.peek().kind == tOp && (p.peek().text == "+" || p.peek().text == "-" || p.peek().text == "&" || p.peek().text == "|" || p.peek().text == "^") {
 		op := p.peek().text
 		p.next()
 		right, err := p.term()
@@ -1638,6 +1638,13 @@ func (p *parser) literal() (any, error) {
 				return nil, err
 			}
 			return f, nil
+		}
+		if len(t.text) > 2 && (t.text[1] == 'x' || t.text[1] == 'X') {
+			n, err := strconv.ParseInt(t.text[2:], 16, 64)
+			if err != nil {
+				return nil, err
+			}
+			return n, nil
 		}
 		n, err := strconv.ParseInt(t.text, 10, 64)
 		if err != nil {

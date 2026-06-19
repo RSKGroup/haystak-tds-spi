@@ -84,6 +84,9 @@ func lex(s string) ([]token, error) {
 		case c == '+' || c == '-' || c == '/' || c == '%':
 			toks = append(toks, token{tOp, string(c)})
 			i++
+		case c == '&' || c == '|' || c == '^':
+			toks = append(toks, token{tOp, string(c)})
+			i++
 		case c == '<':
 			switch {
 			case i+1 < n && s[i+1] == '=':
@@ -156,8 +159,15 @@ func lex(s string) ([]token, error) {
 			i = j
 		case isDigit(c):
 			j := i
-			for j < n && (isDigit(s[j]) || s[j] == '.') {
-				j++
+			if c == '0' && i+1 < n && (s[i+1] == 'x' || s[i+1] == 'X') {
+				j = i + 2
+				for j < n && isHexDigit(s[j]) {
+					j++
+				}
+			} else {
+				for j < n && (isDigit(s[j]) || s[j] == '.') {
+					j++
+				}
 			}
 			toks = append(toks, token{tNumber, s[i:j]})
 			i = j
@@ -182,5 +192,6 @@ func lex(s string) ([]token, error) {
 }
 
 func isDigit(c byte) bool      { return c >= '0' && c <= '9' }
-func isIdentStart(c byte) bool { return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
+func isHexDigit(c byte) bool   { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') }
+func isIdentStart(c byte) bool { return c == '_' || c == '#' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 func isIdentPart(c byte) bool  { return isIdentStart(c) || isDigit(c) }
