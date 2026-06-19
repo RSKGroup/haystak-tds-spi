@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func init() {
@@ -73,6 +74,24 @@ func serverProperty(name string) any {
 		return nil
 	case "BUILDCLRVERSION":
 		return "v4.0.30319"
+	case "PATHSEPARATOR":
+		return "\\"
+	case "COLLATIONID":
+		return int64(872468488)
+	case "COMPARISONSTYLE":
+		return int64(196609)
+	case "SQLCHARSET":
+		return int64(1)
+	case "SQLCHARSETNAME":
+		return "iso_1"
+	case "SQLSORTORDER":
+		return int64(52)
+	case "SQLSORTORDERNAME":
+		return "SQL_Latin1_General_CP1_CI_AS"
+	case "RESOURCEVERSION":
+		return "16.00.1000"
+	case "RESOURCELASTUPDATEDATETIME":
+		return time.Date(2022, 9, 1, 0, 0, 0, 0, time.UTC)
 	}
 	return ""
 }

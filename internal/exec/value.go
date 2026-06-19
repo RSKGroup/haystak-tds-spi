@@ -707,11 +707,14 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		switch ve.Func {
 		case "LEN", "DATALEN", "YEAR", "MONTH", "DAY":
 			return types.Type{Kind: types.Int64}
-		case "@@MICROSOFTVERSION", "@@SPID", "@@ERROR", "@@ROWCOUNT", "@@TRANCOUNT", "@@FETCH_STATUS":
+		case "@@MICROSOFTVERSION", "@@SPID", "@@ERROR", "@@ROWCOUNT", "@@TRANCOUNT", "@@FETCH_STATUS", "@@MAX_PRECISION":
 			return types.Type{Kind: types.Int32}
 		case "SERVERPROPERTY":
 			if serverPropertyInt(ve.Args) {
 				return types.Type{Kind: types.Int32}
+			}
+			if serverPropertyArg(ve.Args) == "RESOURCELASTUPDATEDATETIME" {
+				return types.Type{Kind: types.Time}
 			}
 		case "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME":
 			return types.Type{Kind: types.Time}
@@ -805,16 +808,21 @@ func valuesColType(data [][]any, i int) types.Type {
 	return types.Type{Kind: types.String, MaxLen: 4000}
 }
 
-func serverPropertyInt(args []*tds.ValueExpr) bool {
+func serverPropertyArg(args []*tds.ValueExpr) string {
 	if len(args) != 1 || args[0].Kind != tds.ValLit {
-		return false
+		return ""
 	}
 	s, ok := args[0].Lit.(string)
 	if !ok {
-		return false
+		return ""
 	}
-	switch strings.ToUpper(s) {
-	case "ENGINEEDITION", "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED":
+	return strings.ToUpper(s)
+}
+
+func serverPropertyInt(args []*tds.ValueExpr) bool {
+	switch serverPropertyArg(args) {
+	case "ENGINEEDITION", "ISCLUSTERED", "ISINTEGRATEDSECURITYONLY", "ISFULLTEXTINSTALLED", "ISHADRENABLED",
+		"COLLATIONID", "COMPARISONSTYLE", "SQLCHARSET", "SQLSORTORDER":
 		return true
 	}
 	return false
