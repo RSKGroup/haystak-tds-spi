@@ -457,7 +457,7 @@ func CatalogResolvers(schema catalog.Schema, routines []*tds.Routine, dbs []stri
 	}
 	dbm := map[int64]string{1: "master", 2: "tempdb", 3: "model", 4: "msdb"}
 	for _, d := range dbs {
-		dbm[functions.DBID(d)] = d
+		dbm[functions.DBIDForList(d, dbs)] = d
 	}
 	object = func(id int64) (string, bool) { n, ok := objs[id]; return n, ok }
 	db = func(id int64) (string, bool) { n, ok := dbm[id]; return n, ok }

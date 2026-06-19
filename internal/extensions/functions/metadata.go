@@ -3,7 +3,10 @@
 
 package functions
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 func init() {
 	register("DB_ID", func(a []any) any { return dbIDOf(argStr(a, 0)) })
@@ -40,6 +43,35 @@ func ObjectID(name string) int64 { return dbIDOf(bareName(name)) + 100000 }
 
 // DBID maps a database name to its database_id (the value DB_ID returns and sys.databases reports).
 func DBID(name string) int64 { return dbIDOf(name) }
+
+// DBIDForList gives SQL-Server-like ids: 1-4 for system DBs, then 5,6,7… to user DBs by sorted name.
+func DBIDForList(name string, dbs []string) int64 {
+	switch strings.ToLower(name) {
+	case "master":
+		return 1
+	case "tempdb":
+		return 2
+	case "model":
+		return 3
+	case "msdb":
+		return 4
+	}
+	users := make([]string, 0, len(dbs))
+	for _, d := range dbs {
+		switch strings.ToLower(d) {
+		case "master", "tempdb", "model", "msdb":
+		default:
+			users = append(users, d)
+		}
+	}
+	sort.Strings(users)
+	for i, d := range users {
+		if strings.EqualFold(d, name) {
+			return int64(5 + i)
+		}
+	}
+	return dbIDOf(name)
+}
 
 func bareName(s string) string {
 	s = strings.Trim(s, "[]\"`")

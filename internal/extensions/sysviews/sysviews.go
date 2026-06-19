@@ -129,7 +129,7 @@ func databasesRows(dbs []string) ([]catalog.Column, [][]any) {
 	}
 	rows := [][]any{mk("master", 1), mk("tempdb", 2), mk("model", 3), mk("msdb", 4)}
 	for _, db := range dbs {
-		rows = append(rows, mk(db, functions.DBID(db)))
+		rows = append(rows, mk(db, functions.DBIDForList(db, dbs)))
 	}
 	return cols, rows
 }
