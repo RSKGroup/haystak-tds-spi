@@ -41,6 +41,19 @@ func execWrite(ctx context.Context, b tds.Backend, sql string) (int64, bool, err
 	if err != nil {
 		return 0, true, err
 	}
+	if s := tempStoreFrom(ctx); s != nil {
+		switch {
+		case stmt.CreateTable != nil && isTempName(stmt.CreateTable.Name):
+			s.create(stmt.CreateTable)
+			return 0, true, nil
+		case stmt.DropTable != "" && isTempName(stmt.DropTable):
+			s.drop(stmt.DropTable)
+			return 0, true, nil
+		case stmt.Insert != nil && isTempName(stmt.Insert.Table):
+			n, err := s.insertRows(stmt.Insert.Table, stmt.Insert.Columns, stmt.Insert.Rows)
+			return n, true, err
+		}
+	}
 	switch {
 	case stmt.Insert != nil:
 		w, ok := b.(tds.Writer)
@@ -130,6 +143,9 @@ func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, 
 	}
 	if handled, err := handleRoutineDDL(ctx, b, sql); handled {
 		return nil, -1, err
+	}
+	if handled, affected, err := execTempInsertSource(ctx, b, sql); handled {
+		return nil, affected, err
 	}
 	if affected, isWrite, err := execWrite(ctx, b, sql); isWrite {
 		return nil, affected, err
@@ -237,6 +253,11 @@ func exceptRows(a, b [][]any) [][]any {
 func rowKey(r []any) string { return fmt.Sprintf("%v", r) }
 
 func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
+	if isTempName(q.Table) && q.FromSub == nil && len(q.Joins) == 0 {
+		if s := tempStoreFrom(ctx); s != nil {
+			return runTempQuery(s, q)
+		}
+	}
 	if q.CTEs != nil && q.Table != "" {
 		if cte, ok := q.CTEs[q.Table]; ok {
 			if isRecursiveCTE(cte, q.Table) {

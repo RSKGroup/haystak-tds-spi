@@ -69,8 +69,8 @@ func ParseWrite(sql string) (*tds.WriteStmt, bool, error) {
 
 func (p *parser) parseInsert() (*tds.Insert, error) {
 	p.next() // INSERT
-	if err := p.expectKeyword("INTO"); err != nil {
-		return nil, err
+	if p.isKeyword("INTO") {
+		p.next() // INTO is optional in T-SQL
 	}
 	db, sch, tbl, err := p.tableName()
 	if err != nil {

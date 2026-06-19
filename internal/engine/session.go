@@ -72,6 +72,7 @@ func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string
 }
 
 func (s *Session) ExecBatch(ctx context.Context, sql string) ([]Result, string, error) {
+	ctx = withTempStore(ctx)
 	if control.HasControlFlow(sql) {
 		rows, err := control.RunAll(WithDatabase(ctx, s.db), sql, engineRunner{s.b})
 		if err != nil {

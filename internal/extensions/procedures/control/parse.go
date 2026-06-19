@@ -349,6 +349,7 @@ func (p *parser) rawStmt() string {
 	var ts []tok
 	depth, caseDepth := 0, 0
 	first := true
+	lead := ""
 	for !p.eof() {
 		t := p.peek()
 		if t.kind == tSemi {
@@ -361,7 +362,17 @@ func (p *parser) rawStmt() string {
 		if t.kind == tParenR && depth > 0 {
 			depth--
 		}
-		if b := boundaryWord(t, depth, &caseDepth); !first && b {
+		b := boundaryWord(t, depth, &caseDepth)
+		if first && t.kind == tWord {
+			lead = strings.ToUpper(t.text)
+		}
+		if b && lead == "INSERT" { // INSERT … SELECT/EXEC/VALUES is one statement, not a boundary
+			switch strings.ToUpper(t.text) {
+			case "SELECT", "EXEC", "EXECUTE", "VALUES":
+				b = false
+			}
+		}
+		if !first && b {
 			break
 		}
 		ts = append(ts, t)

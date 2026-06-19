@@ -70,7 +70,25 @@ func spWho(ctx context.Context, _ tds.Backend, _ []procArg) (tds.Rows, bool, err
 }
 
 // Registered in init, not the literal, to break the cycle spExecuteSQL -> queryOne -> execProc -> procDispatch.
-func init() { procDispatch["sp_executesql"] = spExecuteSQL }
+func init() {
+	procDispatch["sp_executesql"] = spExecuteSQL
+	procDispatch["xp_msver"] = xpMsver
+}
+
+func xpMsver(ctx context.Context, b tds.Backend, _ []procArg) (tds.Rows, bool, error) {
+	cols := []catalog.Column{
+		{Name: "Index", Type: types.Type{Kind: types.Int32}},
+		{Name: "Name", Type: types.Type{Kind: types.String, MaxLen: 128}},
+		{Name: "Internal_Value", Type: types.Type{Kind: types.Int32, Nullable: true}},
+		{Name: "Character_Value", Type: types.Type{Kind: types.String, MaxLen: 512, Nullable: true}},
+	}
+	data := [][]any{
+		{int64(1), "ProductName", nil, "Microsoft SQL Server"},
+		{int64(2), "ProductVersion", int64(16), "16.0.1000.6"},
+	}
+	rs, err := exec.Apply(cols, data, &tds.Query{})
+	return rs, true, err
+}
 
 // spExecuteSQL substitutes named params (@p = val) as literals into the statement and runs it.
 func spExecuteSQL(ctx context.Context, b tds.Backend, args []procArg) (tds.Rows, bool, error) {

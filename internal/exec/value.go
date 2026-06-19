@@ -699,6 +699,9 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 		if lt.Kind == types.Float64 || rt.Kind == types.Float64 {
 			return types.Type{Kind: types.Float64}
 		}
+		if lt.Kind == types.Int32 && rt.Kind == types.Int32 {
+			return types.Type{Kind: types.Int32}
+		}
 		return types.Type{Kind: types.Int64}
 	case tds.ValFunc:
 		switch ve.Func {
