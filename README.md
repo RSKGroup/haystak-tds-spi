@@ -39,7 +39,7 @@ A SQL Server wire-protocol (TDS) gateway, shipped as importable Go modules. It s
 
 Pure Go, no CGO, permissive dependencies only.
 
-Status: read and write are complete and live-validated over the wire (plaintext and TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` and `CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and fail-closed when unsupported. Out of the box, the `examples/` directory gives you a working MSSQL/TDS interface to **MongoDB, Elasticsearch, and OpenSearch right now** — run one, point `sqlcmd`/SSMS/Power BI at it, and query a NoSQL store as if it were SQL Server.
+Status: read and write are complete and live-validated over the wire (plaintext and TLS). That covers the full read query surface plus `INSERT`/`UPDATE`/`DELETE` and `CREATE`/`DROP TABLE`/`DATABASE`, routed to the backend's write interfaces and fail-closed when unsupported. Out of the box, the `examples/` directory gives you a working MSSQL/TDS interface to **MongoDB, Elasticsearch, and OpenSearch right now** — run one, point `sqlcmd`/SSMS/Power BI at it, and query a NoSQL store as if it were SQL Server. Object Explorer is verified end to end — Databases → Tables → Columns, plus "Select Top N Rows" and ad-hoc queries — against **Microsoft SQL Server Management Studio 22**, alongside `sqlcmd`, Power BI, and the go-mssqldb driver.
 
 ## Install
 
