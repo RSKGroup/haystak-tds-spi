@@ -60,6 +60,16 @@ func lex(s string) ([]token, error) {
 		switch {
 		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
 			i++
+		case c == '-' && i+1 < n && s[i+1] == '-':
+			for i < n && s[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < n && s[i+1] == '*':
+			i += 2
+			for i+1 < n && !(s[i] == '*' && s[i+1] == '/') {
+				i++
+			}
+			i += 2
 		case c == '*':
 			toks = append(toks, token{tStar, "*"})
 			i++

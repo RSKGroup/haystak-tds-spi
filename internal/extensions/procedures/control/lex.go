@@ -30,6 +30,16 @@ func lex(s string) []tok {
 		switch {
 		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
 			i++
+		case c == '-' && i+1 < len(s) && s[i+1] == '-':
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(s) && s[i+1] == '*':
+			i += 2
+			for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
+				i++
+			}
+			i += 2
 		case c == '\'' || ((c == 'N' || c == 'n') && i+1 < len(s) && s[i+1] == '\''):
 			start := i
 			if c != '\'' {
