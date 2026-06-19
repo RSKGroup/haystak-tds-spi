@@ -838,6 +838,11 @@ func toInt(v any) (int64, bool) {
 		return int64(x), true
 	case float64:
 		return int64(x), true
+	case bool:
+		if x {
+			return 1, true
+		}
+		return 0, true
 	}
 	return 0, false
 }
