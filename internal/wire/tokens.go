@@ -95,6 +95,9 @@ func done(status, curCmd uint16, rowCount uint64) []byte {
 // EmptyDone is a standalone DONE(final) response for a command with no result set.
 func EmptyDone() []byte { return done(DoneFinal, 0, 0) }
 
+// AttentionAck acknowledges a client ATTENTION (cancel) with a DONE carrying the attention status bit.
+func AttentionAck() []byte { return done(0x0020, 0, 0) }
+
 // DoneWithCount is the DONE(final, count) response to a write/DDL with rows-affected set.
 func DoneWithCount(n uint64) []byte { return done(DoneFinal|DoneCount, 0, n) }
 

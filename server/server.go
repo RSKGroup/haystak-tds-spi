@@ -220,6 +220,9 @@ func (s *Server) serve(conn net.Conn, princ tds.Principal, initialDB string, inf
 				continue
 			}
 			sql = expanded
+		case wire.PacketAttention:
+			_ = s.send(conn, wire.AttentionAck()) // ack the cancel so the client doesn't wait forever
+			continue
 		default:
 			continue
 		}

@@ -24,6 +24,7 @@ type viewBuilder func() ([]catalog.Column, [][]any)
 func viewBuilders(schema catalog.Schema, rts []*tds.Routine, dbs []string, p tds.Principal, sess []tds.SessionInfo) map[string]viewBuilder {
 	return map[string]viewBuilder{
 		"databases":                   func() ([]catalog.Column, [][]any) { return databasesRows(dbs) },
+		"configurations":              configurationsRows,
 		"schemas":                     schemasRows,
 		"tables":                      func() ([]catalog.Column, [][]any) { return tablesRows(schema) },
 		"objects":                     func() ([]catalog.Column, [][]any) { return objectsRows(schema, rts) },
@@ -980,6 +981,20 @@ func boolInt(b bool) int64 {
 }
 
 func tcol(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Time}} }
+func bitc(n string) catalog.Column { return catalog.Column{Name: n, Type: types.Type{Kind: types.Bool}} }
+
+func configurationsRows() ([]catalog.Column, [][]any) {
+	cols := []catalog.Column{
+		intc("configuration_id"), sname("name"), intc("value"), intc("minimum"),
+		intc("maximum"), intc("value_in_use"), nsname("description"),
+		bitc("is_dynamic"), bitc("is_advanced"),
+	}
+	rows := [][]any{
+		{int64(16384), "user options", int64(0), int64(0), int64(32767), int64(0), "user options", false, false},
+		{int64(1543), "default trace enabled", int64(1), int64(0), int64(1), int64(1), "default trace enabled", true, true},
+	}
+	return cols, rows
+}
 
 // Runtime DMVs enumerate every live session from the server's registry snapshot in ctx.
 func dmExecSessionsRows(sessions []tds.SessionInfo) ([]catalog.Column, [][]any) {

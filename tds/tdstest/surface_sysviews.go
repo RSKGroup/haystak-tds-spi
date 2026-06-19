@@ -7,6 +7,7 @@ package tdstest
 // open (empty-degrade), static catalogs pin an exact count, and concept-free views must be empty.
 var sysviewCases = []Case{
 	{Element: "sys:databases", SQL: "SELECT * FROM sys.databases", Check: checks(wantCols("name", "database_id", "state_desc"), atLeastRows(1))},
+	{Element: "sys:configurations", SQL: "SELECT value_in_use FROM sys.configurations WHERE configuration_id = 16384", Check: checks(wantCols("value_in_use"), exactRows(1))},
 	{Element: "sys:schemas", SQL: "SELECT * FROM sys.schemas", Check: checks(wantCols("name", "schema_id"), atLeastRows(1))},
 	{Element: "sys:tables", SQL: "SELECT * FROM sys.tables", Check: wantCols("name", "object_id", "type_desc")},
 	{Element: "sys:objects", SQL: "SELECT * FROM sys.objects", Check: wantCols("name", "object_id", "type_desc")},
