@@ -74,7 +74,8 @@ func (s *Session) Exec(ctx context.Context, sql string) (tds.Rows, int64, string
 func (s *Session) ExecBatch(ctx context.Context, sql string) ([]Result, string, error) {
 	ctx = withTempStore(ctx)
 	if control.HasControlFlow(sql) {
-		rows, err := control.RunAll(WithDatabase(ctx, s.db), sql, engineRunner{s.b})
+		dbBefore := s.db
+		rows, err := control.RunAll(WithDatabase(ctx, s.db), sql, engineRunner{b: s.b, sess: s})
 		if err != nil {
 			return nil, "", err
 		}
@@ -82,7 +83,11 @@ func (s *Session) ExecBatch(ctx context.Context, sql string) ([]Result, string, 
 		for i, r := range rows {
 			res[i] = Result{Rows: r, Affected: -1}
 		}
-		return res, "", nil
+		envDB := "" // a control-flow batch that ran USE [db] must still report the context change
+		if s.db != dbBefore {
+			envDB = s.db
+		}
+		return res, envDB, nil
 	}
 	sql, err := batch.Resolve(sql) // bind + substitute DECLARE/SET @var batch variables
 	if err != nil {

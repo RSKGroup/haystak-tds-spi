@@ -13,15 +13,34 @@ import (
 )
 
 // engineRunner adapts the engine to routines.Runner so the views/procedures packages can execute SQL
-// without importing the engine.
-type engineRunner struct{ b tds.Backend }
+// without importing the engine. When sess is non-nil (control flow within a live batch), USE / SET ROWCOUNT
+// executed inside an IF/WHILE block mutate that session, so the context they set persists to later
+// statements and batches — matching SQL Server, where a control-flow `use [db]` changes the connection.
+type engineRunner struct {
+	b    tds.Backend
+	sess *Session
+}
 
 func (r engineRunner) Exec(ctx context.Context, sql string) (tds.Rows, error) {
+	if r.sess != nil {
+		if db, ok := parseUse(sql); ok {
+			r.sess.db = db
+			return nil, nil
+		}
+		if n, ok := parseRowcount(sql); ok {
+			r.sess.rowCount = n
+			return nil, nil
+		}
+		ctx = WithDatabase(ctx, r.sess.db) // run against the live session db, not the batch-entry snapshot
+	}
 	rows, _, err := Exec(ctx, r.b, sql)
 	return rows, err
 }
 
 func (r engineRunner) RunQuery(ctx context.Context, q *tds.Query) (tds.Rows, error) {
+	if r.sess != nil {
+		ctx = WithDatabase(ctx, r.sess.db)
+	}
 	return runParsed(ctx, r.b, q)
 }
 
@@ -71,7 +90,7 @@ func expandViewIfAny(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows
 	if !ok {
 		return nil, false, nil
 	}
-	return views.ExpandView(ctx, store, engineRunner{b}, q)
+	return views.ExpandView(ctx, store, engineRunner{b: b}, q)
 }
 
 // execStoredProc runs a stored procedure by name; found is false when it isn't one.
@@ -84,5 +103,5 @@ func execStoredProc(ctx context.Context, b tds.Backend, name string, args []proc
 	for i, a := range args {
 		ra[i] = routines.Arg{Name: a.name, Val: a.val}
 	}
-	return procedures.ExecProc(ctx, store, engineRunner{b}, name, ra)
+	return procedures.ExecProc(ctx, store, engineRunner{b: b}, name, ra)
 }
