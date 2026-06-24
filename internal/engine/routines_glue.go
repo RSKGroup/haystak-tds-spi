@@ -42,6 +42,18 @@ func handleRoutineDDL(ctx context.Context, b tds.Backend, sql string) (bool, err
 
 // listRoutines returns the stored routines for db, or nil when the backend has no RoutineStore.
 func listRoutines(ctx context.Context, b tds.Backend, db string) []*tds.Routine {
+	if c := schemaCacheFrom(ctx); c != nil {
+		if r, ok := c.getRoutines(db); ok {
+			return r
+		}
+		r := listRoutinesUncached(ctx, b, db)
+		c.putRoutines(db, r)
+		return r
+	}
+	return listRoutinesUncached(ctx, b, db)
+}
+
+func listRoutinesUncached(ctx context.Context, b tds.Backend, db string) []*tds.Routine {
 	store, ok := b.(tds.RoutineStore)
 	if !ok {
 		return nil

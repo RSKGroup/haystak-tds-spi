@@ -155,6 +155,7 @@ func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, 
 		return nil, -1, err
 	}
 	applyDefaultDB(q, db)
+	ctx = withSchemaCache(ctx) // per-statement memo: repeated catalog introspection (APPLY/correlated subqueries over sys.*) derives the schema once
 	if q.Union != nil {
 		rs, err := unionRun(ctx, b, q)
 		return rs, -1, err
@@ -1253,6 +1254,20 @@ func effAlias(alias, table string) string {
 
 // introspectSchema is the catalog (all databases, each table catalog-tagged; q.Database narrows) + db list the catalog views report.
 func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog.Schema, []string, error) {
+	if c := schemaCacheFrom(ctx); c != nil {
+		if s, dbs, ok := c.getSchema(q.Database); ok {
+			return s, dbs, nil
+		}
+		s, dbs, err := introspectSchemaUncached(ctx, b, q)
+		if err == nil {
+			c.putSchema(q.Database, s, dbs)
+		}
+		return s, dbs, err
+	}
+	return introspectSchemaUncached(ctx, b, q)
+}
+
+func introspectSchemaUncached(ctx context.Context, b tds.Backend, q *tds.Query) (catalog.Schema, []string, error) {
 	d, ok := b.(tds.Databaser)
 	if !ok {
 		s, err := b.Describe(ctx)
