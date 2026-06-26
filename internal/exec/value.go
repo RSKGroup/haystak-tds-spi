@@ -218,6 +218,18 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any,
 			return nil, err
 		}
 		return castValue(v, ve.Cast), nil
+	case tds.ValSubquery:
+		if ve.Sub == nil || env == nil || env.Sub == nil {
+			return nil, nil
+		}
+		rows, err := env.Sub(row, idx, ve.Sub)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) > 0 && len(rows[0]) > 0 {
+			return rows[0][0], nil
+		}
+		return nil, nil
 	}
 	return nil, nil
 }

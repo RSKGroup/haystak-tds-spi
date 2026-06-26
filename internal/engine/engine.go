@@ -300,7 +300,13 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		var schema catalog.Schema
 		var dbs []string
 		var rts []*tds.Routine
-		if !isRuntimeDMV(q.Table) { // runtime DMVs don't depend on the db schema; skip the costly introspection
+		switch {
+		case strings.EqualFold(q.Table, "databases"): // needs only db names, never per-db structure
+			var err error
+			if dbs, err = databaseNames(ctx, b); err != nil {
+				return nil, err
+			}
+		case !isRuntimeDMV(q.Table): // runtime DMVs don't depend on the db schema; skip the costly introspection
 			var err error
 			if schema, dbs, err = introspectSchema(ctx, b, q); err != nil {
 				return nil, err
@@ -331,7 +337,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	}
 	for _, it := range q.Select {
 		if it.Expr != nil {
-			if err := resolveValueSubqueries(ctx, b, it.Expr); err != nil {
+			if err := resolveValueSubqueries(ctx, b, it.Expr, q.FromAlias, q.Table); err != nil {
 				return nil, err
 			}
 		}
@@ -429,11 +435,11 @@ func resolveSubqueries(ctx context.Context, b tds.Backend, e *tds.Expr, outerAli
 			p.Value = vals
 			p.Sub = nil
 		default:
-			if err := resolveValueSubqueries(ctx, b, p.LeftExpr); err != nil {
+			if err := resolveValueSubqueries(ctx, b, p.LeftExpr, outerAlias, outerTable); err != nil {
 				return err
 			}
 			if ve, ok := p.Value.(*tds.ValueExpr); ok {
-				if err := resolveValueSubqueries(ctx, b, ve); err != nil {
+				if err := resolveValueSubqueries(ctx, b, ve, outerAlias, outerTable); err != nil {
 					return err
 				}
 			}
@@ -734,11 +740,14 @@ func leftColIndex(cols []catalog.Column) map[string]int {
 	return m
 }
 
-func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExpr) error {
+func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExpr, outerAlias, outerTable string) error {
 	if ve == nil {
 		return nil
 	}
 	if ve.Kind == tds.ValSubquery && ve.Sub != nil {
+		if isCorrelated(ve.Sub, outerAlias, outerTable) {
+			return nil // correlated: leave for exec's per-row SubFn
+		}
 		_, data, err := runMaterialize(ctx, b, ve.Sub)
 		if err != nil {
 			return err
@@ -753,23 +762,23 @@ func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExp
 		return nil
 	}
 	for _, sub := range []*tds.ValueExpr{ve.Left, ve.Right, ve.Operand, ve.Else} {
-		if err := resolveValueSubqueries(ctx, b, sub); err != nil {
+		if err := resolveValueSubqueries(ctx, b, sub, outerAlias, outerTable); err != nil {
 			return err
 		}
 	}
 	for _, a := range ve.Args {
-		if err := resolveValueSubqueries(ctx, b, a); err != nil {
+		if err := resolveValueSubqueries(ctx, b, a, outerAlias, outerTable); err != nil {
 			return err
 		}
 	}
 	for i := range ve.Whens {
-		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Match); err != nil {
+		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Match, outerAlias, outerTable); err != nil {
 			return err
 		}
-		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Result); err != nil {
+		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Result, outerAlias, outerTable); err != nil {
 			return err
 		}
-		if err := resolveSubqueries(ctx, b, ve.Whens[i].Cond, "", ""); err != nil {
+		if err := resolveSubqueries(ctx, b, ve.Whens[i].Cond, outerAlias, outerTable); err != nil {
 			return err
 		}
 	}
@@ -1265,6 +1274,14 @@ func introspectSchema(ctx context.Context, b tds.Backend, q *tds.Query) (catalog
 		return s, dbs, err
 	}
 	return introspectSchemaUncached(ctx, b, q)
+}
+
+// databaseNames returns the database list only (no per-db structure), for catalog views needing names.
+func databaseNames(ctx context.Context, b tds.Backend) ([]string, error) {
+	if d, ok := b.(tds.Databaser); ok {
+		return d.Databases(ctx)
+	}
+	return nil, nil
 }
 
 func introspectSchemaUncached(ctx context.Context, b tds.Backend, q *tds.Query) (catalog.Schema, []string, error) {
