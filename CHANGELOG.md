@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.8.0 — 2026-09-07
+
+**Security fix. A `DELETE` or `UPDATE` could destroy or rewrite an entire table.**
+
+If any clause the write parser did not recognise appeared after the table name, the `WHERE` was
+never parsed. `tds/dml.go` documents an empty `Where` as *"all rows"*, so the statement ran against
+the whole table, returned no error, and reported a rows-affected count that matched the destruction.
+
+Affected forms included a plain table alias — ordinary T-SQL, nowhere documented as unsupported:
+
+```sql
+DELETE FROM orders o WHERE o.id = 10             -- deleted every row
+DELETE FROM orders WITH (ROWLOCK) WHERE id = 10  -- deleted every row
+DELETE FROM orders WHERE id = 1 OR id = 2        -- deleted only id = 1
+```
+
+**Fixed two ways, both bringing writes in line with what the query path already did:**
+
+- `UPDATE` and `DELETE` now consume table hints, so `WITH (ROWLOCK)` no longer hides the `WHERE`.
+  These statements now apply their predicate correctly.
+- The write parser now requires the whole statement to be consumed. A form it cannot fully parse is
+  **refused with an error** instead of running as a wider write.
+
+**Breaking, deliberately.** Statements that previously appeared to succeed now return an error:
+table aliases and `AS` aliases on a write, `OUTPUT`, the `UPDATE … FROM` join form, and a top-level
+`OR` in a write's `WHERE`. Each of those previously did something other than what was asked. A
+deliberate whole-table `DELETE FROM t` is unchanged and still permitted.
+
+Anyone running a write-capable backend should review any automation that issued these forms: it did
+not do what it appeared to do.
+
 ## v1.6.1 — 2026-06-17
 
 - Windowed aggregates: `SUM` / `AVG` / `COUNT` / `MIN` / `MAX (col) OVER (…)` now parse and evaluate —
