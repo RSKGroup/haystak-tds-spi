@@ -20,6 +20,18 @@ func ParseWrite(sql string) (*tds.WriteStmt, bool, error) {
 		return nil, false, nil
 	}
 	p := &parser{toks: toks}
+	st, ok, perr := p.parseWrite()
+	if ok && perr == nil {
+		// The SELECT path has required this since it was written. Without it here, an unconsumed
+		// clause left the WHERE unparsed and the write silently widened to the whole table.
+		if t := p.peek(); t.kind != tEOF {
+			return nil, true, fmt.Errorf("tsql: unexpected %q after write statement; this form is not supported", t.text)
+		}
+	}
+	return st, ok, perr
+}
+
+func (p *parser) parseWrite() (*tds.WriteStmt, bool, error) {
 	switch {
 	case p.isKeyword("INSERT"):
 		ins, err := p.parseInsert()
@@ -121,6 +133,11 @@ func (p *parser) parseUpdate() (*tds.Update, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Hints are no-ops but must be CONSUMED: leaving them made isKeyword("WHERE") false, so the
+	// predicate was dropped and the write widened to every row.
+	if err := p.tableHints(); err != nil {
+		return nil, err
+	}
 	up := &tds.Update{Database: db, Schema: sch, Table: tbl}
 	if err := p.expectKeyword("SET"); err != nil {
 		return nil, err
@@ -163,6 +180,9 @@ func (p *parser) parseDelete() (*tds.Delete, error) {
 	}
 	db, sch, tbl, err := p.tableName()
 	if err != nil {
+		return nil, err
+	}
+	if err := p.tableHints(); err != nil {
 		return nil, err
 	}
 	del := &tds.Delete{Database: db, Schema: sch, Table: tbl}
