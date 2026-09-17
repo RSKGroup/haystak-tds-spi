@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func init() {
-	register("LEN", func(a []any) any { return int64(len(argStr(a, 0))) })
+	// LEN counts characters, not bytes, and ignores trailing spaces, as SQL Server does.
+	register("LEN", func(a []any) any { return int64(utf8.RuneCountInString(strings.TrimRight(argStr(a, 0), " "))) })
 	register("DATALEN", func(a []any) any { return int64(len(argStr(a, 0))) })
 	register("UPPER", func(a []any) any { return strings.ToUpper(argStr(a, 0)) })
 	register("LOWER", func(a []any) any { return strings.ToLower(argStr(a, 0)) })
@@ -72,14 +74,17 @@ func init() {
 		if n, ok := argInt(a, 2); ok && n > 1 {
 			start = int(n)
 		}
-		if start > len(s) {
+		rs := []rune(s)
+		if start > len(rs) {
 			return int64(0)
 		}
-		idx := strings.Index(fold.Key(s[start-1:]), fold.Key(sub))
+		tail := string(rs[start-1:])
+		// ASCII folding keeps byte offsets, so the match's byte index maps back through the unfolded tail.
+		idx := strings.Index(fold.Key(tail), fold.Key(sub))
 		if idx < 0 {
 			return int64(0)
 		}
-		return int64(start + idx)
+		return int64(start + utf8.RuneCountInString(tail[:idx]))
 	})
 	register("LEFT", func(a []any) any { return leftRight(a, true) })
 	register("RIGHT", func(a []any) any { return leftRight(a, false) })
@@ -97,7 +102,7 @@ func init() {
 		if len(a) < 4 {
 			return nil
 		}
-		s := argStr(a, 0)
+		s := []rune(argStr(a, 0))
 		start, _ := argInt(a, 1)
 		length, _ := argInt(a, 2)
 		if start < 1 || int(start) > len(s) || length < 0 {
@@ -107,7 +112,7 @@ func init() {
 		if end > len(s) {
 			end = len(s)
 		}
-		return s[:st] + argStr(a, 3) + s[end:]
+		return string(s[:st]) + argStr(a, 3) + string(s[end:])
 	})
 	register("REVERSE", func(a []any) any {
 		r := []rune(argStr(a, 0))
@@ -364,17 +369,17 @@ func leftRight(a []any, left bool) any {
 	if !ok {
 		return nil
 	}
-	s := argStr(a, 0)
+	s := []rune(argStr(a, 0))
 	if n <= 0 {
 		return ""
 	}
 	if int(n) >= len(s) {
-		return s
+		return string(s)
 	}
 	if left {
-		return s[:n]
+		return string(s[:n])
 	}
-	return s[len(s)-int(n):]
+	return string(s[len(s)-int(n):])
 }
 
 // patIndex is PATINDEX: 1-based start of the first LIKE-pattern match, else 0.
@@ -384,7 +389,7 @@ func patIndex(pattern, s string) int64 {
 		return 0
 	}
 	if loc := re.FindStringIndex(s); loc != nil {
-		return int64(loc[0] + 1)
+		return int64(utf8.RuneCountInString(s[:loc[0]]) + 1)
 	}
 	return 0
 }
@@ -416,7 +421,8 @@ func likeToRegexp(pattern string) string {
 }
 
 // substr is SQL Server's 1-based SUBSTRING.
-func substr(s string, start, length int) string {
+func substr(str string, start, length int) string {
+	s := []rune(str)
 	if start < 1 {
 		length += start - 1
 		start = 1
@@ -428,7 +434,7 @@ func substr(s string, start, length int) string {
 	if end > len(s) {
 		end = len(s)
 	}
-	return s[start-1 : end]
+	return string(s[start-1 : end])
 }
 
 // replaceFold finds matches under the default collation and keeps the unmatched text as stored; ASCII folding preserves byte offsets.
