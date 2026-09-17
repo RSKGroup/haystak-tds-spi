@@ -15,6 +15,9 @@ func TestStringSearchFunctionsFoldASCIICase(t *testing.T) {
 	if got := replaceFold("abc", "", "x"); got != "abc" {
 		t.Errorf("REPLACE with an empty pattern must return the input, got %q", got)
 	}
+	if got := registry["REPLACE"]([]any{"Mr SMITH", "smith", "Jones"}); got != "Mr Jones" {
+		t.Errorf("REPLACE() = %v", got)
+	}
 	charindex := registry["CHARINDEX"]
 	if got := charindex([]any{"SMITH", "mr smith"}); got != int64(4) {
 		t.Errorf("CHARINDEX = %v, want 4", got)
