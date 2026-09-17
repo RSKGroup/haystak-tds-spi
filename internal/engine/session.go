@@ -166,6 +166,10 @@ func applyDefaultDB(q *tds.Query, db string) {
 		return
 	}
 	for a := q; a != nil; a = a.Union {
+		// A CTE body is its own query; without this a WITH over a real table had no database to read.
+		for _, cte := range a.CTEs {
+			applyDefaultDB(cte, db)
+		}
 		if a.Table != "" && a.Database == "" && !isSystemSchema(a.Schema) {
 			a.Database = db
 		}

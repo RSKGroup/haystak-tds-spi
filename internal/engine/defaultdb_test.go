@@ -26,3 +26,19 @@ func TestApplyDefaultDBRecurses(t *testing.T) {
 		t.Fatal("nested subquery Database not qualified")
 	}
 }
+
+// A CTE body, and every set-operation arm inside it, reads the session database.
+func TestApplyDefaultDBQualifiesCTEBodies(t *testing.T) {
+	q, err := tsql.Parse("WITH a AS (SELECT id FROM t UNION ALL SELECT id FROM u), b AS (SELECT id FROM v) SELECT id FROM a UNION ALL SELECT id FROM b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyDefaultDB(q, "db1")
+	for name, cte := range q.CTEs {
+		for arm := cte; arm != nil; arm = arm.Union {
+			if arm.Database != "db1" {
+				t.Errorf("CTE %s arm on %s: Database %q, want db1", name, arm.Table, arm.Database)
+			}
+		}
+	}
+}
