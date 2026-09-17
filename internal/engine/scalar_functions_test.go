@@ -215,13 +215,14 @@ func TestStringFinishers(t *testing.T) {
 }
 
 func TestStringCharFunctions(t *testing.T) {
-	rows := qry(t, "SELECT ASCII('A'), CHAR(65), UNICODE('A'), NCHAR(65), LEN(SPACE(3)), PATINDEX('%cd%','abcdef'), PATINDEX('%xy%','abc')")
+	// LEN ignores trailing spaces, so SPACE is measured with a character after it.
+	rows := qry(t, "SELECT ASCII('A'), CHAR(65), UNICODE('A'), NCHAR(65), LEN(SPACE(3) + 'x'), PATINDEX('%cd%','abcdef'), PATINDEX('%xy%','abc'), LEN(SPACE(3))")
 	r := rows[0]
 	if cell(r[0]) != "65" || cell(r[1]) != "A" || cell(r[2]) != "65" || cell(r[3]) != "A" {
 		t.Errorf("ASCII/CHAR/UNICODE/NCHAR = %v", r[0:4])
 	}
-	if cell(r[4]) != "3" || cell(r[5]) != "3" || cell(r[6]) != "0" {
-		t.Errorf("SPACE/PATINDEX = %v/%v/%v, want 3/3/0", r[4], r[5], r[6])
+	if cell(r[4]) != "4" || cell(r[5]) != "3" || cell(r[6]) != "0" || cell(r[7]) != "0" {
+		t.Errorf("SPACE/PATINDEX/LEN = %v/%v/%v/%v, want 4/3/0/0", r[4], r[5], r[6], r[7])
 	}
 }
 
