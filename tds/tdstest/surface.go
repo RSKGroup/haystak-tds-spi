@@ -210,6 +210,21 @@ func exactRows(n int) checkFn {
 	}
 }
 
+// firstCol asserts the first column, row by row, renders exactly as want.
+func firstCol(want ...string) checkFn {
+	return func(tb testing.TB, _ []catalog.Column, data [][]any) {
+		got := make([]string, len(data))
+		for i, r := range data {
+			if len(r) > 0 {
+				got[i] = fmt.Sprintf("%v", r[0])
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			tb.Errorf("first column = %v, want %v", got, want)
+		}
+	}
+}
+
 func atLeastRows(n int) checkFn {
 	return func(tb testing.TB, _ []catalog.Column, data [][]any) {
 		if len(data) < n {

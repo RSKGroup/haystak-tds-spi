@@ -14,6 +14,7 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/infoschema"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/sysviews"
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/internal/tsql"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -251,7 +252,7 @@ func exceptRows(a, b [][]any) [][]any {
 	return out
 }
 
-func rowKey(r []any) string { return fmt.Sprintf("%v", r) }
+func rowKey(r []any) string { return fold.RowKey(r, nil) }
 
 func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
 	if isTempName(q.Table) && q.FromSub == nil && len(q.Joins) == 0 {

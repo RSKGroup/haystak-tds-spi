@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -60,7 +61,7 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 
 	var rowsOut []aggregated
 	for _, set := range sets {
-		setRows, err := groupOneSet(idx, rows, q.Select, set, universe)
+		setRows, err := groupOneSet(idx, rows, q.Select, set, universe, q.GroupByCaseSensitive)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +105,7 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 		}
 		sort.SliceStable(perm, func(a, b int) bool {
 			for j, o := range q.OrderBy {
-				c, ok := compare(keys[perm[a]][j], keys[perm[b]][j])
+				c, ok := compareCS(keys[perm[a]][j], keys[perm[b]][j], o.CaseSensitive)
 				if !ok || c == 0 {
 					continue
 				}
@@ -284,14 +285,14 @@ func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 	case tds.OpIn:
 		list, _ := p.Value.([]any)
 		for _, item := range list {
-			if c, ok := compare(v, item); ok && c == 0 {
+			if c, ok := compareCS(v, item, p.CaseSensitive); ok && c == 0 {
 				return true, nil
 			}
 		}
 		return false, nil
 	case tds.OpLike:
 		pat, _ := p.Value.(string)
-		return likeMatch(fmt.Sprintf("%v", v), pat), nil
+		return likeMatch(fmt.Sprintf("%v", v), pat, p.CaseSensitive), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
@@ -308,7 +309,7 @@ func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 			}
 			rhs = outRow[j]
 		}
-		c, ok := compare(v, rhs)
+		c, ok := compareCS(v, rhs, p.CaseSensitive)
 		if !ok {
 			return false, nil
 		}
@@ -374,16 +375,22 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 }
 
 // groupOneSet aggregates rows over one grouping set; universe columns not in the set roll up to NULL.
-func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []string, universe map[string]bool) ([]aggregated, error) {
+func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []string, universe map[string]bool, caseSensitive []string) ([]aggregated, error) {
 	setIdx := make([]int, 0, len(set))
 	setCols := make(map[string]bool, len(set))
-	for _, g := range set {
+	exact := make([]bool, len(set))
+	for j, g := range set {
 		i, ok := idx[g]
 		if !ok {
 			return nil, fmt.Errorf("exec: unknown column %q in GROUP BY", g)
 		}
 		setIdx = append(setIdx, i)
 		setCols[g] = true
+		for _, cs := range caseSensitive {
+			if cs == g {
+				exact[j] = true
+			}
+		}
 	}
 	var order []string
 	groups := map[string][][]any{}
@@ -394,7 +401,7 @@ func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []s
 			for j, gi := range setIdx {
 				parts[j] = row[gi]
 			}
-			key = fmt.Sprintf("%v", parts)
+			key = fold.RowKey(parts, exact)
 		}
 		if _, ok := groups[key]; !ok {
 			order = append(order, key)
@@ -489,7 +496,7 @@ func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]an
 				if r[i] == nil {
 					continue
 				}
-				k := fmt.Sprintf("%v", r[i])
+				k := fmt.Sprintf("%v", fold.Value(r[i]))
 				if seen[k] {
 					continue
 				}
@@ -520,7 +527,7 @@ func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]an
 		seen := map[string]bool{}
 		for _, r := range rows {
 			if r[i] != nil {
-				seen[fmt.Sprintf("%v", r[i])] = true
+				seen[fmt.Sprintf("%v", fold.Value(r[i]))] = true
 			}
 		}
 		return int64(len(seen)), nil

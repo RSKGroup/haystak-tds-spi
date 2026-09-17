@@ -6,6 +6,7 @@ package exec
 import (
 	"fmt"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -50,7 +51,7 @@ func Pivot(cols []catalog.Column, data [][]any, spec *tds.PivotSpec) ([]catalog.
 		for j, gi := range groupIdx {
 			parts[j] = row[gi]
 		}
-		key := fmt.Sprintf("%v", parts)
+		key := fold.RowKey(parts, nil)
 		if _, ok := groups[key]; !ok {
 			order = append(order, key)
 		}
@@ -67,7 +68,7 @@ func Pivot(cols []catalog.Column, data [][]any, spec *tds.PivotSpec) ([]catalog.
 		for _, v := range spec.Values {
 			var matched [][]any
 			for _, r := range grp {
-				if fmt.Sprintf("%v", r[pivIdx]) == v {
+				if fold.Equal(fmt.Sprintf("%v", r[pivIdx]), v) {
 					matched = append(matched, r)
 				}
 			}

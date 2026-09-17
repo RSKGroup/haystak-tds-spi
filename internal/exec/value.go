@@ -134,7 +134,7 @@ func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]a
 		name := fmt.Sprintf("__ord%d", k)
 		newCols = append(newCols, catalog.Column{Name: name, Type: exprType(newOrder[k].Expr, cols, idx)})
 		comps = append(comps, comp{len(newCols) - 1, newOrder[k].Expr})
-		newOrder[k] = tds.OrderItem{Column: name, Desc: newOrder[k].Desc}
+		newOrder[k] = tds.OrderItem{Column: name, Desc: newOrder[k].Desc, CaseSensitive: newOrder[k].CaseSensitive}
 	}
 	out := make([][]any, len(rows))
 	for r, row := range rows {

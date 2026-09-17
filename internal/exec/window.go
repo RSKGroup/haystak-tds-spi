@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 	"github.com/RSKGroup/haystak-tds-spi/tds/types"
@@ -120,7 +121,7 @@ func partKey(row []any, pIdx []int) string {
 	for i, ci := range pIdx {
 		parts[i] = row[ci]
 	}
-	return fmt.Sprintf("%v", parts)
+	return fold.RowKey(parts, nil)
 }
 
 // orderMembers stably sorts the partition's row indices by the window ORDER BY.
@@ -146,7 +147,7 @@ func orderMembers(members []int, rows [][]any, idx map[string]int, order []tds.O
 	}
 	sort.SliceStable(pairs, func(a, b int) bool {
 		for j, o := range order {
-			c, ok := compare(pairs[a].key[j], pairs[b].key[j])
+			c, ok := compareCS(pairs[a].key[j], pairs[b].key[j], o.CaseSensitive)
 			if !ok || c == 0 {
 				continue
 			}
@@ -203,7 +204,7 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 				if err != nil {
 					return err
 				}
-				if !keysEqual(ka, kb) {
+				if !keysEqual(ka, kb, w.OrderBy) {
 					if dense {
 						rank++
 					} else {
@@ -225,7 +226,7 @@ func applyWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]
 		}
 		for i := 0; i < total; {
 			j := i
-			for j+1 < total && keysEqual(keys[j+1], keys[i]) {
+			for j+1 < total && keysEqual(keys[j+1], keys[i], w.OrderBy) {
 				j++
 			}
 			for t := i; t <= j; t++ {
@@ -333,7 +334,7 @@ func aggWindow(w *tds.WindowSpec, members []int, rows [][]any, idx map[string]in
 				if err != nil {
 					return err
 				}
-				if !keysEqual(ka, kb) {
+				if !keysEqual(ka, kb, w.OrderBy) {
 					break
 				}
 				j++
@@ -468,12 +469,13 @@ func percentileCont(vals []float64, p float64) float64 {
 	return vals[lo] + (rank-float64(lo))*(vals[hi]-vals[lo])
 }
 
-func keysEqual(a, b []any) bool {
+func keysEqual(a, b []any, order []tds.OrderItem) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if c, ok := compare(a[i], b[i]); !ok || c != 0 {
+		exact := i < len(order) && order[i].CaseSensitive
+		if c, ok := compareCS(a[i], b[i], exact); !ok || c != 0 {
 			return false
 		}
 	}

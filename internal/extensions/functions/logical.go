@@ -3,6 +3,8 @@
 
 package functions
 
+import "github.com/RSKGroup/haystak-tds-spi/internal/fold"
+
 func init() {
 	register("ISNULL", coalesce)
 	register("COALESCE", coalesce)
@@ -52,7 +54,7 @@ func eqVals(x, y any) bool {
 		}
 	case string:
 		yv, ok := y.(string)
-		return ok && xv == yv
+		return ok && fold.Equal(xv, yv)
 	case bool:
 		yv, ok := y.(bool)
 		return ok && xv == yv

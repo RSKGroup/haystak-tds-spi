@@ -320,6 +320,10 @@ func (p *parser) simpleWhere() ([]tds.Predicate, error) {
 		if !ok {
 			return nil, fmt.Errorf("tsql: expected column in WHERE, got %q", p.peek().text)
 		}
+		cs, err := p.optCollate()
+		if err != nil {
+			return nil, err
+		}
 		opTok := p.peek()
 		if opTok.kind != tOp {
 			return nil, fmt.Errorf("tsql: expected operator in WHERE, got %q", opTok.text)
@@ -333,7 +337,11 @@ func (p *parser) simpleWhere() ([]tds.Predicate, error) {
 		if err != nil {
 			return nil, err
 		}
-		preds = append(preds, tds.Predicate{Column: col, Op: op, Value: val})
+		rcs, err := p.optCollate()
+		if err != nil {
+			return nil, err
+		}
+		preds = append(preds, tds.Predicate{Column: col, Op: op, Value: val, CaseSensitive: cs || rcs})
 		if p.isKeyword("AND") {
 			p.next()
 			continue

@@ -5,6 +5,7 @@ package exec
 
 import (
 	"testing"
+	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -311,5 +312,19 @@ func TestUnknownColumnErrors(t *testing.T) {
 	}
 	if _, err := Apply(cols(), data(), &tds.Query{Select: sel("nope")}); err == nil {
 		t.Fatal("expected error for unknown SELECT column")
+	}
+}
+
+func TestCompareMixedTypeFallbackFolds(t *testing.T) {
+	ts := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	s := "2026-06-10 00:00:00 +0000 utc"
+	if c, ok := compare(s, ts); !ok || c != 0 {
+		t.Errorf("compare(%q, time) = %d, want 0 under the case-insensitive default", s, c)
+	}
+	if c, _ := compareCS(s, ts, true); c == 0 {
+		t.Errorf("exact compare(%q, time) = 0, want non-zero", s)
+	}
+	if c, _ := compare(int64(5), ts); c == 0 {
+		t.Errorf("non-string fallback unexpectedly equal")
 	}
 }

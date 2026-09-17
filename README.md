@@ -162,6 +162,7 @@ Predicates and operators:
 
 - Comparison `= <> < > <= >=`; `AND`, `OR`, `NOT`, parentheses
 - `IN` (value list or subquery), `BETWEEN`, `LIKE`, `IS NULL`, `IS NOT NULL`, `EXISTS`
+- String comparison, `LIKE`, `ORDER BY`, `GROUP BY`, `DISTINCT`, and set operations are ASCII case-insensitive by default (matching `SQL_Latin1_General_CP1_CI_AS`); `COLLATE <name>` with a `_CS_` collation on a predicate, `ORDER BY`, or `GROUP BY` item makes it case-sensitive and sets `CaseSensitive` on the `tds.Predicate` / `tds.OrderItem` (or `Query.GroupByCaseSensitive`) a pushing backend receives
 - Arithmetic `+ - * / %` and string concatenation, in both `SELECT` and `WHERE`
 
 Functions:

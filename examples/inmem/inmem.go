@@ -439,7 +439,7 @@ func matchPreds(cols []catalog.Column, row []any, preds []tds.Predicate) bool {
 }
 
 func predTrue(v any, p tds.Predicate) bool {
-	c, ok := cmp(v, p.Value)
+	c, ok := cmp(v, p.Value, p.CaseSensitive)
 	if !ok {
 		return false
 	}
@@ -460,7 +460,7 @@ func predTrue(v any, p tds.Predicate) bool {
 	return false
 }
 
-func cmp(a, b any) (int, bool) {
+func cmp(a, b any, exact bool) (int, bool) {
 	switch av := a.(type) {
 	case int64:
 		if bv, ok := b.(int64); ok {
@@ -475,10 +475,24 @@ func cmp(a, b any) (int, bool) {
 		}
 	case string:
 		if bv, ok := b.(string); ok {
-			return strings.Compare(av, bv), true
+			if exact {
+				return strings.Compare(av, bv), true
+			}
+			return strings.Compare(asciiLower(av), asciiLower(bv)), true
 		}
 	}
 	return 0, false
+}
+
+// asciiLower folds only A-Z, matching the engine's default case-insensitive string comparison.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 type rows struct {

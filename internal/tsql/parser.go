@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
 
@@ -1341,25 +1342,25 @@ func (p *parser) inValueList() ([]string, error) {
 func (p *parser) groupByClause(q *tds.Query) error {
 	switch {
 	case p.peekIs("ROLLUP") && p.peekN(1).kind == tLParen:
-		cols, err := p.parenIdentList()
+		cols, err := p.parenIdentList(q)
 		if err != nil {
 			return err
 		}
 		q.GroupBy, q.GroupingSets = cols, rollupSets(cols)
 	case p.peekIs("CUBE") && p.peekN(1).kind == tLParen:
-		cols, err := p.parenIdentList()
+		cols, err := p.parenIdentList(q)
 		if err != nil {
 			return err
 		}
 		q.GroupBy, q.GroupingSets = cols, cubeSets(cols)
 	case p.peekIs("GROUPING") && p.peekN(1).kind == tIdent && strings.EqualFold(p.peekN(1).text, "SETS"):
-		sets, universe, err := p.groupingSetsClause()
+		sets, universe, err := p.groupingSetsClause(q)
 		if err != nil {
 			return err
 		}
 		q.GroupBy, q.GroupingSets = universe, sets
 	default:
-		cols, err := p.identList()
+		cols, err := p.groupIdentList(q)
 		if err != nil {
 			return err
 		}
@@ -1368,11 +1369,60 @@ func (p *parser) groupByClause(q *tds.Query) error {
 	return nil
 }
 
+// groupIdentList is identList that also accepts `col COLLATE name`, recording _CS_ columns on q.
+func (p *parser) groupIdentList(q *tds.Query) ([]string, error) {
+	var out []string
+	for {
+		name, ok := p.qualifiedName()
+		if !ok {
+			return nil, fmt.Errorf("tsql: expected column name, got %q", p.peek().text)
+		}
+		if err := p.groupCollate(q, name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+		if p.peek().kind == tComma {
+			p.next()
+			continue
+		}
+		break
+	}
+	return out, nil
+}
+
+func (p *parser) groupCollate(q *tds.Query, name string) error {
+	cs, err := p.optCollate()
+	if err != nil || !cs {
+		return err
+	}
+	for _, c := range q.GroupByCaseSensitive {
+		if c == name {
+			return nil
+		}
+	}
+	q.GroupByCaseSensitive = append(q.GroupByCaseSensitive, name)
+	return nil
+}
+
+// optCollate consumes a trailing `COLLATE name` and reports whether that collation is case-sensitive.
+func (p *parser) optCollate() (bool, error) {
+	if !p.peekIs("COLLATE") {
+		return false, nil
+	}
+	p.next()
+	t := p.peek()
+	if t.kind != tIdent && t.kind != tKeyword {
+		return false, fmt.Errorf("tsql: expected collation name after COLLATE, got %q", t.text)
+	}
+	p.next()
+	return fold.CaseSensitive(t.text), nil
+}
+
 // parenIdentList consumes a ROLLUP/CUBE name then a parenthesized column list.
-func (p *parser) parenIdentList() ([]string, error) {
+func (p *parser) parenIdentList(q *tds.Query) ([]string, error) {
 	p.next() // ROLLUP / CUBE
 	p.next() // (
-	cols, err := p.identList()
+	cols, err := p.groupIdentList(q)
 	if err != nil {
 		return nil, err
 	}
@@ -1384,7 +1434,7 @@ func (p *parser) parenIdentList() ([]string, error) {
 }
 
 // groupingSetsClause parses GROUPING SETS ( set, … ) where each set is ( cols ), (), or a bare column.
-func (p *parser) groupingSetsClause() ([][]string, []string, error) {
+func (p *parser) groupingSetsClause(q *tds.Query) ([][]string, []string, error) {
 	p.next() // GROUPING
 	p.next() // SETS
 	if p.peek().kind != tLParen {
@@ -1399,7 +1449,7 @@ func (p *parser) groupingSetsClause() ([][]string, []string, error) {
 		if p.peek().kind == tLParen {
 			p.next()
 			if p.peek().kind != tRParen {
-				cols, err := p.identList()
+				cols, err := p.groupIdentList(q)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1413,6 +1463,9 @@ func (p *parser) groupingSetsClause() ([][]string, []string, error) {
 			name, ok := p.qualifiedName()
 			if !ok {
 				return nil, nil, fmt.Errorf("tsql: expected column in GROUPING SETS, got %q", p.peek().text)
+			}
+			if err := p.groupCollate(q, name); err != nil {
+				return nil, nil, err
 			}
 			set = []string{name}
 		}
@@ -1591,6 +1644,15 @@ func (p *parser) predicate() (*tds.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs, err := p.optCollate()
+	if err != nil {
+		return nil, err
+	}
+	collate := func() error {
+		c, err := p.optCollate()
+		cs = cs || c
+		return err
+	}
 	col := ""
 	var leftExpr *tds.ValueExpr
 	if left.Kind == tds.ValCol {
@@ -1599,7 +1661,7 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		leftExpr = left
 	}
 	mk := func(op tds.Op, val any) *tds.Expr {
-		return &tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: op, Value: val}}
+		return &tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: op, Value: val, CaseSensitive: cs}}
 	}
 
 	// `col NOT IN/LIKE/BETWEEN …` — consume the leading NOT and negate the membership predicate.
@@ -1643,11 +1705,22 @@ func (p *parser) predicate() (*tds.Expr, error) {
 				return nil, fmt.Errorf("tsql: expected ')' after subquery, got %q", p.peek().text)
 			}
 			p.next()
-			return wrap(&tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: tds.OpIn, Sub: sub}}), nil
+			return wrap(&tds.Expr{Pred: &tds.Predicate{Column: col, LeftExpr: leftExpr, Op: tds.OpIn, Sub: sub, CaseSensitive: cs}}), nil
 		}
-		vals, err := p.literalList()
-		if err != nil {
-			return nil, err
+		var vals []any
+		for {
+			v, err := p.literal()
+			if err != nil {
+				return nil, err
+			}
+			if err := collate(); err != nil {
+				return nil, err
+			}
+			vals = append(vals, v)
+			if p.peek().kind != tComma {
+				break
+			}
+			p.next()
 		}
 		if p.peek().kind != tRParen {
 			return nil, fmt.Errorf("tsql: expected ')' after IN list, got %q", p.peek().text)
@@ -1662,6 +1735,9 @@ func (p *parser) predicate() (*tds.Expr, error) {
 			return nil, fmt.Errorf("tsql: expected string after LIKE, got %q", t.text)
 		}
 		p.next()
+		if err := collate(); err != nil {
+			return nil, err
+		}
 		return wrap(mk(tds.OpLike, t.text)), nil
 
 	case p.isKeyword("BETWEEN"):
@@ -1670,11 +1746,17 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := collate(); err != nil {
+			return nil, err
+		}
 		if err := p.expectKeyword("AND"); err != nil {
 			return nil, err
 		}
 		hi, err := p.literal()
 		if err != nil {
+			return nil, err
+		}
+		if err := collate(); err != nil {
 			return nil, err
 		}
 		return wrap(&tds.Expr{And: []*tds.Expr{mk(tds.OpGe, lo), mk(tds.OpLe, hi)}}), nil
@@ -1694,6 +1776,9 @@ func (p *parser) predicate() (*tds.Expr, error) {
 	}
 	rhs, err := p.valueExpr()
 	if err != nil {
+		return nil, err
+	}
+	if err := collate(); err != nil {
 		return nil, err
 	}
 	return mk(op, rhs), nil
@@ -1786,6 +1871,11 @@ func (p *parser) orderList() ([]tds.OrderItem, error) {
 			} else {
 				item.Expr = ve
 			}
+			cs, err := p.optCollate()
+			if err != nil {
+				return nil, err
+			}
+			item.CaseSensitive = cs
 		}
 		if p.isKeyword("ASC") {
 			p.next()

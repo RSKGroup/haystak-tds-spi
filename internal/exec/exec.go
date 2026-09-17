@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
 )
@@ -130,7 +131,7 @@ func dedupe(rows [][]any) [][]any {
 	seen := make(map[string]bool, len(rows))
 	out := rows[:0]
 	for _, row := range rows {
-		k := fmt.Sprintf("%v", row)
+		k := fold.RowKey(row, nil)
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, row)
@@ -342,7 +343,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 		}
 		for _, r := range rows {
 			if len(r) > 0 {
-				if c, ok := compare(v, r[0]); ok && c == 0 {
+				if c, ok := compareCS(v, r[0], p.CaseSensitive); ok && c == 0 {
 					return true, nil
 				}
 			}
@@ -357,14 +358,14 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 	case tds.OpIn:
 		list, _ := p.Value.([]any)
 		for _, item := range list {
-			if c, ok := compare(v, item); ok && c == 0 {
+			if c, ok := compareCS(v, item, p.CaseSensitive); ok && c == 0 {
 				return true, nil
 			}
 		}
 		return false, nil
 	case tds.OpLike:
 		pat, _ := p.Value.(string)
-		return likeMatch(fmt.Sprintf("%v", v), pat), nil
+		return likeMatch(fmt.Sprintf("%v", v), pat, p.CaseSensitive), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
@@ -381,7 +382,7 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 			}
 			rhs = row[j]
 		}
-		c, ok := compare(v, rhs)
+		c, ok := compareCS(v, rhs, p.CaseSensitive)
 		if !ok {
 			return false, nil
 		}
@@ -389,9 +390,13 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 	}
 }
 
-func likeMatch(s, pattern string) bool {
+// likeMatch folds both sides itself so LIKE shares the ASCII-only definition instead of regexp's Unicode (?i).
+func likeMatch(s, pattern string, exact bool) bool {
+	if !exact {
+		s, pattern = fold.Key(s), fold.Key(pattern)
+	}
 	var b strings.Builder
-	b.WriteString("(?is)^")
+	b.WriteString("(?s)^")
 	for _, r := range pattern {
 		switch r {
 		case '%':
@@ -431,7 +436,7 @@ func satisfies(op tds.Op, c int) bool {
 func less(idx map[string]int, a, b []any, order []tds.OrderItem) bool {
 	for _, o := range order {
 		i := idx[o.Column]
-		c, ok := compare(a[i], b[i])
+		c, ok := compareCS(a[i], b[i], o.CaseSensitive)
 		if !ok || c == 0 {
 			continue
 		}
@@ -443,7 +448,10 @@ func less(idx map[string]int, a, b []any, order []tds.OrderItem) bool {
 	return false
 }
 
-func compare(a, b any) (int, bool) {
+func compare(a, b any) (int, bool) { return compareCS(a, b, false) }
+
+// compareCS orders two values; strings compare ASCII case-insensitively unless exact.
+func compareCS(a, b any, exact bool) (int, bool) {
 	if a == nil || b == nil {
 		return 0, false
 	}
@@ -471,7 +479,10 @@ func compare(a, b any) (int, bool) {
 		}
 	case string:
 		if bv, ok := b.(string); ok {
-			return strings.Compare(av, bv), true
+			if exact {
+				return strings.Compare(av, bv), true
+			}
+			return fold.Compare(av, bv), true
 		}
 	case bool:
 		if bv, ok := b.(bool); ok {
@@ -500,8 +511,14 @@ func compare(a, b any) (int, bool) {
 			return bytes.Compare(av, bv), true
 		}
 	}
-	return strings.Compare(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b)), true
+	sa, sb := fmt.Sprintf("%v", a), fmt.Sprintf("%v", b)
+	if !exact && (isString(a) || isString(b)) {
+		return fold.Compare(sa, sb), true
+	}
+	return strings.Compare(sa, sb), true
 }
+
+func isString(v any) bool { _, ok := v.(string); return ok }
 
 func isBoolType(v any) bool { _, ok := v.(bool); return ok }
 

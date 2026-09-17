@@ -27,6 +27,9 @@ type Predicate struct {
 	Op       Op
 	Value    any
 	Sub      *Query // IN (subquery): resolved to a value list before exec
+
+	// CaseSensitive is set by a _CS_ COLLATE. False means ASCII case-insensitive, which a pushing backend must match.
+	CaseSensitive bool
 }
 
 // ColRef marks a Predicate value as a reference to another column (col = col).
@@ -134,6 +137,9 @@ type OrderItem struct {
 	Ordinal int        // 1-based select-list position (ORDER BY n); 0 = use Column/Expr
 	Expr    *ValueExpr // set when the term is an expression rather than a bare column
 	Desc    bool
+
+	// CaseSensitive is set by a _CS_ COLLATE. False means strings sort ASCII case-insensitively.
+	CaseSensitive bool
 }
 
 // JoinType is the kind of join in a multi-table FROM.
@@ -219,4 +225,7 @@ type Query struct {
 	Union        *Query            // next SELECT in a UNION/INTERSECT/EXCEPT chain (nil if none)
 	SetOp        SetOp             // junction operation to Union
 	CTEs         map[string]*Query // WITH-clause named queries, resolved at FROM
+
+	// GroupByCaseSensitive lists GroupBy columns under a _CS_ COLLATE; the rest group ASCII case-insensitively.
+	GroupByCaseSensitive []string
 }
