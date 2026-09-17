@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.9.0 - 2026-09-17
+
+**String comparison is case-insensitive by default, matching SQL Server's default collation.**
+
+The server has always advertised `SQL_Latin1_General_CP1_CI_AS`, while the executor compared strings
+byte for byte, so `WHERE name = 'smith'` did not match `Smith`. Every string value comparison now
+folds ASCII letters (A-Z equals a-z). Characters outside ASCII still compare exactly, so `'Émile'`
+does not equal `'émile'`.
+
+Applies to `=`, `<>`, `<`, `<=`, `>`, `>=`, `BETWEEN`, `IN` (lists and subqueries), `LIKE`, simple
+`CASE`, `NULLIF`, `JOIN ON`, `HAVING`, `ORDER BY` (including window `ORDER BY` and rank ties),
+`GROUP BY` (including `ROLLUP`, `CUBE`, `GROUPING SETS` and `PIVOT`), `DISTINCT`, `COUNT(DISTINCT)`,
+`APPROX_COUNT_DISTINCT`, `UNION`, `INTERSECT`, `EXCEPT`, `PARTITION BY`, `MIN`, `MAX`, `REPLACE`,
+`CHARINDEX` and `PATINDEX`. Where rows that differ only in case form one group or one distinct row,
+the first row's spelling is returned.
+
+**Opt-out.** `COLLATE <name>` with `_CS_` in the name makes that comparison, sort key or grouping
+exact, for example `WHERE code COLLATE Latin1_General_CS_AS = 'ABC'`. It is accepted in `WHERE`,
+`HAVING`, `JOIN ON`, searched `CASE`/`IIF` conditions, `UPDATE`/`DELETE` predicates, `ORDER BY` and
+`GROUP BY`. Any other collation name keeps the case-insensitive default.
+
+**Backends that push predicates must match.** New exported fields tell a backend when a comparison
+is exact: `tds.Predicate.CaseSensitive`, `tds.OrderItem.CaseSensitive` and
+`tds.Query.GroupByCaseSensitive`. When false, a pushed predicate must match ASCII case-insensitively,
+or it will drop rows the engine would keep. The in-memory example backend implements this.
+
 ## v1.8.0 — 2026-09-07
 
 **Security fix. A `DELETE` or `UPDATE` could destroy or rewrite an entire table.**
