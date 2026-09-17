@@ -174,8 +174,14 @@ func unionRun(ctx context.Context, b tds.Backend, head *tds.Query) (tds.Rows, er
 			ops = append(ops, a.SetOp)
 		}
 	}
+	// ORDER BY and OFFSET ... FETCH after the last SELECT order and page the whole result; a TOP stays
+	// with the SELECT it was written in.
 	last := arms[len(arms)-1]
-	order, limit, offset := last.OrderBy, last.Limit, last.Offset
+	order, offset := last.OrderBy, last.Offset
+	limit, percent := 0, false
+	if !last.LimitTop {
+		limit, percent = last.Limit, last.LimitPercent
+	}
 
 	var outCols []catalog.Column
 	armRows := make([][][]any, len(arms))
@@ -187,8 +193,10 @@ func unionRun(ctx context.Context, b tds.Backend, head *tds.Query) (tds.Rows, er
 		}
 		arm.Union = nil
 		arm.OrderBy = nil
-		arm.Limit = 0
 		arm.Offset = 0
+		if !arm.LimitTop {
+			arm.Limit, arm.LimitPercent = 0, false
+		}
 		rs, err := runParsed(ctx, b, &arm)
 		if err != nil {
 			return nil, err
@@ -202,24 +210,49 @@ func unionRun(ctx context.Context, b tds.Backend, head *tds.Query) (tds.Rows, er
 		}
 		armRows[i] = data
 	}
-	result := armRows[0]
-	for i := 1; i < len(arms); i++ {
-		switch ops[i-1] {
-		case tds.SetIntersect:
-			result = intersectRows(result, armRows[i])
+	result := combineSetOps(armRows, ops)
+	return exec.Apply(outCols, result, &tds.Query{OrderBy: order, Limit: limit, LimitPercent: percent, Offset: offset})
+}
+
+// combineSetOps applies SQL Server's precedence: INTERSECT binds first, then UNION, UNION ALL and EXCEPT
+// left to right. Each operator removes duplicates from its own result only, so the rows a UNION ALL
+// appends to a UNION keep their duplicates.
+func combineSetOps(armRows [][][]any, ops []tds.SetOp) [][]any {
+	terms := [][][]any{armRows[0]}
+	var outer []tds.SetOp
+	for i, op := range ops {
+		if op == tds.SetIntersect {
+			terms[len(terms)-1] = intersectRows(terms[len(terms)-1], armRows[i+1])
+			continue
+		}
+		terms = append(terms, armRows[i+1])
+		outer = append(outer, op)
+	}
+	result := terms[0]
+	for i, op := range outer {
+		switch op {
 		case tds.SetExcept:
-			result = exceptRows(result, armRows[i])
-		default: // SetUnion, SetUnionAll
-			result = append(result, armRows[i]...)
+			result = exceptRows(result, terms[i+1])
+		case tds.SetUnion:
+			result = distinctRows(append(append([][]any{}, result...), terms[i+1]...))
+		default:
+			result = append(append([][]any{}, result...), terms[i+1]...)
 		}
 	}
-	dedup := false
-	for _, op := range ops {
-		if op != tds.SetUnionAll {
-			dedup = true
+	return result
+}
+
+func distinctRows(rows [][]any) [][]any {
+	seen := make(map[string]bool, len(rows))
+	out := rows[:0:0]
+	for _, r := range rows {
+		k := rowKey(r)
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, r)
 		}
 	}
-	return exec.Apply(outCols, result, &tds.Query{Distinct: dedup, OrderBy: order, Limit: limit, Offset: offset})
+	return out
 }
 
 func intersectRows(a, b [][]any) [][]any {

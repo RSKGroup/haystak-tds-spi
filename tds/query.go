@@ -221,6 +221,7 @@ type Query struct {
 	OrderBy      []OrderItem
 	Limit        int
 	LimitPercent bool
+	LimitTop     bool // Limit came from TOP, which belongs to this SELECT; OFFSET ... FETCH limits a whole set operation
 	Offset       int
 	Union        *Query            // next SELECT in a UNION/INTERSECT/EXCEPT chain (nil if none)
 	SetOp        SetOp             // junction operation to Union

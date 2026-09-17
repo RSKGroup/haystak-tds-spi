@@ -383,7 +383,7 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 		if err != nil {
 			return nil, fmt.Errorf("tsql: bad TOP value %q", t.text)
 		}
-		q.Limit = n
+		q.Limit, q.LimitTop = n, true
 		p.next()
 		if paren {
 			if p.peek().kind != tRParen {
