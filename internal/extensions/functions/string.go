@@ -6,6 +6,7 @@ package functions
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ func init() {
 	})
 	register("REPLACE", func(a []any) any {
 		if len(a) == 3 {
-			return strings.ReplaceAll(toStr(a[0]), toStr(a[1]), toStr(a[2]))
+			return replaceFold(toStr(a[0]), toStr(a[1]), toStr(a[2]))
 		}
 		return nil
 	})
@@ -74,7 +75,7 @@ func init() {
 		if start > len(s) {
 			return int64(0)
 		}
-		idx := strings.Index(s[start-1:], sub)
+		idx := strings.Index(fold.Key(s[start-1:]), fold.Key(sub))
 		if idx < 0 {
 			return int64(0)
 		}
@@ -157,7 +158,7 @@ func init() {
 		if len(a) < 2 {
 			return nil
 		}
-		return patIndex(argStr(a, 0), argStr(a, 1))
+		return patIndex(fold.Key(argStr(a, 0)), fold.Key(argStr(a, 1)))
 	})
 	register("CONCAT_WS", func(a []any) any {
 		if len(a) < 1 {
@@ -428,4 +429,23 @@ func substr(s string, start, length int) string {
 		end = len(s)
 	}
 	return s[start-1 : end]
+}
+
+// replaceFold finds matches under the default collation and keeps the unmatched text as stored; ASCII folding preserves byte offsets.
+func replaceFold(s, old, repl string) string {
+	if old == "" {
+		return s
+	}
+	ks, ko := fold.Key(s), fold.Key(old)
+	var b strings.Builder
+	for {
+		i := strings.Index(ks, ko)
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i])
+		b.WriteString(repl)
+		s, ks = s[i+len(old):], ks[i+len(old):]
+	}
 }
