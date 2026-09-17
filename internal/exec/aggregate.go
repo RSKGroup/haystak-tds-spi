@@ -32,11 +32,207 @@ func isAggregate(q *tds.Query) bool {
 		return true
 	}
 	for _, it := range q.Select {
-		if it.Agg != tds.AggNone {
+		if it.Agg != tds.AggNone || (it.Window == nil && hasAggCall(it.Expr)) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasAggCall reports an aggregate call anywhere inside a scalar expression, such as UPPER(MIN(x)); a
+// subquery's own aggregates belong to it.
+func hasAggCall(ve *tds.ValueExpr) bool {
+	if ve == nil || ve.Kind == tds.ValSubquery {
+		return false
+	}
+	if ve.Kind == tds.ValFunc && aggFuncFromName(ve.Func) != tds.AggNone {
+		return true
+	}
+	if hasAggCall(ve.Left) || hasAggCall(ve.Right) || hasAggCall(ve.Operand) || hasAggCall(ve.Else) {
+		return true
+	}
+	for _, a := range ve.Args {
+		if hasAggCall(a) {
+			return true
+		}
+	}
+	for _, w := range ve.Whens {
+		if hasAggCall(w.Match) || hasAggCall(w.Result) || exprHasAggCall(w.Cond) {
+			return true
+		}
+	}
+	return false
+}
+
+func exprHasAggCall(e *tds.Expr) bool {
+	if e == nil {
+		return false
+	}
+	for _, c := range append(append([]*tds.Expr{}, e.And...), e.Or...) {
+		if exprHasAggCall(c) {
+			return true
+		}
+	}
+	if exprHasAggCall(e.Not) {
+		return true
+	}
+	if e.Pred != nil {
+		v, _ := e.Pred.Value.(*tds.ValueExpr)
+		return hasAggCall(e.Pred.LeftExpr) || hasAggCall(v)
+	}
+	return false
+}
+
+// bindAggregates copies ve with every aggregate call replaced by its value over group, leaving an
+// ordinary expression the row evaluator can finish. An aggregate over an expression evaluates it per row.
+func bindAggregates(ve *tds.ValueExpr, idx map[string]int, group [][]any, env *Env) (*tds.ValueExpr, error) {
+	if ve == nil || ve.Kind == tds.ValSubquery {
+		return ve, nil
+	}
+	if ve.Kind == tds.ValFunc {
+		if fn := aggFuncFromName(ve.Func); fn != tds.AggNone {
+			arg, argIdx, rows := aggArg(ve.Args), idx, group
+			if arg == "" && len(ve.Args) > 0 {
+				arg, argIdx = "__arg", map[string]int{"__arg": 0}
+				rows = make([][]any, len(group))
+				for i, r := range group {
+					v, err := evalValue(idx, r, ve.Args[0], env)
+					if err != nil {
+						return nil, err
+					}
+					rows[i] = []any{v}
+				}
+			}
+			v, err := computeAgg(fn, arg, aggSep(ve.Args), argIdx, rows, false)
+			if err != nil {
+				return nil, err
+			}
+			return &tds.ValueExpr{Kind: tds.ValLit, Lit: v}, nil
+		}
+	}
+	out := *ve
+	var err error
+	if out.Left, err = bindAggregates(ve.Left, idx, group, env); err != nil {
+		return nil, err
+	}
+	if out.Right, err = bindAggregates(ve.Right, idx, group, env); err != nil {
+		return nil, err
+	}
+	if out.Operand, err = bindAggregates(ve.Operand, idx, group, env); err != nil {
+		return nil, err
+	}
+	if out.Else, err = bindAggregates(ve.Else, idx, group, env); err != nil {
+		return nil, err
+	}
+	if ve.Args != nil {
+		out.Args = make([]*tds.ValueExpr, len(ve.Args))
+		for i, a := range ve.Args {
+			if out.Args[i], err = bindAggregates(a, idx, group, env); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if ve.Whens != nil {
+		out.Whens = make([]tds.CaseWhen, len(ve.Whens))
+		for i, w := range ve.Whens {
+			nw := w
+			if nw.Match, err = bindAggregates(w.Match, idx, group, env); err != nil {
+				return nil, err
+			}
+			if nw.Result, err = bindAggregates(w.Result, idx, group, env); err != nil {
+				return nil, err
+			}
+			if nw.Cond, err = bindAggExpr(w.Cond, idx, group, env); err != nil {
+				return nil, err
+			}
+			out.Whens[i] = nw
+		}
+	}
+	return &out, nil
+}
+
+func bindAggExpr(e *tds.Expr, idx map[string]int, group [][]any, env *Env) (*tds.Expr, error) {
+	if e == nil || !exprHasAggCall(e) {
+		return e, nil
+	}
+	out := *e
+	var err error
+	bindList := func(in []*tds.Expr) ([]*tds.Expr, error) {
+		if in == nil {
+			return nil, nil
+		}
+		list := make([]*tds.Expr, len(in))
+		for i, c := range in {
+			if list[i], err = bindAggExpr(c, idx, group, env); err != nil {
+				return nil, err
+			}
+		}
+		return list, nil
+	}
+	if out.And, err = bindList(e.And); err != nil {
+		return nil, err
+	}
+	if out.Or, err = bindList(e.Or); err != nil {
+		return nil, err
+	}
+	if out.Not, err = bindAggExpr(e.Not, idx, group, env); err != nil {
+		return nil, err
+	}
+	if e.Pred != nil {
+		pred := *e.Pred
+		if pred.LeftExpr, err = bindAggregates(e.Pred.LeftExpr, idx, group, env); err != nil {
+			return nil, err
+		}
+		if v, ok := e.Pred.Value.(*tds.ValueExpr); ok {
+			if pred.Value, err = bindAggregates(v, idx, group, env); err != nil {
+				return nil, err
+			}
+		}
+		out.Pred = &pred
+	}
+	return &out, nil
+}
+
+// aggExprType types a select expression holding aggregates by standing each call in for its result.
+func aggExprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) types.Type {
+	var stand func(*tds.ValueExpr) *tds.ValueExpr
+	stand = func(v *tds.ValueExpr) *tds.ValueExpr {
+		if v == nil || v.Kind != tds.ValFunc {
+			if v != nil && (v.Left != nil || v.Right != nil || len(v.Args) > 0) {
+				c := *v
+				c.Left, c.Right = stand(v.Left), stand(v.Right)
+				if v.Args != nil {
+					c.Args = make([]*tds.ValueExpr, len(v.Args))
+					for i, a := range v.Args {
+						c.Args[i] = stand(a)
+					}
+				}
+				return &c
+			}
+			return v
+		}
+		switch aggFuncFromName(v.Func) {
+		case tds.AggNone:
+			c := *v
+			c.Args = make([]*tds.ValueExpr, len(v.Args))
+			for i, a := range v.Args {
+				c.Args[i] = stand(a)
+			}
+			return &c
+		case tds.AggCount, tds.AggCountBig, tds.AggChecksumAgg, tds.AggApproxCountDistinct:
+			return &tds.ValueExpr{Kind: tds.ValLit, Lit: int64(0)}
+		case tds.AggMin, tds.AggMax:
+			if len(v.Args) > 0 && v.Args[0].Kind != tds.ValCol || len(v.Args) > 0 && v.Args[0].Col != "*" {
+				return stand(v.Args[0])
+			}
+			return &tds.ValueExpr{Kind: tds.ValLit, Lit: ""}
+		case tds.AggStringAgg:
+			return &tds.ValueExpr{Kind: tds.ValLit, Lit: ""}
+		default:
+			return &tds.ValueExpr{Kind: tds.ValLit, Lit: float64(0)}
+		}
+	}
+	return exprType(stand(ve), cols, idx)
 }
 
 type aggregated struct {
@@ -61,7 +257,7 @@ func aggregate(cols []catalog.Column, idx map[string]int, rows [][]any, q *tds.Q
 
 	var rowsOut []aggregated
 	for _, set := range sets {
-		setRows, err := groupOneSet(idx, rows, q.Select, set, universe, q.GroupByCaseSensitive)
+		setRows, err := groupOneSet(idx, rows, q.Select, set, universe, q.GroupByCaseSensitive, env)
 		if err != nil {
 			return nil, err
 		}
@@ -206,23 +402,14 @@ func aggSep(args []*tds.ValueExpr) string {
 // evalAggValue evaluates a value expression in the GROUP context: aggregate calls (COUNT/SUM/…) compute
 // over the group's rows via origIdx; everything else evaluates against the aggregated output row.
 func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, ve *tds.ValueExpr, env *Env) (any, error) {
-	switch ve.Kind {
-	case tds.ValFunc:
-		if fn := aggFuncFromName(ve.Func); fn != tds.AggNone {
-			return computeAgg(fn, aggArg(ve.Args), aggSep(ve.Args), origIdx, group, false)
-		}
-	case tds.ValBinary:
-		l, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Left, env)
-		if err != nil {
-			return nil, err
-		}
-		r, err := evalAggValue(origIdx, group, outIdx, outRow, ve.Right, env)
-		if err != nil {
-			return nil, err
-		}
-		return evalBinary(ve.Op, l, r), nil
+	bound, err := bindAggregates(ve, origIdx, group, env)
+	if err != nil {
+		return nil, err
 	}
-	return evalValue(outIdx, outRow, ve, env)
+	if bound.Kind == tds.ValLit {
+		return bound.Lit, nil
+	}
+	return evalValue(outIdx, outRow, bound, env)
 }
 
 func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, e *tds.Expr, env *Env) (bool, error) {
@@ -329,6 +516,10 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 			continue
 		}
 		var typ types.Type
+		if it.Agg == tds.AggNone && it.Expr != nil {
+			out = append(out, catalog.Column{Name: name, Type: aggExprType(it.Expr, cols, idx)})
+			continue
+		}
 		switch it.Agg {
 		case tds.AggNone:
 			i, ok := idx[it.Column]
@@ -375,7 +566,7 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 }
 
 // groupOneSet aggregates rows over one grouping set; universe columns not in the set roll up to NULL.
-func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []string, universe map[string]bool, caseSensitive []string) ([]aggregated, error) {
+func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []string, universe map[string]bool, caseSensitive []string, env *Env) ([]aggregated, error) {
 	setIdx := make([]int, 0, len(set))
 	setCols := make(map[string]bool, len(set))
 	exact := make([]bool, len(set))
@@ -413,7 +604,7 @@ func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []s
 	}
 	out := make([]aggregated, 0, len(order))
 	for _, k := range order {
-		row, err := aggRowSet(idx, sel, groups[k], setCols, universe)
+		row, err := aggRowSet(idx, sel, groups[k], setCols, universe, env)
 		if err != nil {
 			return nil, err
 		}
@@ -422,11 +613,19 @@ func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []s
 	return out, nil
 }
 
-func aggRowSet(idx map[string]int, sel []tds.SelectItem, rows [][]any, setCols, universe map[string]bool) ([]any, error) {
+func aggRowSet(idx map[string]int, sel []tds.SelectItem, rows [][]any, setCols, universe map[string]bool, env *Env) ([]any, error) {
 	out := make([]any, len(sel))
 	for j, it := range sel {
 		if gcols, isID, ok := groupingFn(it); ok {
 			out[j] = groupingValue(gcols, isID, setCols)
+			continue
+		}
+		if it.Agg == tds.AggNone && it.Expr != nil {
+			v, err := groupExprValue(idx, rows, it.Expr, setCols, universe, env)
+			if err != nil {
+				return nil, err
+			}
+			out[j] = v
 			continue
 		}
 		if it.Agg == tds.AggNone {
@@ -639,4 +838,34 @@ func computeAgg(fn tds.AggFunc, arg, sep string, idx map[string]int, rows [][]an
 		return best, nil
 	}
 	return nil, nil
+}
+
+// groupExprValue evaluates a select expression for one group: aggregates over the group, column
+// references against its first row, with columns rolled up in this grouping set read as NULL.
+func groupExprValue(idx map[string]int, group [][]any, ve *tds.ValueExpr, setCols, universe map[string]bool, env *Env) (any, error) {
+	bound, err := bindAggregates(ve, idx, group, env)
+	if err != nil {
+		return nil, err
+	}
+	if bound.Kind == tds.ValLit {
+		return bound.Lit, nil
+	}
+	width := 0
+	for _, i := range idx {
+		if i+1 > width {
+			width = i + 1
+		}
+	}
+	row := make([]any, width)
+	if len(group) > 0 {
+		copy(row, group[0])
+	}
+	for c := range universe {
+		if !setCols[c] {
+			if i, ok := idx[c]; ok {
+				row[i] = nil
+			}
+		}
+	}
+	return evalValue(idx, row, bound, env)
 }
