@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.9.1 - 2026-09-17
+
+Two queries returned wrong results with no error.
+
+**A set operation inside a CTE kept only its first arm.** `UNION`, `UNION ALL`, `INTERSECT` and
+`EXCEPT` were applied only at the top level of a statement. Inside a `WITH` body every arm after the
+first was dropped, so `WITH v AS (SELECT 1 x UNION ALL SELECT 2) SELECT COUNT(*) FROM v` returned 1.
+Set operations now run wherever a query runs, and an arm after the first can read the `WITH` list
+(`WITH v AS (...) SELECT x FROM v UNION ALL SELECT x FROM v` previously failed to find `v`).
+
+**An aggregate inside a scalar expression was evaluated per row.** `SELECT UPPER(MIN(name)) FROM t`
+returned one empty row per table row instead of one value. Aggregates nested in functions, `CASE`,
+`CAST` and arithmetic now evaluate over the group, in the select list and in `HAVING`, and an
+aggregate may take an expression argument inside them (`UPPER(MIN(LOWER(name)))`). Expressions in a
+grouped select list, such as `SELECT UPPER(city), COUNT(*) FROM t GROUP BY city`, were refused with
+`unknown column ""` and are now supported.
+
 ## v1.9.0 - 2026-09-17
 
 **String comparison is case-insensitive by default, matching SQL Server's default collation.**
