@@ -181,6 +181,10 @@ func unionRun(ctx context.Context, b tds.Backend, head *tds.Query) (tds.Rows, er
 	armRows := make([][][]any, len(arms))
 	for i, a := range arms {
 		arm := *a
+		// The parser hangs WITH on the first arm only, so a later arm naming a CTE must inherit them.
+		if arm.CTEs == nil {
+			arm.CTEs = head.CTEs
+		}
 		arm.Union = nil
 		arm.OrderBy = nil
 		arm.Limit = 0
@@ -255,6 +259,11 @@ func exceptRows(a, b [][]any) [][]any {
 func rowKey(r []any) string { return fold.RowKey(r, nil) }
 
 func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
+	// A set operation nested in a CTE body or derived table reaches here, not Query; without this every
+	// arm after the first was silently dropped.
+	if q.Union != nil {
+		return unionRun(ctx, b, q)
+	}
 	if isTempName(q.Table) && q.FromSub == nil && len(q.Joins) == 0 {
 		if s := tempStoreFrom(ctx); s != nil {
 			return runTempQuery(s, q)
