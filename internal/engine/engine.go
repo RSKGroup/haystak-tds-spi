@@ -156,6 +156,20 @@ func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, 
 		return nil, -1, err
 	}
 	applyDefaultDB(q, db)
+	for name, body := range q.CTEs {
+		scope := q.CTEs
+		// A recursive CTE's own name must reach its recursive arm as the working table, not the definition.
+		if isRecursiveCTE(body, name) {
+			scope = make(map[string]*tds.Query, len(q.CTEs))
+			for k, v := range q.CTEs {
+				if k != name {
+					scope[k] = v
+				}
+			}
+		}
+		inheritCTEs(body, scope)
+	}
+	inheritCTEs(q, nil)
 	ctx = withSchemaCache(ctx) // per-statement memo: repeated catalog introspection (APPLY/correlated subqueries over sys.*) derives the schema once
 	if q.Union != nil {
 		rs, err := unionRun(ctx, b, q)

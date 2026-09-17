@@ -229,6 +229,70 @@ func defaultDBVal(ve *tds.ValueExpr, db string) {
 	}
 }
 
+// inheritCTEs puts the statement's WITH names in scope for every nested query: derived tables, joined
+// subqueries, and subqueries in WHERE, HAVING and the select list. A nested query that names a CTE failed
+// with "table not found".
+func inheritCTEs(q *tds.Query, ctes map[string]*tds.Query) {
+	for a := q; a != nil; a = a.Union {
+		if a.CTEs == nil {
+			a.CTEs = ctes
+		}
+		scope := a.CTEs
+		if scope == nil {
+			continue
+		}
+		inheritCTEs(a.FromSub, scope)
+		for i := range a.Joins {
+			inheritCTEs(a.Joins[i].FromSub, scope)
+		}
+		cteExpr(a.Where, scope)
+		cteExpr(a.Having, scope)
+		for k := range a.Select {
+			cteVal(a.Select[k].Expr, scope)
+			cteVal(a.Select[k].ArgExpr, scope)
+		}
+	}
+}
+
+func cteExpr(e *tds.Expr, ctes map[string]*tds.Query) {
+	if e == nil {
+		return
+	}
+	if e.Pred != nil {
+		inheritCTEs(e.Pred.Sub, ctes)
+		cteVal(e.Pred.LeftExpr, ctes)
+		if ve, ok := e.Pred.Value.(*tds.ValueExpr); ok {
+			cteVal(ve, ctes)
+		}
+	}
+	for _, c := range e.And {
+		cteExpr(c, ctes)
+	}
+	for _, c := range e.Or {
+		cteExpr(c, ctes)
+	}
+	cteExpr(e.Not, ctes)
+}
+
+func cteVal(ve *tds.ValueExpr, ctes map[string]*tds.Query) {
+	if ve == nil {
+		return
+	}
+	inheritCTEs(ve.Sub, ctes)
+	cteVal(ve.Left, ctes)
+	cteVal(ve.Right, ctes)
+	for _, a := range ve.Args {
+		cteVal(a, ctes)
+	}
+	cteVal(ve.Operand, ctes)
+	cteVal(ve.Else, ctes)
+	for _, w := range ve.Whens {
+		cteExpr(w.Cond, ctes)
+		cteVal(w.Match, ctes)
+		cteVal(w.Result, ctes)
+	}
+}
+
 func isSystemSchema(s string) bool {
 	return strings.EqualFold(s, "INFORMATION_SCHEMA") || strings.EqualFold(s, "sys")
 }
