@@ -2,7 +2,7 @@
 
 ## v1.9.1 - 2026-09-17
 
-Two queries returned wrong results with no error.
+Two queries returned wrong results with no error, and a CTE over a table could not find its database.
 
 **A set operation inside a CTE kept only its first arm.** `UNION`, `UNION ALL`, `INTERSECT` and
 `EXCEPT` were applied only at the top level of a statement. Inside a `WITH` body every arm after the
@@ -15,7 +15,12 @@ returned one empty row per table row instead of one value. Aggregates nested in 
 `CAST` and arithmetic now evaluate over the group, in the select list and in `HAVING`, and an
 aggregate may take an expression argument inside them (`UPPER(MIN(LOWER(name)))`). Expressions in a
 grouped select list, such as `SELECT UPPER(city), COUNT(*) FROM t GROUP BY city`, were refused with
-`unknown column ""` and are now supported.
+`unknown column ""` and are now supported, including `ORDER BY` a grouped column the select list
+leaves out.
+
+**A CTE over a table failed without a qualified database.** The session database (`USE`, or the login's
+default) was applied to the statement but not to `WITH` bodies, so `WITH v AS (SELECT x FROM t) ...`
+failed with "no database selected" unless every table was written `[db].t`.
 
 ## v1.9.0 - 2026-09-17
 
