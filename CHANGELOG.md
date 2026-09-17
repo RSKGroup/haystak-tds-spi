@@ -2,7 +2,7 @@
 
 ## v1.9.1 - 2026-09-17
 
-Two queries returned wrong results with no error, and a CTE over a table could not find its database.
+Several queries returned wrong results with no error, and valid CTE queries were refused.
 
 **A set operation inside a CTE kept only its first arm.** `UNION`, `UNION ALL`, `INTERSECT` and
 `EXCEPT` were applied only at the top level of a statement. Inside a `WITH` body every arm after the
@@ -17,6 +17,22 @@ aggregate may take an expression argument inside them (`UPPER(MIN(LOWER(name)))`
 grouped select list, such as `SELECT UPPER(city), COUNT(*) FROM t GROUP BY city`, were refused with
 `unknown column ""` and are now supported, including `ORDER BY` a grouped column the select list
 leaves out.
+
+**String functions counted bytes, not characters.** `LEN`, `LEFT`, `RIGHT`, `SUBSTRING`, `STUFF`,
+`CHARINDEX` and `PATINDEX` measured and cut UTF-8 bytes, so accented or non-Latin text read long
+(`LEN(N'Émile')` was 6) and could be split mid-character. They now count characters, and `LEN` ignores
+trailing spaces as SQL Server does (`LEN(SPACE(3))` is 0).
+
+**Set operations followed neither SQL Server's precedence nor its duplicate rules.** A `TOP` in one
+`SELECT` of a `UNION` limited the whole result; it now limits its own `SELECT`, and only a trailing
+`OFFSET ... FETCH` pages the combined rows (a new `tds.Query.LimitTop` field tells them apart).
+`INTERSECT` now binds before `UNION` and `EXCEPT`, and each operator removes duplicates from its own step,
+so `SELECT 1 UNION SELECT 1 UNION ALL SELECT 1` returns two rows and `SELECT 1 UNION ALL SELECT 2 INTERSECT
+SELECT 2` returns `1, 2`.
+
+**A CTE was not visible inside a derived table or subquery.** `WITH v AS (...) SELECT ... FROM (SELECT ...
+FROM v) x`, `IN (SELECT ... FROM v)`, `EXISTS` and scalar subqueries over a CTE failed with "table not
+found". The `WITH` names are now in scope throughout the statement.
 
 **A CTE over a table failed without a qualified database.** The session database (`USE`, or the login's
 default) was applied to the statement but not to `WITH` bodies, so `WITH v AS (SELECT x FROM t) ...`
