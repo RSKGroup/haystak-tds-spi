@@ -341,6 +341,10 @@ func aggOrderKey(origIdx, outIdx map[string]int, group [][]any, outRow []any, o 
 		if i, ok := resolveCol(outIdx, o.Column); ok {
 			return outRow[i], nil
 		}
+		// A grouped column the select list leaves out still orders the groups; its value is shared by the group.
+		if i, ok := resolveCol(origIdx, o.Column); ok && len(group) > 0 {
+			return group[0][i], nil
+		}
 		return nil, nil
 	}
 }

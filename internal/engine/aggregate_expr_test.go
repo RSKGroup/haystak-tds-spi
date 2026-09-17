@@ -47,3 +47,21 @@ func TestAggregateInsideScalarExpression(t *testing.T) {
 	}
 	rs.Close()
 }
+
+// ORDER BY a grouped column that the select list leaves out sorted nothing once expressions could be grouped.
+func TestGroupedOrderByColumnNotSelected(t *testing.T) {
+	b := collationBackend(t)
+	for sql, want := range map[string]string{
+		"SELECT UPPER(city), COUNT(*) FROM people GROUP BY city ORDER BY city DESC":                                      "PARIS|2;NYC|2;BOSTON|2",
+		"SELECT COUNT(*) FROM people WHERE id <> 3 GROUP BY city ORDER BY city":                                          "2;1;2",
+		"SELECT CASE WHEN COUNT(*) > 1 THEN 'many' ELSE 'one' END FROM people WHERE id <> 1 GROUP BY city ORDER BY city": "one;many;many",
+	} {
+		rs, err := engine.Query(context.Background(), b, sql)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if got := render(collect(t, rs)); got != want {
+			t.Errorf("%s\n got  %s\n want %s", sql, got, want)
+		}
+	}
+}
