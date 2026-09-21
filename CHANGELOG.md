@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.11.0 - 2026-09-21
+
+**Read this before upgrading: query results may change.** No exported API moved - every change is
+in `internal/` - so this is a minor release only to signal that. Three of the fixes alter what a
+query returns or how it behaves, and all three change a wrong answer into a right one.
+
+These close the four root causes of a multi-agent probe of the gateway (48 agents, 21 confirmed
+findings). Three of the four returned a clean, plausible, WRONG or EMPTY result with no error,
+which is worse than a failure: nothing tells you to look.
+
+**A comparison across types converts instead of comparing text.** `compareCS` fell through to
+`fmt.Sprintf("%v")` on any type pair it did not model and returned a CONFIDENT answer. As text
+`"99.50"` sorts after `"100"`, so `amount > 100` matched a row holding 99.50; `WHERE name > 1`
+matched 2 of 2 named rows. Mixed types now convert the way SQL Server converts them - the text side
+becomes the number or the datetime - and a pair that genuinely cannot be ordered reports that
+instead of inventing an order. WHERE reads it as UNKNOWN and drops the row, ORDER BY treats it as a
+tie: the handling NULL already had.
+
+*Limit:* SQL Server RAISES on an impossible conversion. This returns UNKNOWN, which drops the row
+silently. Better than a confident wrong answer, still not the real behaviour.
+
+**A cancelled caller stops the query.** `internal/exec`, `internal/engine` and `internal/tsql` held
+zero `ctx.Done()`/`ctx.Err()` checks between them, so an abandoned statement ran to completion -
+25m24s on one join with the client long gone. The per-join and per-outer-row loops now check, and
+report the cause (`query cancelled at join <table>: context canceled`) rather than a bare failure.
+A query that is cancelled now returns an error where it previously returned rows.
+
+**An unqualified WHERE column reaches the scan.** A bare column - legal T-SQL, and what a
+hand-written correlated subquery usually contains - was dropped from the pushdown because the
+filter was kept only when every column carried an `alias.` prefix, so each join side was scanned
+whole. A bare column is now resolved to its owning side when exactly one table in scope holds that
+name. Ambiguous and unknown names are left alone and ambiguity stays refused, as SQL Server refuses
+it: attributing a column to the wrong side would drop rows that belong in the answer.
+
+**Formatting and lint.** gofmt under Go 1.26, De Morgan's law in two comment scanners, and a `Db`
+initialism. No behaviour.
+
+*A fourth root cause - pushdown emitting the client's text against a different stored encoding -
+lives in the backend, not here, and is fixed in haystak-tds-eav.*
+
 ## v1.10.0 - 2026-09-21
 
 **Setting `TLSConfig` now REQUIRES encryption.** It previously only offered it: the client's
