@@ -122,9 +122,9 @@ func bNTextParam(name, val string) []byte {
 	b = append(b, 0x00, typeNTEXT)
 	var n [4]byte
 	binary.LittleEndian.PutUint32(n[:], uint32(len(data)))
-	b = append(b, n[:]...)                     // LONGLEN max
+	b = append(b, n[:]...)                      // LONGLEN max
 	b = append(b, 0x09, 0x04, 0xD0, 0x00, 0x34) // collation
-	b = append(b, n[:]...)                     // datalen
+	b = append(b, n[:]...)                      // datalen
 	return append(b, data...)
 }
 

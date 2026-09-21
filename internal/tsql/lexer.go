@@ -66,7 +66,7 @@ func lex(s string) ([]token, error) {
 			}
 		case c == '/' && i+1 < n && s[i+1] == '*':
 			i += 2
-			for i+1 < n && !(s[i] == '*' && s[i+1] == '/') {
+			for i+1 < n && (s[i] != '*' || s[i+1] != '/') {
 				i++
 			}
 			i += 2
@@ -201,7 +201,9 @@ func lex(s string) ([]token, error) {
 	return toks, nil
 }
 
-func isDigit(c byte) bool      { return c >= '0' && c <= '9' }
-func isHexDigit(c byte) bool   { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') }
-func isIdentStart(c byte) bool { return c == '_' || c == '#' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
-func isIdentPart(c byte) bool  { return isIdentStart(c) || isDigit(c) }
+func isDigit(c byte) bool    { return c >= '0' && c <= '9' }
+func isHexDigit(c byte) bool { return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') }
+func isIdentStart(c byte) bool {
+	return c == '_' || c == '#' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+func isIdentPart(c byte) bool { return isIdentStart(c) || isDigit(c) }
