@@ -315,16 +315,41 @@ func TestUnknownColumnErrors(t *testing.T) {
 	}
 }
 
-func TestCompareMixedTypeFallbackFolds(t *testing.T) {
+// This replaces TestCompareMixedTypeFallbackFolds, which pinned the DEFECT: it asserted that
+// "2026-06-10 00:00:00 +0000 utc" - Go's %v rendering of a time.Time, not a SQL datetime literal -
+// compared EQUAL to that time, which was only true because both sides were formatted and folded.
+// Mixed types now convert the way SQL Server converts them, or report that they cannot be ordered.
+func TestCompareConvertsInsteadOfComparingText(t *testing.T) {
 	ts := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
-	s := "2026-06-10 00:00:00 +0000 utc"
-	if c, ok := compare(s, ts); !ok || c != 0 {
-		t.Errorf("compare(%q, time) = %d, want 0 under the case-insensitive default", s, c)
+
+	// The headline defect: as text "99.50" sorts AFTER "100", so `amount > 100` matched 99.50.
+	if c, ok := compare("99.50", int64(100)); !ok || c >= 0 {
+		t.Errorf("compare(\"99.50\", 100) = %d ok=%v, want a negative comparison", c, ok)
 	}
-	if c, _ := compareCS(s, ts, true); c == 0 {
-		t.Errorf("exact compare(%q, time) = 0, want non-zero", s)
+	if c, ok := compare(int64(100), "99.50"); !ok || c <= 0 {
+		t.Errorf("compare(100, \"99.50\") = %d ok=%v, want a positive comparison", c, ok)
 	}
-	if c, _ := compare(int64(5), ts); c == 0 {
-		t.Errorf("non-string fallback unexpectedly equal")
+	if c, ok := compare("100", int64(100)); !ok || c != 0 {
+		t.Errorf("compare(\"100\", 100) = %d ok=%v, want equal", c, ok)
+	}
+
+	// A real datetime literal converts; Go's %v rendering of a time is not one.
+	if c, ok := compare("2026-06-10", ts); !ok || c != 0 {
+		t.Errorf("compare(\"2026-06-10\", time) = %d ok=%v, want equal", c, ok)
+	}
+	if _, ok := compare("2026-06-10 00:00:00 +0000 utc", ts); ok {
+		t.Error("the Go rendering of a time was accepted as a datetime literal")
+	}
+
+	// Genuinely unorderable pairs say so rather than inventing an order. WHERE reads this as
+	// UNKNOWN and drops the row; ORDER BY treats it as a tie.
+	for _, tc := range []struct{ a, b any }{
+		{int64(5), ts},
+		{"not a number", int64(5)},
+		{"not a date", ts},
+	} {
+		if _, ok := compare(tc.a, tc.b); ok {
+			t.Errorf("compare(%v, %v) claimed an order it cannot have", tc.a, tc.b)
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -511,11 +512,90 @@ func compareCS(a, b any, exact bool) (int, bool) {
 			return bytes.Compare(av, bv), true
 		}
 	}
-	sa, sb := fmt.Sprintf("%v", a), fmt.Sprintf("%v", b)
-	if !exact && (isString(a) || isString(b)) {
-		return fold.Compare(sa, sb), true
+	// SQL Server converts the lower-precedence operand; it does not compare the two as text.
+	// Formatting both with %v and comparing the strings returned a CONFIDENT wrong answer:
+	// "99.50" sorts after "100", so `amount > 100` matched a row holding 99.50.
+	if c, ok := compareCoerced(a, b, exact); ok {
+		return c, true
 	}
-	return strings.Compare(sa, sb), true
+	// Unorderable. The WHERE path reads this as UNKNOWN and drops the row, and ORDER BY treats it
+	// as a tie - the same handling NULL already gets, and far better than inventing an order.
+	return 0, false
+}
+
+// compareCoerced applies the implicit conversions SQL Server would, and reports whether the pair
+// could be ordered at all.
+func compareCoerced(a, b any, exact bool) (int, bool) {
+	// number vs text: the text converts to the number, and fails the comparison if it cannot.
+	if af, ok := toFloatOk(a); ok {
+		if s, ok := b.(string); ok {
+			if bf, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+				return cmpFloat(af, bf), true
+			}
+			return 0, false
+		}
+	}
+	if bf, ok := toFloatOk(b); ok {
+		if s, ok := a.(string); ok {
+			if af, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+				return cmpFloat(af, bf), true
+			}
+			return 0, false
+		}
+	}
+	// datetime vs text: same direction, the text converts.
+	if at, ok := a.(time.Time); ok {
+		if s, ok := b.(string); ok {
+			if bt, ok := parseCompareTime(s); ok {
+				return cmpTime(at, bt), true
+			}
+			return 0, false
+		}
+	}
+	if bt, ok := b.(time.Time); ok {
+		if s, ok := a.(string); ok {
+			if at, ok := parseCompareTime(s); ok {
+				return cmpTime(at, bt), true
+			}
+			return 0, false
+		}
+	}
+	// binary vs text compares the bytes, which is what the storage holds either way.
+	if ab, ok := a.([]byte); ok {
+		if s, ok := b.(string); ok {
+			return bytes.Compare(ab, []byte(s)), true
+		}
+	}
+	if bb, ok := b.([]byte); ok {
+		if s, ok := a.(string); ok {
+			return bytes.Compare([]byte(s), bb), true
+		}
+	}
+	return 0, false
+}
+
+func cmpTime(a, b time.Time) int {
+	switch {
+	case a.Before(b):
+		return -1
+	case a.After(b):
+		return 1
+	default:
+		return 0
+	}
+}
+
+// parseCompareTime accepts the layouts a TDS client sends as a datetime literal.
+func parseCompareTime(s string) (time.Time, bool) {
+	for _, layout := range []string{
+		"2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02T15:04:05",
+		"2006-01-02", "15:04:05", time.RFC3339,
+	} {
+		if t, err := time.Parse(layout, strings.TrimSpace(s)); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func isString(v any) bool { _, ok := v.(string); return ok }
