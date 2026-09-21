@@ -1052,6 +1052,11 @@ func applyJoin(ctx context.Context, b tds.Backend, lcols []catalog.Column, lrows
 	var rcols []catalog.Column
 	var out [][]any
 	for _, lr := range lrows {
+		// APPLY re-runs its right side once per OUTER row, so an abandoned correlated query keeps
+		// issuing work long after the client is gone.
+		if err := cancelled(ctx, "apply "+j.Table); err != nil {
+			return nil, nil, err
+		}
 		brcols, brrows, err := applyRight(ctx, b, j, lr, lcols, leftIdx)
 		if err != nil {
 			return nil, nil, err

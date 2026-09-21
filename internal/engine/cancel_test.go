@@ -43,3 +43,19 @@ func TestJoinRunsWithALiveContext(t *testing.T) {
 		t.Fatal("join returned no rows on a live context")
 	}
 }
+
+// APPLY re-runs its right side per OUTER row, so it is the other loop an abandoned query burns in.
+func TestApplyStopsWhenTheCallerCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := engine.Query(ctx, inmem.New(),
+		"SELECT t.name, x.cols FROM sys.tables t CROSS APPLY "+
+			"(SELECT COUNT(*) AS cols FROM sys.columns c WHERE c.object_id = t.object_id) x")
+	if err == nil {
+		t.Fatal("a cancelled context still ran the apply to completion")
+	}
+	if !strings.Contains(err.Error(), "cancelled") {
+		t.Errorf("error %q does not say the query was cancelled", err)
+	}
+}
