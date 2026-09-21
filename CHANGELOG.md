@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.10.0 - 2026-09-21
+
+**Setting `TLSConfig` now REQUIRES encryption.** It previously only offered it: the client's
+PRELOGIN byte decided, so a client advertising `ENCRYPT_NOT_SUP` - or an on-path attacker flipping
+that one byte - downgraded the session to cleartext and the TDS login password crossed the wire
+recoverable by inspection. It is obfuscated (XOR 0xA5 plus a nibble swap), not encrypted. An
+operator who set `TLSConfig` saw "TLS enabled" logged and had no setting that would refuse the
+downgrade.
+
+A refused client is now answered `ENCRYPT_REQ` (0x03) before the close, so it can report why it
+failed. That constant was declared and sent by no code path until now.
+
+An unparseable PRELOGIN also fails closed when encryption is required; it previously fell through
+to plaintext silently, which made a malformed packet a downgrade primitive.
+
+**`Server.AllowPlaintext`** opts back into the old behaviour for a deployment that cannot move yet.
+The field is inverted deliberately so Go's zero value is the safe one: a `Server` literal that sets
+only `TLSConfig` requires encryption. A `RequireTLS bool` would have made the dangerous behaviour
+the default again.
+
+A listener with no `TLSConfig` is unchanged: plaintext, promising nothing.
+
+**Upgrading.** This is a behaviour change, not a patch. If you run a TLS-configured listener that
+real clients reach with `Encrypt=no`, either fix those clients or set `AllowPlaintext: true`
+knowingly.
+
 ## v1.9.1 - 2026-09-17
 
 Several queries returned wrong results with no error, and valid CTE queries were refused.
