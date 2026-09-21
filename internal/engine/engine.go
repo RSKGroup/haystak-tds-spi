@@ -974,6 +974,7 @@ func cancelled(ctx context.Context, where string) error {
 
 func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
 	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
+	qualifyBareWhere(ctx, b, q)
 	fromAlias := effAlias(q.FromAlias, q.Table)
 	var cols []catalog.Column
 	var rows [][]any
@@ -1139,6 +1140,88 @@ func scanTable(ctx context.Context, sc tds.Scanner, q *tds.Query) ([]catalog.Col
 
 // singleTableWhere returns the top-level AND conjuncts of `where` whose every column is qualified
 // with the given alias or table — a safe pushdown hint for that table's scan.
+// qualifyBareWhere rewrites an unqualified WHERE column to "alias.Column" when exactly one table in
+// scope owns that name.
+//
+// singleTableWhere keeps a conjunct only when every column carries an alias. or table. prefix, so a
+// bare column - which is legal T-SQL, and what a hand-written correlated subquery usually contains -
+// was DROPPED from the pushdown and each join side was scanned whole: 69,026 rows per outer row in
+// the case that found this.
+//
+// Ambiguous and unknown names are left exactly as they were. Qualifying a column to the wrong side
+// would filter rows that belong in the answer, and a slow correct result beats a fast wrong one.
+func qualifyBareWhere(ctx context.Context, b tds.Backend, q *tds.Query) {
+	if q.Where == nil || len(q.Joins) == 0 {
+		return
+	}
+	bare := false
+	for _, c := range exprCols(q.Where) {
+		if !strings.Contains(c, ".") {
+			bare = true
+			break
+		}
+	}
+	if !bare {
+		return
+	}
+	schema, _, err := introspectSchema(ctx, b, q)
+	if err != nil {
+		return
+	}
+	owner := columnOwners(schema, q)
+	walkPredicates(q.Where, func(pr *tds.Predicate) {
+		if pr.Column == "" || strings.Contains(pr.Column, ".") {
+			return
+		}
+		if a, ok := owner[strings.ToLower(pr.Column)]; ok && a != "" {
+			pr.Column = a + "." + pr.Column
+		}
+	})
+}
+
+// columnOwners maps a bare column name to the single alias that owns it, or "" when two tables in
+// scope both have it. Only tables named by this query's FROM and JOINs are considered.
+func columnOwners(schema catalog.Schema, q *tds.Query) map[string]string {
+	inScope := map[string]string{strings.ToLower(q.Table): effAlias(q.FromAlias, q.Table)}
+	for _, j := range q.Joins {
+		if j.Table != "" {
+			inScope[strings.ToLower(j.Table)] = effAlias(j.Alias, j.Table)
+		}
+	}
+	owner := map[string]string{}
+	for _, t := range schema.Tables {
+		alias, ok := inScope[strings.ToLower(t.Name)]
+		if !ok {
+			continue
+		}
+		for _, c := range t.Columns {
+			k := strings.ToLower(c.Name)
+			if prev, seen := owner[k]; seen && prev != alias {
+				owner[k] = "" // ambiguous: two tables in scope carry it
+				continue
+			}
+			owner[k] = alias
+		}
+	}
+	return owner
+}
+
+func walkPredicates(e *tds.Expr, fn func(*tds.Predicate)) {
+	if e == nil {
+		return
+	}
+	if e.Pred != nil {
+		fn(e.Pred)
+	}
+	for _, c := range e.And {
+		walkPredicates(c, fn)
+	}
+	for _, c := range e.Or {
+		walkPredicates(c, fn)
+	}
+	walkPredicates(e.Not, fn)
+}
+
 func singleTableWhere(where *tds.Expr, alias, table string) *tds.Expr {
 	var keep []*tds.Expr
 	for _, c := range flattenAnd(where) {
