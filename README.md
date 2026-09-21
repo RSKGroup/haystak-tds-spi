@@ -93,7 +93,7 @@ It is not a tuned SQL Server — no cost-based optimizer or index planner — an
 
 ```
 go run ./examples/gateway 127.0.0.1:1433        # plaintext
-HAYSTAK_TLS=1 go run ./examples/gateway          # self-signed TLS
+HAYSTAK_TLS=1 go run ./examples/gateway          # self-signed TLS, encryption required
 sqlcmd -S 127.0.0.1,1433 -U sa -P x -C -Q "SELECT name FROM users"
 ```
 
@@ -130,6 +130,12 @@ Then run it:
 ```
 server.ListenAndServe("127.0.0.1:1433", myBackend)
 // or &server.Server{Backend: myBackend, TLSConfig: cfg, ServerName: "...", Database: "..."}
+
+Setting `TLSConfig` REQUIRES encryption: a client advertising `ENCRYPT_NOT_SUP` is refused with
+`ENCRYPT_REQ` rather than silently downgraded to cleartext. The TDS login password is obfuscated,
+not encrypted, so a downgraded session puts it on the wire recoverable by inspection. Set
+`AllowPlaintext: true` to accept the downgrade for a deployment that cannot move yet. With no
+`TLSConfig` the listener is plaintext and promises nothing.
 ```
 
 `examples/inmem` is a complete thin reference backend.

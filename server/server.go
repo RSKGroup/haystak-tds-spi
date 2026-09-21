@@ -28,8 +28,11 @@ type Server struct {
 	ServerName string            // reported as @@SERVERNAME (default "haystak")
 	Database   string            // reported as the current database (default "master")
 	TLSConfig  *tls.Config       // non-nil enables TLS-in-TDS
-	Logf       func(string, ...any)
-	Audit      func(tds.SessionEvent) // optional: called on each login and logout
+	// AllowPlaintext lets a client that advertises ENCRYPT_NOT_SUP downgrade a TLS-configured
+	// listener to cleartext. The zero value refuses it: the LOGIN7 password is only obfuscated.
+	AllowPlaintext bool
+	Logf           func(string, ...any)
+	Audit          func(tds.SessionEvent) // optional: called on each login and logout
 	// SessionVisibility decides whether a principal may enumerate every live session via the runtime
 	// DMVs / sp_who (SQL Server's VIEW SERVER STATE gate). nil ⇒ a caller sees only its own session.
 	SessionVisibility func(context.Context, tds.Principal) bool
@@ -103,6 +106,34 @@ func (s *Server) handle(conn net.Conn) {
 	s.serve(sess, princ, db, info)
 }
 
+// negotiateEncryption decides the PRELOGIN encryption answer. A TLS-configured listener refuses a
+// cleartext session unless allowPlaintext is set; an unparseable PRELOGIN fails closed the same way.
+func negotiateEncryption(tlsConfigured, allowPlaintext bool, payload []byte) (wire.Encryption, bool, error) {
+	if !tlsConfigured {
+		return wire.EncryptNotSup, false, nil
+	}
+	required := !allowPlaintext
+	pl, perr := wire.ParsePrelogin(payload)
+	if perr != nil {
+		if required {
+			return wire.EncryptReq, false, fmt.Errorf("server: PRELOGIN unreadable and encryption is required: %w", perr)
+		}
+		return wire.EncryptNotSup, false, nil
+	}
+	enc, ok := pl.Encryption()
+	wantsTLS := ok && enc != wire.EncryptNotSup
+	if wantsTLS {
+		if required {
+			return wire.EncryptReq, true, nil
+		}
+		return wire.EncryptOn, true, nil
+	}
+	if required {
+		return wire.EncryptReq, false, errors.New("server: client advertised ENCRYPT_NOT_SUP but this listener requires encryption")
+	}
+	return wire.EncryptNotSup, false, nil
+}
+
 func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.SessionInfo, error) {
 	var none tds.Principal
 	var nosess tds.SessionInfo
@@ -115,22 +146,15 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.
 		return nil, none, "", nosess, errors.New("server: expected PRELOGIN")
 	}
 
-	useTLS := false
-	if s.TLSConfig != nil {
-		if pl, perr := wire.ParsePrelogin(pre.Payload); perr == nil {
-			if enc, ok := pl.Encryption(); ok && enc != wire.EncryptNotSup {
-				useTLS = true
-			}
-		}
-	}
-	respEnc := wire.EncryptNotSup
-	if useTLS {
-		respEnc = wire.EncryptOn
-	}
+	respEnc, useTLS, negErr := negotiateEncryption(s.TLSConfig != nil, s.AllowPlaintext, pre.Payload)
+	// Answer even when refusing: MS-TDS expects ENCRYPT_REQ back so the client reports why it failed.
 	if err := s.send(conn, wire.ServerPreloginResponse(respEnc)); err != nil {
 		return nil, none, "", nosess, err
 	}
 	s.logf("sent PRELOGIN response (enc=%d)", respEnc)
+	if negErr != nil {
+		return nil, none, "", nosess, negErr
+	}
 
 	if useTLS {
 		tlsConn, terr := wire.ServerTLS(conn, s.TLSConfig)

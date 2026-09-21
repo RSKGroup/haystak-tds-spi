@@ -37,7 +37,14 @@ func main() {
 			log.Fatal(err)
 		}
 		gw.TLSConfig = cfg
-		log.Printf("TLS enabled (self-signed)")
+		gw.AllowPlaintext = os.Getenv("HAYSTAK_TLS_ALLOW_PLAINTEXT") != ""
+		// Say which of the two it is: "TLS enabled" on a listener that still accepts a cleartext
+		// downgrade is what made defect 202 look safe from the outside.
+		if gw.AllowPlaintext {
+			log.Printf("TLS enabled (self-signed), PLAINTEXT DOWNGRADE ALLOWED - passwords may cross in the clear")
+		} else {
+			log.Printf("TLS enabled (self-signed), encryption required")
+		}
 	}
 	log.Printf("haystak-tds-spi gateway (in-mem demo) on %s", addr)
 	log.Fatal(gw.ListenAndServe(addr))
