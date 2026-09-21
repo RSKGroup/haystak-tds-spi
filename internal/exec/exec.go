@@ -598,8 +598,6 @@ func parseCompareTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func isString(v any) bool { _, ok := v.(string); return ok }
-
 func isBoolType(v any) bool { _, ok := v.(bool); return ok }
 
 func boolish(v any) (bool, bool) {
