@@ -960,6 +960,18 @@ func materialize(rows tds.Rows) ([]catalog.Column, [][]any, error) {
 	return cols, data, rows.Err()
 }
 
+// cancelled reports the caller's cancellation as a query error. Nothing in exec, engine or tsql
+// consulted the context before this, so a dropped connection left the scan running to completion.
+func cancelled(ctx context.Context, where string) error {
+	if ctx == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("query cancelled at %s: %w", where, err)
+	}
+	return nil
+}
+
 func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
 	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
 	fromAlias := effAlias(q.FromAlias, q.Table)
@@ -979,6 +991,11 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	}
 	cols = qualify(cols, fromAlias)
 	for _, j := range q.Joins {
+		// Each join may scan a whole table, so this is the loop an abandoned query burns in:
+		// 25m24s on one statement with the client long gone, because nothing ever asked.
+		if err := cancelled(ctx, "join "+j.Table); err != nil {
+			return nil, err
+		}
 		jAlias := effAlias(j.Alias, j.Table)
 		if j.Type == tds.JoinCrossApply || j.Type == tds.JoinOuterApply {
 			cols, rows, err = applyJoin(ctx, b, cols, rows, j, jAlias)
