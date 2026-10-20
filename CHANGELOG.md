@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.12.0 - 2026-10-20
+
+**`Server.CloseSessions` ends live sessions.** A host can end every session a predicate selects, as
+`KILL` does, for example when the login behind them is disabled or its password changes. The
+predicate sees each session's `SessionInfo` and the `Principal` it signed in as, and runs outside the
+registry lock, so it may consult a backend. The session's connection closes; its logout is audited
+as usual.
+
 ## v1.11.0 - 2026-09-21
 
 **Read this before upgrading: query results may change.** No exported API moved - every change is

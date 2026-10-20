@@ -53,6 +53,19 @@ func (s *Server) audit(kind string, ok bool, info tds.SessionInfo, at time.Time)
 	}
 }
 
+// CloseSessions ends every live session for which match reports true, as KILL does, and returns
+// the sessions it ended. match runs outside the registry lock, so it may consult a backend.
+func (s *Server) CloseSessions(match func(tds.SessionInfo, tds.Principal) bool) []tds.SessionInfo {
+	var ended []tds.SessionInfo
+	for _, l := range s.registry().live() {
+		if match(l.info, l.princ) {
+			_ = l.conn.Close()
+			ended = append(ended, l.info)
+		}
+	}
+	return ended
+}
+
 // ListenAndServe serves b on addr (host:port) with default settings: no TLS, anonymous auth.
 func ListenAndServe(addr string, b tds.Backend) error {
 	return (&Server{Backend: b}).ListenAndServe(addr)
@@ -199,6 +212,7 @@ func (s *Server) handshake(conn net.Conn) (net.Conn, tds.Principal, string, tds.
 	}
 	s.logf("sent LOGIN response")
 	info := s.registry().add(l.UserName, l.HostName, l.AppName, time.Now())
+	s.registry().attach(info, conn, princ)
 	s.audit("login", true, info, info.LoginTime)
 	return conn, princ, loginDB, info, nil
 }

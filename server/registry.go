@@ -4,6 +4,7 @@
 package server
 
 import (
+	"net"
 	"sync"
 	"time"
 
@@ -15,10 +16,36 @@ type sessionRegistry struct {
 	mu       sync.Mutex
 	nextSPID int
 	sessions map[int]tds.SessionInfo
+	conns    map[int]liveSession
+}
+
+// liveSession is what ending a session needs: its connection and the principal it signed in as.
+type liveSession struct {
+	info  tds.SessionInfo
+	conn  net.Conn
+	princ tds.Principal
 }
 
 func newSessionRegistry() *sessionRegistry {
-	return &sessionRegistry{nextSPID: 51, sessions: map[int]tds.SessionInfo{}}
+	return &sessionRegistry{nextSPID: 51, sessions: map[int]tds.SessionInfo{}, conns: map[int]liveSession{}}
+}
+
+func (r *sessionRegistry) attach(info tds.SessionInfo, conn net.Conn, princ tds.Principal) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[info.SessionID]; ok {
+		r.conns[info.SessionID] = liveSession{info: info, conn: conn, princ: princ}
+	}
+}
+
+func (r *sessionRegistry) live() []liveSession {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]liveSession, 0, len(r.conns))
+	for _, l := range r.conns {
+		out = append(out, l)
+	}
+	return out
 }
 
 func (r *sessionRegistry) add(login, host, app string, at time.Time) tds.SessionInfo {
@@ -35,6 +62,7 @@ func (r *sessionRegistry) remove(spid int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sessions, spid)
+	delete(r.conns, spid)
 }
 
 func (r *sessionRegistry) snapshot() []tds.SessionInfo {
