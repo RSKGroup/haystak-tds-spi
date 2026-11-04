@@ -14,7 +14,7 @@ const (
 	OpGt
 	OpGe
 	OpIn   // Value is []any
-	OpLike // Value is a string pattern (% and _)
+	OpLike // Value is a string pattern (% _ [set]), or a *ValueExpr when the pattern is computed per row
 	OpIsNull
 	OpIsNotNull
 	OpExists // Sub returns ≥1 row
@@ -120,6 +120,7 @@ type ValueExpr struct {
 	Whens   []CaseWhen // ValCase
 	Else    *ValueExpr // ValCase
 	Cast    string     // ValCast: target type name (INT, VARCHAR, ...)
+	CastLen int        // ValCast: a string target's declared length, 0 for none or MAX; CONVERT's style is Args[0]
 	Sub     *Query     // ValSubquery: scalar subquery, resolved to a literal before exec
 }
 

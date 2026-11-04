@@ -20,18 +20,18 @@ func Resolve(sql string) (string, error) {
 	}
 	vars := map[string]string{}
 	var out []string
-	for _, st := range splitStatements(sql) {
+	for _, st := range Split(sql) {
 		t := strings.TrimSpace(st)
 		if t == "" {
 			continue
 		}
 		switch strings.ToUpper(firstWord(t)) {
 		case "DECLARE":
-			if err := bindDeclare(t, vars); err != nil {
+			if err := bindDeclare(stripComments(t), vars); err != nil {
 				return "", err
 			}
 		case "SET":
-			done, err := bindSet(t, vars)
+			done, err := bindSet(stripComments(t), vars)
 			if err != nil {
 				return "", err
 			}
@@ -42,31 +42,111 @@ func Resolve(sql string) (string, error) {
 			out = append(out, substitute(t, vars))
 		}
 	}
-	return strings.Join(out, ";\n"), nil
+	// The newline before ';' keeps a statement's trailing -- comment from swallowing the separator.
+	return strings.Join(out, "\n;\n"), nil
 }
 
-// splitStatements splits sql at top-level ';' (ignoring ';' inside '…' strings or [bracketed] names).
-func splitStatements(sql string) []string {
+// Split cuts sql at each ';' outside strings, [names] and comments; leading comments are trimmed off each statement.
+func Split(sql string) []string {
 	var stmts []string
 	start := 0
+	add := func(s string) {
+		if s = TrimLeadingComments(s); s != "" {
+			stmts = append(stmts, s)
+		}
+	}
 	for i := 0; i < len(sql); {
+		if j := SkipComment(sql, i); j > i {
+			i = j
+			continue
+		}
 		switch sql[i] {
 		case '\'':
 			i = skipString(sql, i)
 		case '[':
 			i = skipBracket(sql, i)
 		case ';':
-			stmts = append(stmts, sql[start:i])
+			add(sql[start:i])
 			i++
 			start = i
 		default:
 			i++
 		}
 	}
-	if start < len(sql) {
-		stmts = append(stmts, sql[start:])
-	}
+	add(sql[start:])
 	return stmts
+}
+
+// SkipComment returns the index past a -- or (nesting, as in T-SQL) /* */ comment starting at i, else i.
+func SkipComment(s string, i int) int {
+	if i+1 >= len(s) {
+		return i
+	}
+	switch {
+	case s[i] == '-' && s[i+1] == '-':
+		for i < len(s) && s[i] != '\n' {
+			i++
+		}
+		return i
+	case s[i] == '/' && s[i+1] == '*':
+		depth := 0
+		for i < len(s) {
+			switch {
+			case i+1 < len(s) && s[i] == '/' && s[i+1] == '*':
+				depth++
+				i += 2
+			case i+1 < len(s) && s[i] == '*' && s[i+1] == '/':
+				depth--
+				i += 2
+				if depth == 0 {
+					return i
+				}
+			default:
+				i++
+			}
+		}
+		return i
+	}
+	return i
+}
+
+// TrimLeadingComments drops the whitespace and comments in front of a statement's first token.
+func TrimLeadingComments(s string) string {
+	i := 0
+	for i < len(s) {
+		if isSpace(s[i]) {
+			i++
+			continue
+		}
+		j := SkipComment(s, i)
+		if j == i {
+			break
+		}
+		i = j
+	}
+	return strings.TrimSpace(s[i:])
+}
+
+// stripComments blanks every comment outside a string or [name], for reading DECLARE and SET.
+func stripComments(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if j := SkipComment(s, i); j > i {
+			b.WriteByte(' ')
+			i = j
+			continue
+		}
+		j := i + 1
+		switch s[i] {
+		case '\'':
+			j = skipString(s, i)
+		case '[':
+			j = skipBracket(s, i)
+		}
+		b.WriteString(s[i:j])
+		i = j
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // substitute replaces every @name with its bound value, skipping string and [bracket] literals.
@@ -76,6 +156,11 @@ func substitute(s string, vars map[string]string) string {
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
+		if j := SkipComment(s, i); j > i {
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
 		switch {
 		case s[i] == '\'':
 			j := skipString(s, i)

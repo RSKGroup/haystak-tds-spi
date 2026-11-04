@@ -95,7 +95,7 @@ func (s *Session) ExecBatch(ctx context.Context, sql string) ([]Result, string, 
 	}
 	var res []Result
 	envDB := ""
-	for _, stmt := range splitBatch(sql) {
+	for _, stmt := range batch.Split(sql) { // a ';' inside a comment, string or [name] does not split
 		if strings.TrimSpace(stmt) == "" {
 			continue
 		}

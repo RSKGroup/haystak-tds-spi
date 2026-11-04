@@ -126,10 +126,8 @@ func dateTrunc(a []any) any {
 func utcNow([]any) any { return time.Now().UTC() }
 
 func datePart(a []any, f func(time.Time) int64) any {
-	if len(a) >= 1 {
-		if t, ok := a[0].(time.Time); ok {
-			return f(t)
-		}
+	if t, ok := argTime(a, 0); ok {
+		return f(t)
 	}
 	return nil
 }
@@ -147,17 +145,8 @@ func argTime(a []any, i int) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func parseTime(s string) (time.Time, bool) {
-	for _, layout := range []string{
-		"2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02T15:04:05",
-		"2006-01-02", "15:04:05", time.RFC3339,
-	} {
-		if t, err := time.Parse(layout, strings.TrimSpace(s)); err == nil {
-			return t, true
-		}
-	}
-	return time.Time{}, false
-}
+// parseTime reads a date argument given as text, as SQL Server's implicit conversion does (mdy).
+func parseTime(s string) (time.Time, bool) { return ParseDate(s, NoStyle) }
 
 // normDatePart folds datepart abbreviations (yy, mm, dd) to a canonical token.
 func normDatePart(s string) string {
@@ -356,7 +345,7 @@ func isDate(a []any) any {
 	case time.Time:
 		return int64(1)
 	case string:
-		if _, ok := parseTime(v); ok {
+		if _, ok := parseTime(v); ok && strings.TrimSpace(v) != "" { // '' converts, yet ISDATE('') is 0
 			return int64(1)
 		}
 	}

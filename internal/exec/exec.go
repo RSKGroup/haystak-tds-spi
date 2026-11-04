@@ -6,12 +6,12 @@ package exec
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/functions"
 	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
@@ -192,8 +192,10 @@ func projectItems(cols []catalog.Column, idx map[string]int, sel []tds.SelectIte
 	for _, it := range sel {
 		if strings.HasSuffix(it.Column, ".*") {
 			prefix := strings.ToLower(it.Column[:len(it.Column)-1])
+			// Rows from a single source carry bare names, so alias.* is each of its own columns.
+			single := !anyQualified(cols)
 			for i, c := range cols {
-				if strings.HasPrefix(strings.ToLower(c.Name), prefix) {
+				if strings.HasPrefix(strings.ToLower(c.Name), prefix) || (single && !strings.HasPrefix(c.Name, "__")) {
 					cc := c
 					if dot := strings.LastIndex(cc.Name, "."); dot >= 0 {
 						cc.Name = cc.Name[dot+1:]
@@ -220,6 +222,15 @@ func projectItems(cols []catalog.Column, idx map[string]int, sel []tds.SelectIte
 		proj = append(proj, i)
 	}
 	return outCols, proj, nil
+}
+
+func anyQualified(cols []catalog.Column) bool {
+	for _, c := range cols {
+		if strings.Contains(c.Name, ".") {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveOrderAliases(order []tds.OrderItem, sel []tds.SelectItem) []tds.OrderItem {
@@ -365,8 +376,15 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 		}
 		return false, nil
 	case tds.OpLike:
-		pat, _ := p.Value.(string)
-		return likeMatch(fmt.Sprintf("%v", v), pat, p.CaseSensitive), nil
+		pat := p.Value
+		if ve, ok := pat.(*tds.ValueExpr); ok {
+			pv, err := evalValue(idx, row, ve, env)
+			if err != nil {
+				return false, err
+			}
+			pat = pv
+		}
+		return likeHolds(v, pat, p.CaseSensitive), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
@@ -391,29 +409,81 @@ func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, 
 	}
 }
 
-// likeMatch folds both sides itself so LIKE shares the ASCII-only definition instead of regexp's Unicode (?i).
+// likeHolds is LIKE over evaluated operands: a NULL on either side is UNKNOWN, which no row satisfies.
+func likeHolds(v, pat any, exact bool) bool {
+	if v == nil || pat == nil {
+		return false
+	}
+	return likeMatch(toStr(v), toStr(pat), exact)
+}
+
+// likeMatch is T-SQL's LIKE (% _ [set] [a-f] [^set]), folding both sides itself to keep the ASCII-only case rule.
 func likeMatch(s, pattern string, exact bool) bool {
 	if !exact {
 		s, pattern = fold.Key(s), fold.Key(pattern)
 	}
-	var b strings.Builder
-	b.WriteString("(?s)^")
-	for _, r := range pattern {
-		switch r {
-		case '%':
-			b.WriteString(".*")
-		case '_':
-			b.WriteString(".")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(r)))
+	str, pat := []rune(s), []rune(pattern)
+	si, pi, starP, starS := 0, 0, -1, 0
+	for si < len(str) {
+		matched := false
+		if pi < len(pat) {
+			switch c := pat[pi]; c {
+			case '%':
+				starP, starS = pi, si
+				pi++
+				continue
+			case '_':
+				matched, pi = true, pi+1
+			case '[':
+				if in, n := likeClass(pat[pi:], str[si]); n > 0 {
+					matched, pi = in, pi+n
+				} else {
+					matched, pi = str[si] == '[', pi+1
+				}
+			default:
+				matched, pi = c == str[si], pi+1
+			}
 		}
+		if matched {
+			si++
+			continue
+		}
+		if starP < 0 {
+			return false
+		}
+		starS++
+		si, pi = starS, starP+1
 	}
-	b.WriteString("$")
-	re, err := regexp.Compile(b.String())
-	if err != nil {
-		return false
+	for pi < len(pat) && pat[pi] == '%' {
+		pi++
 	}
-	return re.MatchString(s)
+	return pi == len(pat)
+}
+
+// likeClass matches c against the [set] that opens p; n is the set's length, 0 when it never closes.
+func likeClass(p []rune, c rune) (in bool, n int) {
+	i := 1
+	neg := i < len(p) && p[i] == '^'
+	if neg {
+		i++
+	}
+	start := i
+	for i < len(p) && (p[i] != ']' || i == start) {
+		i++
+	}
+	if i >= len(p) {
+		return false, 0
+	}
+	set := p[start:i]
+	for k := 0; k < len(set); k++ {
+		if k+2 < len(set) && set[k+1] == '-' {
+			in = in || (c >= set[k] && c <= set[k+2])
+			k += 2
+			continue
+		}
+		in = in || set[k] == c
+	}
+	return in != neg, i + 1
 }
 
 func satisfies(op tds.Op, c int) bool {
@@ -585,18 +655,8 @@ func cmpTime(a, b time.Time) int {
 	}
 }
 
-// parseCompareTime accepts the layouts a TDS client sends as a datetime literal.
-func parseCompareTime(s string) (time.Time, bool) {
-	for _, layout := range []string{
-		"2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02T15:04:05",
-		"2006-01-02", "15:04:05", time.RFC3339,
-	} {
-		if t, err := time.Parse(layout, strings.TrimSpace(s)); err == nil {
-			return t, true
-		}
-	}
-	return time.Time{}, false
-}
+// parseCompareTime reads text as SQL Server's implicit conversion does (mdy), so '01/01/2025' compares as a date.
+func parseCompareTime(s string) (time.Time, bool) { return functions.ParseDate(s, functions.NoStyle) }
 
 func isBoolType(v any) bool { _, ok := v.(bool); return ok }
 

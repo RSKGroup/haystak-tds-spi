@@ -65,11 +65,7 @@ func lex(s string) ([]token, error) {
 				i++
 			}
 		case c == '/' && i+1 < n && s[i+1] == '*':
-			i += 2
-			for i+1 < n && (s[i] != '*' || s[i+1] != '/') {
-				i++
-			}
-			i += 2
+			i = skipBlockComment(s, i) // block comments nest in T-SQL
 		case c == '*':
 			toks = append(toks, token{tStar, "*"})
 			i++
@@ -207,3 +203,23 @@ func isIdentStart(c byte) bool {
 	return c == '_' || c == '#' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 func isIdentPart(c byte) bool { return isIdentStart(c) || isDigit(c) }
+
+func skipBlockComment(s string, i int) int {
+	depth := 0
+	for i < len(s) {
+		switch {
+		case i+1 < len(s) && s[i] == '/' && s[i+1] == '*':
+			depth++
+			i += 2
+		case i+1 < len(s) && s[i] == '*' && s[i+1] == '/':
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+	return i
+}

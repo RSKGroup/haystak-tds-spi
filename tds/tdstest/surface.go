@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/engine"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
@@ -129,6 +130,13 @@ func wantDesc(want any) string {
 func notNull(v any) bool { return v != nil }
 
 func isNull(v any) bool { return v == nil }
+
+func dateIs(y int, m time.Month, d int) P {
+	return func(v any) bool {
+		t, ok := v.(time.Time)
+		return ok && t.Year() == y && t.Month() == m && t.Day() == d && t.Hour() == 0 && t.Minute() == 0
+	}
+}
 
 func isGUID(v any) bool {
 	s, ok := v.(string)

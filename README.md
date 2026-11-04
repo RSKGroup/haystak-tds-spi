@@ -156,20 +156,22 @@ Single- and multi-table queries, evaluated entirely over the wire.
 
 Query shape:
 
-- `SELECT` with projection, `DISTINCT`, `TOP n [PERCENT]`, and aliases (`AS` or `alias = expr`)
-- `FROM` with table aliases and qualified columns
-- JOINs: INNER, LEFT, RIGHT, FULL, CROSS
+- `SELECT` with projection, `DISTINCT`, `TOP n [PERCENT]`, and aliases (`AS` or `alias = expr`; non-reserved words such as `first`, `next`, `rows` are valid aliases)
+- `FROM` with table aliases and qualified columns, `alias.*`
+- JOINs: INNER, LEFT, RIGHT, FULL, CROSS; `CROSS APPLY` / `OUTER APPLY` over a subquery, a table-valued function or `VALUES`, whose body (select list, `WHERE`, nested derived tables, set-operation arms, nested subqueries, function arguments) reads the outer row
 - `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY` (by column or ordinal, `ASC`/`DESC`)
 - `OFFSET … FETCH` paging
 - `UNION`, `UNION ALL`, `INTERSECT`, `EXCEPT`
-- Subqueries: `IN (…)`, `EXISTS`, scalar `= (…)`, derived tables `FROM (SELECT …) t`, and correlated forms
+- Subqueries: `IN (…)`, `EXISTS`, scalar `= (…)`, derived tables `FROM (SELECT …) t`, and correlated forms (against any source of the outer query, joined ones included); each may be a set operation, as in `FROM (SELECT ... UNION ALL SELECT ...) t`
+- Table-value constructors: `FROM (VALUES (...), (...)) t(c1, c2)`
 - CTEs (`WITH`), including recursive
-- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`
+- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`; `--` and `/* */` comments (nested) anywhere in a batch, and a `;` inside a comment, string or `[name]` does not end a statement
 
 Predicates and operators:
 
 - Comparison `= <> < > <= >=`; `AND`, `OR`, `NOT`, parentheses
 - `IN` (value list or subquery), `BETWEEN`, `LIKE`, `IS NULL`, `IS NOT NULL`, `EXISTS`
+- `LIKE` takes any expression as its pattern (a column, `@p + '%'`, a function), with `%`, `_`, `[set]`, `[a-f]` and `[^set]`; a pattern built from constants alone reaches a backend as a string `tds.Predicate.Value`, one that reads the row is a `*tds.ValueExpr` and is evaluated per row. `BETWEEN` bounds are expressions too
 - String comparison, `LIKE`, `ORDER BY`, `GROUP BY`, `DISTINCT`, and set operations are ASCII case-insensitive by default (matching `SQL_Latin1_General_CP1_CI_AS`); `COLLATE <name>` with a `_CS_` collation on a predicate, `ORDER BY`, or `GROUP BY` item makes it case-sensitive and sets `CaseSensitive` on the `tds.Predicate` / `tds.OrderItem` (or `Query.GroupByCaseSensitive`) a pushing backend receives
 - Arithmetic `+ - * / %` and string concatenation, in both `SELECT` and `WHERE`
 
@@ -183,6 +185,11 @@ Functions:
 - `CAST`/`CONVERT` to int/bigint/smallint/tinyint, float/real/decimal/numeric/money, bit,
   char/varchar/nchar/nvarchar/text, plus the typed wire encodings (date, datetime,
   uniqueidentifier, varbinary)
+- `CAST`/`CONVERT`/`TRY_CONVERT` to date, datetime, datetime2 and smalldatetime return a date value; text
+  is read with `CONVERT`'s style (101 `mm/dd/yyyy`, 103 `dd/mm/yyyy`, 23 `yyyy-mm-dd`, and the rest; mdy without
+  one) and `TRY_CONVERT` gives NULL when it does not parse. `CONVERT(varchar(n), <datetime>, style)`
+  formats by the style, and a declared length cuts the text. A datetime compared with text reads the
+  text the same way, so `col >= '01/01/2025'` compares dates
 
 Catalog:
 

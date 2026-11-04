@@ -5,6 +5,7 @@ package exec
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,6 +153,44 @@ func materializeOrderExprs(cols []catalog.Column, idx map[string]int, rows [][]a
 	return newCols, out, indexCols(newCols), newOrder, nil
 }
 
+// FoldConst evaluates an expression that reads no column, subquery, aggregate or env scalar; ok is false otherwise.
+func FoldConst(ve *tds.ValueExpr) (any, bool) {
+	if !isConst(ve) {
+		return nil, false
+	}
+	v, err := evalValue(nil, nil, ve, nil)
+	return v, err == nil
+}
+
+func isConst(ve *tds.ValueExpr) bool {
+	if ve == nil {
+		return true
+	}
+	switch ve.Kind {
+	case tds.ValCol, tds.ValSubquery:
+		return false
+	case tds.ValFunc:
+		if aggFuncFromName(ve.Func) != tds.AggNone || slices.Contains(envScalars, ve.Func) || strings.HasPrefix(ve.Func, "@@") {
+			return false
+		}
+	case tds.ValCase:
+		for _, w := range ve.Whens {
+			if w.Cond != nil || !isConst(w.Match) || !isConst(w.Result) {
+				return false
+			}
+		}
+	}
+	if !isConst(ve.Left) || !isConst(ve.Right) || !isConst(ve.Operand) || !isConst(ve.Else) {
+		return false
+	}
+	for _, a := range ve.Args {
+		if !isConst(a) {
+			return false
+		}
+	}
+	return true
+}
+
 func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any, error) {
 	switch ve.Kind {
 	case tds.ValLit:
@@ -213,11 +252,7 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any,
 		}
 		return nil, nil
 	case tds.ValCast:
-		v, err := evalValue(idx, row, ve.Left, env)
-		if err != nil {
-			return nil, err
-		}
-		return castValue(v, ve.Cast), nil
+		return convertCall(idx, row, ve, env)
 	case tds.ValSubquery:
 		if ve.Sub == nil || env == nil || env.Sub == nil {
 			return nil, nil
@@ -767,6 +802,13 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 			return types.Type{Kind: types.Int64}
 		case "FLOAT", "REAL", "DECIMAL", "NUMERIC", "MONEY", "SMALLMONEY":
 			return types.Type{Kind: types.Float64}
+		case "DATE":
+			return types.Type{Kind: types.Time, Name: "date"}
+		case "DATETIME", "DATETIME2", "SMALLDATETIME":
+			return types.Type{Kind: types.Time, Name: strings.ToLower(ve.Cast)}
+		}
+		if ve.CastLen > 0 {
+			return types.Type{Kind: types.String, MaxLen: ve.CastLen}
 		}
 		return types.Type{Kind: types.String, MaxLen: 255}
 	}

@@ -35,11 +35,7 @@ func lex(s string) []tok {
 				i++
 			}
 		case c == '/' && i+1 < len(s) && s[i+1] == '*':
-			i += 2
-			for i+1 < len(s) && (s[i] != '*' || s[i+1] != '/') {
-				i++
-			}
-			i += 2
+			i = skipBlockComment(s, i) // block comments nest in T-SQL
 		case c == '\'' || ((c == 'N' || c == 'n') && i+1 < len(s) && s[i+1] == '\''):
 			start := i
 			if c != '\'' {
@@ -128,4 +124,24 @@ func isStmtKeyword(t tok) bool {
 
 func eqKw(t tok, kw string) bool {
 	return t.kind == tWord && strings.EqualFold(t.text, kw)
+}
+
+func skipBlockComment(s string, i int) int {
+	depth := 0
+	for i < len(s) {
+		switch {
+		case i+1 < len(s) && s[i] == '/' && s[i+1] == '*':
+			depth++
+			i += 2
+		case i+1 < len(s) && s[i] == '*' && s[i+1] == '/':
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+	return i
 }

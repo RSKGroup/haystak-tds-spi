@@ -111,29 +111,6 @@ func execWrite(ctx context.Context, b tds.Backend, sql string) (int64, bool, err
 	return 0, false, nil
 }
 
-func splitBatch(sql string) []string {
-	var stmts []string
-	var sb strings.Builder
-	inStr := false
-	for i := 0; i < len(sql); i++ {
-		c := sql[i]
-		switch {
-		case c == '\'':
-			inStr = !inStr
-			sb.WriteByte(c)
-		case c == ';' && !inStr:
-			stmts = append(stmts, sb.String())
-			sb.Reset()
-		default:
-			sb.WriteByte(c)
-		}
-	}
-	if strings.TrimSpace(sb.String()) != "" {
-		stmts = append(stmts, sb.String())
-	}
-	return stmts
-}
-
 func queryOne(ctx context.Context, b tds.Backend, sql string) (tds.Rows, int64, error) {
 	db := currentDB(ctx)
 	if rs, handled, err := probe(sql, db, currentSPID(ctx)); handled {
@@ -389,12 +366,15 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 
-	if err := resolveSubqueries(ctx, b, q.Where, q.FromAlias, q.Table); err != nil {
+	// Every source of q, joined ones included, can be read by a correlated subquery.
+	quals := sourceQuals(q, false)
+	if err := resolveSubqueries(ctx, b, q.Where, quals); err != nil {
 		return nil, err
 	}
+	foldLikePatterns(q.Where)
 	for _, it := range q.Select {
 		if it.Expr != nil {
-			if err := resolveValueSubqueries(ctx, b, it.Expr, q.FromAlias, q.Table); err != nil {
+			if err := resolveValueSubqueries(ctx, b, it.Expr, quals); err != nil {
 				return nil, err
 			}
 		}
@@ -405,15 +385,15 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		if err != nil {
 			return nil, err
 		}
-		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
+		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, makeSubFn(ctx, b, q, false)))
 	}
 
-	if q.FromFunc != nil {
+	if q.FromFunc != nil && len(q.Joins) == 0 {
 		cols, data, err := exec.EvalTableFunc(q.FromFunc.Name, q.FromFunc.Args)
 		if err != nil {
 			return nil, err
 		}
-		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, nil))
+		return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, makeSubFn(ctx, b, q, false)))
 	}
 
 	if q.Table == "" && len(q.Joins) == 0 {
@@ -450,7 +430,7 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 			if err != nil {
 				return nil, err
 			}
-			return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table)))
+			return exec.ApplyWith(cols, data, q, catalogEnv(ctx, b, q, makeSubFn(ctx, b, q, false)))
 		}
 	}
 	return nil, fmt.Errorf("engine: backend cannot answer query for %q", q.Table)
@@ -458,14 +438,14 @@ func runParsed(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 
 // resolveSubqueries evaluates NON-correlated subqueries once (IN→list, EXISTS→const, scalar→
 // literal); correlated ones (referencing the outer alias/table) are left for exec's per-row SubFn.
-func resolveSubqueries(ctx context.Context, b tds.Backend, e *tds.Expr, outerAlias, outerTable string) error {
+func resolveSubqueries(ctx context.Context, b tds.Backend, e *tds.Expr, quals map[string]bool) error {
 	if e == nil {
 		return nil
 	}
 	if p := e.Pred; p != nil {
 		switch {
 		case p.Op == tds.OpExists && p.Sub != nil:
-			if isCorrelated(p.Sub, outerAlias, outerTable) {
+			if isCorrelated(p.Sub, quals) {
 				break
 			}
 			_, data, err := runMaterialize(ctx, b, p.Sub)
@@ -476,7 +456,7 @@ func resolveSubqueries(ctx context.Context, b tds.Backend, e *tds.Expr, outerAli
 			e.Const = &v
 			e.Pred = nil
 		case p.Sub != nil: // IN (subquery)
-			if isCorrelated(p.Sub, outerAlias, outerTable) {
+			if isCorrelated(p.Sub, quals) {
 				break
 			}
 			_, data, err := runMaterialize(ctx, b, p.Sub)
@@ -492,89 +472,27 @@ func resolveSubqueries(ctx context.Context, b tds.Backend, e *tds.Expr, outerAli
 			p.Value = vals
 			p.Sub = nil
 		default:
-			if err := resolveValueSubqueries(ctx, b, p.LeftExpr, outerAlias, outerTable); err != nil {
+			if err := resolveValueSubqueries(ctx, b, p.LeftExpr, quals); err != nil {
 				return err
 			}
 			if ve, ok := p.Value.(*tds.ValueExpr); ok {
-				if err := resolveValueSubqueries(ctx, b, ve, outerAlias, outerTable); err != nil {
+				if err := resolveValueSubqueries(ctx, b, ve, quals); err != nil {
 					return err
 				}
 			}
 		}
 	}
 	for _, c := range e.And {
-		if err := resolveSubqueries(ctx, b, c, outerAlias, outerTable); err != nil {
+		if err := resolveSubqueries(ctx, b, c, quals); err != nil {
 			return err
 		}
 	}
 	for _, c := range e.Or {
-		if err := resolveSubqueries(ctx, b, c, outerAlias, outerTable); err != nil {
+		if err := resolveSubqueries(ctx, b, c, quals); err != nil {
 			return err
 		}
 	}
-	return resolveSubqueries(ctx, b, e.Not, outerAlias, outerTable)
-}
-
-func isCorrelated(sub *tds.Query, alias, table string) bool {
-	return exprRefsOuter(sub.Where, alias, table)
-}
-
-func exprRefsOuter(e *tds.Expr, alias, table string) bool {
-	if e == nil {
-		return false
-	}
-	if p := e.Pred; p != nil {
-		if colRefsOuter(p.Column, alias, table) {
-			return true
-		}
-		if cr, ok := p.Value.(tds.ColRef); ok && colRefsOuter(cr.Name, alias, table) {
-			return true
-		}
-		if ve, ok := p.Value.(*tds.ValueExpr); ok && valRefsOuter(ve, alias, table) {
-			return true
-		}
-		if valRefsOuter(p.LeftExpr, alias, table) {
-			return true
-		}
-	}
-	for _, c := range e.And {
-		if exprRefsOuter(c, alias, table) {
-			return true
-		}
-	}
-	for _, c := range e.Or {
-		if exprRefsOuter(c, alias, table) {
-			return true
-		}
-	}
-	return exprRefsOuter(e.Not, alias, table)
-}
-
-func valRefsOuter(ve *tds.ValueExpr, alias, table string) bool {
-	if ve == nil {
-		return false
-	}
-	if ve.Kind == tds.ValCol && colRefsOuter(ve.Col, alias, table) {
-		return true
-	}
-	if valRefsOuter(ve.Left, alias, table) || valRefsOuter(ve.Right, alias, table) {
-		return true
-	}
-	for _, a := range ve.Args {
-		if valRefsOuter(a, alias, table) {
-			return true
-		}
-	}
-	return false
-}
-
-func colRefsOuter(col, alias, table string) bool {
-	dot := strings.LastIndex(col, ".")
-	if dot < 0 {
-		return false
-	}
-	q := col[:dot]
-	return strings.EqualFold(q, alias) || strings.EqualFold(q, table)
+	return resolveSubqueries(ctx, b, e.Not, quals)
 }
 
 // catalogEnv builds the exec env for a query: the current db (so DB_NAME() resolves) plus, only when
@@ -683,109 +601,13 @@ func valueExprUsesCatalogFn(ve *tds.ValueExpr) bool {
 		valueExprUsesCatalogFn(ve.Operand) || valueExprUsesCatalogFn(ve.Else)
 }
 
-func makeSubFn(ctx context.Context, b tds.Backend, alias, table string) exec.SubFn {
+// makeSubFn runs a correlated subquery for one row of q; joined says q's rows name columns alias.col.
+func makeSubFn(ctx context.Context, b tds.Backend, q *tds.Query, joined bool) exec.SubFn {
+	quals := sourceQuals(q, false)
 	return func(outerRow []any, idx map[string]int, sub *tds.Query) ([][]any, error) {
-		bound := bindOuter(sub, outerResolver(outerRow, idx, alias, table))
+		bound := bindOuter(sub, rowResolver(outerRow, idx, quals, joined))
 		_, data, err := runMaterialize(ctx, b, bound)
 		return data, err
-	}
-}
-
-// outerResolver resolves a correlated reference to the named outer alias/table from one outer row.
-func outerResolver(row []any, idx map[string]int, alias, table string) func(string) (any, bool) {
-	return func(col string) (any, bool) { return outerVal(col, row, idx, alias, table) }
-}
-
-func bindOuter(sub *tds.Query, resolve func(string) (any, bool)) *tds.Query {
-	c := *sub
-	c.Where = bindExpr(sub.Where, resolve)
-	return &c
-}
-
-func bindExpr(e *tds.Expr, resolve func(string) (any, bool)) *tds.Expr {
-	if e == nil {
-		return nil
-	}
-	out := *e
-	if e.Pred != nil {
-		p := *e.Pred
-		if v, ok := resolve(p.Column); ok {
-			p.LeftExpr = &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
-			p.Column = ""
-		} else if p.LeftExpr != nil {
-			p.LeftExpr = bindVal(p.LeftExpr, resolve)
-		}
-		if cr, ok := p.Value.(tds.ColRef); ok {
-			if v, ok2 := resolve(cr.Name); ok2 {
-				p.Value = &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
-			}
-		} else if ve, ok := p.Value.(*tds.ValueExpr); ok {
-			p.Value = bindVal(ve, resolve)
-		}
-		out.Pred = &p
-	}
-	out.And = bindExprs(e.And, resolve)
-	out.Or = bindExprs(e.Or, resolve)
-	out.Not = bindExpr(e.Not, resolve)
-	return &out
-}
-
-func bindExprs(es []*tds.Expr, resolve func(string) (any, bool)) []*tds.Expr {
-	if es == nil {
-		return nil
-	}
-	out := make([]*tds.Expr, len(es))
-	for i, e := range es {
-		out[i] = bindExpr(e, resolve)
-	}
-	return out
-}
-
-func bindVal(ve *tds.ValueExpr, resolve func(string) (any, bool)) *tds.ValueExpr {
-	if ve == nil {
-		return nil
-	}
-	if ve.Kind == tds.ValCol {
-		if v, ok := resolve(ve.Col); ok {
-			return &tds.ValueExpr{Kind: tds.ValLit, Lit: v}
-		}
-		return ve
-	}
-	out := *ve
-	out.Left = bindVal(ve.Left, resolve)
-	out.Right = bindVal(ve.Right, resolve)
-	if ve.Args != nil {
-		out.Args = make([]*tds.ValueExpr, len(ve.Args))
-		for i, a := range ve.Args {
-			out.Args[i] = bindVal(a, resolve)
-		}
-	}
-	return &out
-}
-
-func outerVal(col string, row []any, idx map[string]int, alias, table string) (any, bool) {
-	if !colRefsOuter(col, alias, table) {
-		return nil, false
-	}
-	short := col[strings.LastIndex(col, ".")+1:]
-	if i, ok := idx[short]; ok {
-		return row[i], true
-	}
-	return nil, false
-}
-
-// leftRowResolver resolves an APPLY right side's correlated reference to a left column (always alias-qualified).
-// A nil row is a schema probe (no left rows): correlated refs bind to "" so the right side yields its columns.
-func leftRowResolver(row []any, idx map[string]int) func(string) (any, bool) {
-	return func(col string) (any, bool) {
-		i, ok := idx[col]
-		if !ok || !strings.Contains(col, ".") {
-			return nil, false
-		}
-		if row == nil {
-			return "", true
-		}
-		return row[i], true
 	}
 }
 
@@ -797,12 +619,12 @@ func leftColIndex(cols []catalog.Column) map[string]int {
 	return m
 }
 
-func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExpr, outerAlias, outerTable string) error {
+func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExpr, quals map[string]bool) error {
 	if ve == nil {
 		return nil
 	}
 	if ve.Kind == tds.ValSubquery && ve.Sub != nil {
-		if isCorrelated(ve.Sub, outerAlias, outerTable) {
+		if isCorrelated(ve.Sub, quals) {
 			return nil // correlated: leave for exec's per-row SubFn
 		}
 		_, data, err := runMaterialize(ctx, b, ve.Sub)
@@ -819,23 +641,23 @@ func resolveValueSubqueries(ctx context.Context, b tds.Backend, ve *tds.ValueExp
 		return nil
 	}
 	for _, sub := range []*tds.ValueExpr{ve.Left, ve.Right, ve.Operand, ve.Else} {
-		if err := resolveValueSubqueries(ctx, b, sub, outerAlias, outerTable); err != nil {
+		if err := resolveValueSubqueries(ctx, b, sub, quals); err != nil {
 			return err
 		}
 	}
 	for _, a := range ve.Args {
-		if err := resolveValueSubqueries(ctx, b, a, outerAlias, outerTable); err != nil {
+		if err := resolveValueSubqueries(ctx, b, a, quals); err != nil {
 			return err
 		}
 	}
 	for i := range ve.Whens {
-		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Match, outerAlias, outerTable); err != nil {
+		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Match, quals); err != nil {
 			return err
 		}
-		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Result, outerAlias, outerTable); err != nil {
+		if err := resolveValueSubqueries(ctx, b, ve.Whens[i].Result, quals); err != nil {
 			return err
 		}
-		if err := resolveSubqueries(ctx, b, ve.Whens[i].Cond, outerAlias, outerTable); err != nil {
+		if err := resolveSubqueries(ctx, b, ve.Whens[i].Cond, quals); err != nil {
 			return err
 		}
 	}
@@ -973,15 +795,18 @@ func cancelled(ctx context.Context, where string) error {
 }
 
 func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, error) {
-	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q.FromAlias, q.Table))
+	env := catalogEnv(ctx, b, q, makeSubFn(ctx, b, q, true))
 	qualifyBareWhere(ctx, b, q)
 	fromAlias := effAlias(q.FromAlias, q.Table)
 	var cols []catalog.Column
 	var rows [][]any
 	var err error
-	if q.FromSub != nil {
+	switch {
+	case q.FromSub != nil:
 		cols, rows, err = runMaterialize(ctx, b, q.FromSub)
-	} else {
+	case q.FromFunc != nil:
+		cols, rows, err = exec.EvalTableFunc(q.FromFunc.Name, q.FromFunc.Args)
+	default:
 		cols, rows, err = scanJoinSide(ctx, b, &tds.Query{
 			Database: q.Database, Schema: q.Schema, Table: q.Table,
 			Where: singleTableWhere(q.Where, fromAlias, q.Table),
@@ -1007,9 +832,14 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 		var rcols []catalog.Column
 		var rrows [][]any
-		if j.FromSub != nil {
+		switch {
+		case j.FromSub != nil:
 			rcols, rrows, err = runMaterialize(ctx, b, j.FromSub)
-		} else {
+		case j.FromFunc != nil:
+			rcols, rrows, err = exec.EvalTableFunc(j.FromFunc.Name, j.FromFunc.Args)
+		case j.FromValues != nil:
+			rcols, rrows, err = exec.EvalValues(nil, nil, j.FromValues.Columns, j.FromValues.Rows)
+		default:
 			where := singleTableWhere(q.Where, jAlias, j.Table)
 			// Semi-join: scan the right side only for rows whose join key matches a left key. Safe for INNER/LEFT; unsafe for RIGHT/FULL.
 			if j.Type == tds.JoinInner || j.Type == tds.JoinLeft {
@@ -1088,11 +918,7 @@ func applyRight(ctx context.Context, b tds.Backend, j tds.Join, lr []any, lcols 
 	case j.FromSub != nil:
 		return runMaterialize(ctx, b, bindOuter(j.FromSub, resolve))
 	case j.FromFunc != nil:
-		args := make([]*tds.ValueExpr, len(j.FromFunc.Args))
-		for i, a := range j.FromFunc.Args {
-			args[i] = bindVal(a, resolve)
-		}
-		return exec.EvalTableFunc(j.FromFunc.Name, args)
+		return exec.EvalTableFunc(j.FromFunc.Name, binder{resolve}.vals(j.FromFunc.Args, nil))
 	}
 	return nil, nil, fmt.Errorf("engine: APPLY requires a subquery or table-valued function")
 }
@@ -1220,6 +1046,19 @@ func walkPredicates(e *tds.Expr, fn func(*tds.Predicate)) {
 		walkPredicates(c, fn)
 	}
 	walkPredicates(e.Not, fn)
+}
+
+// foldLikePatterns turns a constant LIKE pattern ('Smi' + '%', or a bound outer value) into the string a backend may push.
+func foldLikePatterns(e *tds.Expr) {
+	walkPredicates(e, func(p *tds.Predicate) {
+		if ve, ok := p.Value.(*tds.ValueExpr); ok && p.Op == tds.OpLike {
+			if v, ok := exec.FoldConst(ve); ok {
+				if s, ok := v.(string); ok {
+					p.Value = s
+				}
+			}
+		}
+	})
 }
 
 func singleTableWhere(where *tds.Expr, alias, table string) *tds.Expr {

@@ -80,6 +80,18 @@ func (p *parser) unionTail(q *tds.Query) error {
 	return nil
 }
 
+// subquery parses a parenthesized query body: a SELECT and any set-operation arms after it.
+func (p *parser) subquery() (*tds.Query, error) {
+	q, err := p.selectStmt()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.unionTail(q); err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
 func (p *parser) cteList() (map[string]*tds.Query, error) {
 	p.next() // WITH
 	ctes := map[string]*tds.Query{}
@@ -156,15 +168,25 @@ func (p *parser) qualifiedName() (string, bool) {
 }
 
 func (p *parser) optTableAlias() string {
-	if p.isKeyword("AS") {
+	as := p.isKeyword("AS")
+	if as {
 		p.next()
 	}
-	if p.peek().kind == tIdent {
-		a := p.peek().text
+	t := p.peek()
+	// A bare PIVOT/UNPIVOT/TABLESAMPLE after a table opens that clause; after AS it is a name.
+	if t.kind == tIdent || (p.identLike() && (as || !tableClauseWord(t.text))) {
 		p.next()
-		return a
+		return t.text
 	}
 	return ""
+}
+
+func tableClauseWord(s string) bool {
+	switch strings.ToUpper(s) {
+	case "PIVOT", "UNPIVOT", "TABLESAMPLE", "APPLY":
+		return true
+	}
+	return false
 }
 
 // aliasWithCols parses `[AS] alias [(col, col, …)]` for a derived/VALUES table source.
@@ -173,7 +195,7 @@ func (p *parser) aliasWithCols() (string, []string) {
 	var cols []string
 	if p.peek().kind == tLParen {
 		p.next()
-		for p.peek().kind == tIdent {
+		for p.identLike() {
 			cols = append(cols, p.peek().text)
 			p.next()
 			if p.peek().kind == tComma {
@@ -221,6 +243,28 @@ func (p *parser) valuesClause() (*tds.ValuesClause, error) {
 		break
 	}
 	return vc, nil
+}
+
+// valuesQuery writes FROM (VALUES ...) t(cols) as the UNION ALL of one FROM-less SELECT per row.
+func valuesQuery(rows [][]*tds.ValueExpr, cols []string) *tds.Query {
+	var head, tail *tds.Query
+	for _, row := range rows {
+		arm := &tds.Query{}
+		for i, ve := range row {
+			name := fmt.Sprintf("col%d", i+1)
+			if i < len(cols) {
+				name = cols[i]
+			}
+			arm.Select = append(arm.Select, tds.SelectItem{Expr: ve, Alias: name})
+		}
+		if head == nil {
+			head = arm
+		} else {
+			tail.Union, tail.SetOp = arm, tds.SetUnionAll
+		}
+		tail = arm
+	}
+	return head
 }
 
 func (p *parser) optJoin() (*tds.Join, error) {
@@ -299,7 +343,7 @@ func (p *parser) optJoin() (*tds.Join, error) {
 		j = &tds.Join{Type: jt, FromValues: vc, Alias: alias}
 	case p.peek().kind == tLParen:
 		p.next()
-		sub, err := p.selectStmt()
+		sub, err := p.subquery()
 		if err != nil {
 			return nil, err
 		}
@@ -409,9 +453,21 @@ func (p *parser) selectStmt() (*tds.Query, error) {
 
 	if p.isKeyword("FROM") {
 		p.next()
-		if p.peek().kind == tLParen {
+		if p.peek().kind == tLParen && p.peekN(1).kind == tKeyword && strings.EqualFold(p.peekN(1).text, "VALUES") {
 			p.next()
-			sub, err := p.selectStmt()
+			vc, err := p.valuesClause()
+			if err != nil {
+				return nil, err
+			}
+			if p.peek().kind != tRParen {
+				return nil, fmt.Errorf("tsql: expected ')' after VALUES, got %q", p.peek().text)
+			}
+			p.next()
+			alias, cols := p.aliasWithCols()
+			q.FromSub, q.FromAlias = valuesQuery(vc.Rows, cols), alias
+		} else if p.peek().kind == tLParen {
+			p.next()
+			sub, err := p.subquery()
 			if err != nil {
 				return nil, err
 			}
@@ -561,7 +617,7 @@ func (p *parser) selectItems() ([]tds.SelectItem, error) {
 
 func (p *parser) selectItem() (tds.SelectItem, error) {
 	leadAlias := ""
-	if p.peek().kind == tIdent && p.peekN(1).kind == tOp && p.peekN(1).text == "=" {
+	if p.identLike() && p.peekN(1).kind == tOp && p.peekN(1).text == "=" {
 		leadAlias = p.peek().text
 		p.next()
 		p.next()
@@ -573,7 +629,7 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 		p.next()
 		return tds.SelectItem{Column: t.text + ".*", Alias: leadAlias}, nil
 	}
-	if t.kind == tIdent && isAggName(t.text) && p.peekN(1).kind == tLParen {
+	if t.kind == tIdent && isAggName(t.text) && p.peekN(1).kind == tLParen && !p.aggIsOperand() {
 		fn := aggOf(t.text)
 		p.next()
 		p.next()
@@ -656,6 +712,24 @@ func (p *parser) selectItem() (tds.SelectItem, error) {
 		return tds.SelectItem{Column: ve.Col, Alias: alias}, nil
 	}
 	return tds.SelectItem{Expr: ve, Alias: alias}, nil
+}
+
+// aggIsOperand reports an aggregate call followed by an arithmetic operator, as in COUNT(*) + 1.
+func (p *parser) aggIsOperand() bool {
+	depth := 0
+	for i := p.pos + 1; i < len(p.toks)-1; i++ {
+		switch p.toks[i].kind {
+		case tLParen:
+			depth++
+		case tRParen:
+			depth--
+			if depth == 0 {
+				n := p.toks[i+1]
+				return n.kind == tStar || (n.kind == tOp && len(n.text) == 1 && strings.Contains("+-/%&|^", n.text))
+			}
+		}
+	}
+	return false
 }
 
 // overClause parses OVER (PARTITION BY … ORDER BY …) for a window function call.
@@ -805,7 +879,7 @@ func (p *parser) primaryValue() (*tds.ValueExpr, error) {
 	case t.kind == tLParen:
 		p.next()
 		if p.isKeyword("SELECT") {
-			sub, err := p.selectStmt()
+			sub, err := p.subquery()
 			if err != nil {
 				return nil, err
 			}
@@ -1039,7 +1113,7 @@ func (p *parser) castExpr() (*tds.ValueExpr, error) {
 	if err := p.expectKeyword("AS"); err != nil {
 		return nil, err
 	}
-	typ, err := p.typeName()
+	typ, n, err := p.castType()
 	if err != nil {
 		return nil, err
 	}
@@ -1047,13 +1121,13 @@ func (p *parser) castExpr() (*tds.ValueExpr, error) {
 		return nil, fmt.Errorf("tsql: expected ')' after CAST, got %q", p.peek().text)
 	}
 	p.next()
-	return &tds.ValueExpr{Kind: tds.ValCast, Left: inner, Cast: typ}, nil
+	return &tds.ValueExpr{Kind: tds.ValCast, Left: inner, Cast: typ, CastLen: n}, nil
 }
 
 func (p *parser) convertExpr() (*tds.ValueExpr, error) {
 	p.next() // CONVERT
 	p.next() // (
-	typ, err := p.typeName()
+	typ, n, err := p.castType()
 	if err != nil {
 		return nil, err
 	}
@@ -1065,28 +1139,41 @@ func (p *parser) convertExpr() (*tds.ValueExpr, error) {
 	if err != nil {
 		return nil, err
 	}
+	ve := &tds.ValueExpr{Kind: tds.ValCast, Left: inner, Cast: typ, CastLen: n}
 	if p.peek().kind == tComma {
 		p.next()
-		if _, err := p.valueExpr(); err != nil {
+		style, err := p.valueExpr()
+		if err != nil {
 			return nil, err
 		}
+		ve.Args = []*tds.ValueExpr{style}
 	}
 	if p.peek().kind != tRParen {
 		return nil, fmt.Errorf("tsql: expected ')' after CONVERT, got %q", p.peek().text)
 	}
 	p.next()
-	return &tds.ValueExpr{Kind: tds.ValCast, Left: inner, Cast: typ}, nil
+	return ve, nil
 }
 
 func (p *parser) typeName() (string, error) {
+	name, _, err := p.castType()
+	return name, err
+}
+
+// castType reads a type name and, for a string or binary type, its declared length (0 for none or MAX).
+func (p *parser) castType() (string, int, error) {
 	t := p.peek()
 	if t.kind != tIdent && t.kind != tKeyword {
-		return "", fmt.Errorf("tsql: expected type name, got %q", t.text)
+		return "", 0, fmt.Errorf("tsql: expected type name, got %q", t.text)
 	}
 	name := strings.ToUpper(t.text)
 	p.next()
+	n := 0
 	if p.peek().kind == tLParen {
 		p.next()
+		if p.peek().kind == tNumber && sizedType(name) {
+			n, _ = strconv.Atoi(p.peek().text)
+		}
 		for p.peek().kind != tRParen && p.peek().kind != tEOF {
 			p.next()
 		}
@@ -1094,20 +1181,28 @@ func (p *parser) typeName() (string, error) {
 			p.next()
 		}
 	}
-	return name, nil
+	return name, n, nil
+}
+
+func sizedType(name string) bool {
+	switch name {
+	case "CHAR", "VARCHAR", "NCHAR", "NVARCHAR", "BINARY", "VARBINARY":
+		return true
+	}
+	return false
 }
 
 func (p *parser) optAlias() string {
 	if p.isKeyword("AS") {
 		p.next()
-		if k := p.peek().kind; k == tIdent || k == tString {
+		if p.identLike() || p.peek().kind == tString { // FIRST, NEXT, ROWS ... are reserved only inside their clauses
 			a := p.peek().text
 			p.next()
 			return a
 		}
 		return ""
 	}
-	if p.peek().kind == tIdent { // bare alias: `expr alias` with no AS
+	if p.identLike() { // bare alias: `expr alias` with no AS
 		a := p.peek().text
 		p.next()
 		return a
@@ -1614,7 +1709,7 @@ func (p *parser) primaryExpr() (*tds.Expr, error) {
 			return nil, fmt.Errorf("tsql: expected '(' after EXISTS, got %q", p.peek().text)
 		}
 		p.next()
-		sub, err := p.selectStmt()
+		sub, err := p.subquery()
 		if err != nil {
 			return nil, err
 		}
@@ -1697,7 +1792,7 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		}
 		p.next()
 		if p.isKeyword("SELECT") {
-			sub, err := p.selectStmt()
+			sub, err := p.subquery()
 			if err != nil {
 				return nil, err
 			}
@@ -1730,19 +1825,22 @@ func (p *parser) predicate() (*tds.Expr, error) {
 
 	case p.isKeyword("LIKE"):
 		p.next()
-		t := p.peek()
-		if t.kind != tString {
-			return nil, fmt.Errorf("tsql: expected string after LIKE, got %q", t.text)
+		pat, err := p.valueExpr()
+		if err != nil {
+			return nil, err
 		}
-		p.next()
 		if err := collate(); err != nil {
 			return nil, err
 		}
-		return wrap(mk(tds.OpLike, t.text)), nil
+		// A literal pattern stays a string, the form a backend may push; any other is evaluated per row.
+		if s, ok := pat.Lit.(string); ok && pat.Kind == tds.ValLit {
+			return wrap(mk(tds.OpLike, s)), nil
+		}
+		return wrap(mk(tds.OpLike, pat)), nil
 
 	case p.isKeyword("BETWEEN"):
 		p.next()
-		lo, err := p.literal()
+		lo, err := p.valueExpr()
 		if err != nil {
 			return nil, err
 		}
@@ -1752,14 +1850,14 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		if err := p.expectKeyword("AND"); err != nil {
 			return nil, err
 		}
-		hi, err := p.literal()
+		hi, err := p.valueExpr()
 		if err != nil {
 			return nil, err
 		}
 		if err := collate(); err != nil {
 			return nil, err
 		}
-		return wrap(&tds.Expr{And: []*tds.Expr{mk(tds.OpGe, lo), mk(tds.OpLe, hi)}}), nil
+		return wrap(&tds.Expr{And: []*tds.Expr{mk(tds.OpGe, boundValue(lo)), mk(tds.OpLe, boundValue(hi))}}), nil
 	}
 
 	if neg {
@@ -1782,6 +1880,14 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		return nil, err
 	}
 	return mk(op, rhs), nil
+}
+
+// boundValue keeps a literal BETWEEN bound in its literal form and an expression bound as an expression.
+func boundValue(ve *tds.ValueExpr) any {
+	if ve.Kind == tds.ValLit {
+		return ve.Lit
+	}
+	return ve
 }
 
 func (p *parser) literalList() ([]any, error) {

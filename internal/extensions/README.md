@@ -475,6 +475,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | recursive CTE (at depth) | `internal/engine/engine.go` | Y |
 | `PIVOT` / `UNPIVOT` | `internal/tsql/parser.go + internal/exec/pivot.go` | Y |
 | `CROSS APPLY` / `OUTER APPLY` | `internal/tsql/parser.go + internal/engine/engine.go` | Y |
+| table value constructor (`FROM (VALUES ...) t(c, ...)`) | `internal/tsql/parser.go` | Y |
 | `GROUPING SETS` / `ROLLUP` / `CUBE` | `internal/tsql/parser.go + internal/exec/aggregate.go` | Y |
 | `OVER` (window clause) | `internal/exec/window.go` | Y |
 | `TABLESAMPLE` | `internal/tsql/parser.go` | Y |
@@ -547,6 +548,7 @@ the design lives in [ARCHITECTURE.md](../../ARCHITECTURE.md) and [CONTRIBUTING.m
 | `SELECT @v = col` | `internal/extensions/procedures/control/` | Y |
 | `DECLARE @t TABLE (...)` |  | - |
 | `sp_executesql` / dynamic SQL | `internal/engine/proc.go` | Y |
+| `--` and nested `/* */` comments, anywhere in a batch | `internal/extensions/batch/batch.go` | Y |
 | `SET` options (`ROWCOUNT` capped; `ANSI_NULLS` / `QUOTED_IDENTIFIER` accepted) | `internal/engine/session.go` | Y |
 
 ### Transactions

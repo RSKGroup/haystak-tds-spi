@@ -482,8 +482,15 @@ func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, o
 		}
 		return false, nil
 	case tds.OpLike:
-		pat, _ := p.Value.(string)
-		return likeMatch(fmt.Sprintf("%v", v), pat, p.CaseSensitive), nil
+		pat := p.Value
+		if ve, ok := pat.(*tds.ValueExpr); ok {
+			pv, err := evalAggValue(origIdx, group, outIdx, outRow, ve, env)
+			if err != nil {
+				return false, err
+			}
+			pat = pv
+		}
+		return likeHolds(v, pat, p.CaseSensitive), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
