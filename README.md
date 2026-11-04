@@ -165,13 +165,15 @@ Query shape:
 - Subqueries: `IN (…)`, `EXISTS`, scalar `= (…)`, derived tables `FROM (SELECT …) t`, and correlated forms (against any source of the outer query, joined ones included); each may be a set operation, as in `FROM (SELECT ... UNION ALL SELECT ...) t`
 - Table-value constructors: `FROM (VALUES (...), (...)) t(c1, c2)`
 - CTEs (`WITH`), including recursive
-- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`; `--` and `/* */` comments (nested) anywhere in a batch, and a `;` inside a comment, string or `[name]` does not end a statement
+- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`; `--` and `/* */` comments (nested) anywhere in a batch, and a `;` inside a comment, string or `[name]` does not end a statement; statements need no `;` between them (`DECLARE @x int = 1 SELECT @x`, `SET NOCOUNT ON` then a query, `SELECT 1 SELECT 2`)
 
 Predicates and operators:
 
 - Comparison `= <> < > <= >=`; `AND`, `OR`, `NOT`, parentheses
+- Three-valued logic in `WHERE`, `ON`, `HAVING` and `CASE WHEN`: a comparison with NULL is UNKNOWN and `NOT` keeps it UNKNOWN, so `NOT (x = 1)` and `x NOT IN (1, NULL)` return no row where the answer is UNKNOWN. A pushed `tds.Expr.Not` carries that meaning; the engine pushes to the NULL-supplying side of an outer join only conjuncts that no NULL-extended row satisfies
 - `IN` (value list or subquery), `BETWEEN`, `LIKE`, `IS NULL`, `IS NOT NULL`, `EXISTS`
-- `LIKE` takes any expression as its pattern (a column, `@p + '%'`, a function), with `%`, `_`, `[set]`, `[a-f]` and `[^set]`; a pattern built from constants alone reaches a backend as a string `tds.Predicate.Value`, one that reads the row is a `*tds.ValueExpr` and is evaluated per row. `BETWEEN` bounds are expressions too
+- `LIKE` takes any expression as its pattern (a column, `@p + '%'`, a function), with `%`, `_`, `[set]`, `[a-f]` and `[^set]`, and `[NOT] LIKE ... ESCAPE 'c'` (the escape character also works inside `[ ]`, before `^`, `-` or `]`; such a pattern is always evaluated by the engine); a pattern built from constants alone reaches a backend as a string `tds.Predicate.Value`, one that reads the row is a `*tds.ValueExpr` and is evaluated per row. `BETWEEN` bounds are expressions too
+- String comparison, `GROUP BY`, `DISTINCT`, `NULLIF` and set operations ignore trailing spaces (`'ab' = 'ab  '`), as SQL Server pads the shorter string; `LIKE` ignores the value's trailing spaces but not the pattern's
 - String comparison, `LIKE`, `ORDER BY`, `GROUP BY`, `DISTINCT`, and set operations are ASCII case-insensitive by default (matching `SQL_Latin1_General_CP1_CI_AS`); `COLLATE <name>` with a `_CS_` collation on a predicate, `ORDER BY`, or `GROUP BY` item makes it case-sensitive and sets `CaseSensitive` on the `tds.Predicate` / `tds.OrderItem` (or `Query.GroupByCaseSensitive`) a pushing backend receives
 - Arithmetic `+ - * / %` and string concatenation, in both `SELECT` and `WHERE`
 
@@ -185,10 +187,12 @@ Functions:
 - `CAST`/`CONVERT` to int/bigint/smallint/tinyint, float/real/decimal/numeric/money, bit,
   char/varchar/nchar/nvarchar/text, plus the typed wire encodings (date, datetime,
   uniqueidentifier, varbinary)
-- `CAST`/`CONVERT`/`TRY_CONVERT` to date, datetime, datetime2 and smalldatetime return a date value; text
+- `CAST`/`CONVERT`/`TRY_CONVERT` to date, datetime, datetime2, smalldatetime, time and datetimeoffset return a date/time value (time on 1900-01-01, datetimeoffset with its offset, time/datetime2/datetimeoffset rounded to their scale); text
   is read with `CONVERT`'s style (101 `mm/dd/yyyy`, 103 `dd/mm/yyyy`, 23 `yyyy-mm-dd`, and the rest; mdy without
   one) and `TRY_CONVERT` gives NULL when it does not parse. `CONVERT(varchar(n), <datetime>, style)`
-  formats by the style, and a declared length cuts the text. A datetime compared with text reads the
+  formats by the style; with no style a datetime/smalldatetime is written in style 0 (`Nov  4 2026  2:05PM`), a date as
+  `yyyy-mm-dd`, a time, datetime2 or datetimeoffset in ODBC form with its scale's digits (`14:30:00.0000000`, `... +05:30`).
+  A declared length cuts the text, and `char(n)`/`nchar(n)` pad it to n. A datetime compared with text reads the
   text the same way, so `col >= '01/01/2025'` compares dates
 
 Catalog:

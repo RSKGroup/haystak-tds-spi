@@ -220,6 +220,9 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any,
 			}
 			args[i] = v
 		}
+		if ve.Func == "CONCAT" || ve.Func == "CONCAT_WS" {
+			concatText(ve.Args, args, env)
+		}
 		return evalFunc(ve.Func, args, env), nil
 	case tds.ValCase:
 		for _, w := range ve.Whens {
@@ -804,7 +807,7 @@ func exprType(ve *tds.ValueExpr, cols []catalog.Column, idx map[string]int) type
 			return types.Type{Kind: types.Float64}
 		case "DATE":
 			return types.Type{Kind: types.Time, Name: "date"}
-		case "DATETIME", "DATETIME2", "SMALLDATETIME":
+		case "DATETIME", "DATETIME2", "SMALLDATETIME", "TIME", "DATETIMEOFFSET":
 			return types.Type{Kind: types.Time, Name: strings.ToLower(ve.Cast)}
 		}
 		if ve.CastLen > 0 {

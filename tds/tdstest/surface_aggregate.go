@@ -7,6 +7,7 @@ package tdstest
 // results are exact and backend-independent (variance/stdev of a constant column is 0).
 var aggregateCases = []Case{
 	{Element: "agg:COUNT", SQL: "SELECT COUNT(*) FROM sys.types", Want: []any{20}},
+	{Element: "agg:COUNT", Name: "COUNT/distinct-operand", SQL: "SELECT COUNT(DISTINCT schema_id) + 1 FROM sys.types", Want: []any{2}},
 	{Element: "agg:COUNT_BIG", SQL: "SELECT COUNT_BIG(*) FROM sys.types", Want: []any{20}},
 	{Element: "agg:SUM", SQL: "SELECT SUM(schema_id) FROM sys.types", Want: []any{approx(80)}},
 	{Element: "agg:AVG", SQL: "SELECT AVG(schema_id) FROM sys.types", Want: []any{approx(4)}},

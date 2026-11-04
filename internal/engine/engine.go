@@ -807,16 +807,19 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 	case q.FromFunc != nil:
 		cols, rows, err = exec.EvalTableFunc(q.FromFunc.Name, q.FromFunc.Args)
 	default:
+		where := singleTableWhere(q.Where, fromAlias, q.Table)
+		if suppliesNulls(q.Joins, -1) {
+			where = nullRejecting(where)
+		}
 		cols, rows, err = scanJoinSide(ctx, b, &tds.Query{
-			Database: q.Database, Schema: q.Schema, Table: q.Table,
-			Where: singleTableWhere(q.Where, fromAlias, q.Table),
+			Database: q.Database, Schema: q.Schema, Table: q.Table, Where: where,
 		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	cols = qualify(cols, fromAlias)
-	for _, j := range q.Joins {
+	for ji, j := range q.Joins {
 		// Each join may scan a whole table, so this is the loop an abandoned query burns in:
 		// 25m24s on one statement with the client long gone, because nothing ever asked.
 		if err := cancelled(ctx, "join "+j.Table); err != nil {
@@ -841,6 +844,9 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 			rcols, rrows, err = exec.EvalValues(nil, nil, j.FromValues.Columns, j.FromValues.Rows)
 		default:
 			where := singleTableWhere(q.Where, jAlias, j.Table)
+			if suppliesNulls(q.Joins, ji) {
+				where = nullRejecting(where)
+			}
 			// Semi-join: scan the right side only for rows whose join key matches a left key. Safe for INNER/LEFT; unsafe for RIGHT/FULL.
 			if j.Type == tds.JoinInner || j.Type == tds.JoinLeft {
 				if lk, rk, ok := joinKeys(j.On, jAlias, j.Table); ok {
@@ -863,6 +869,36 @@ func joinQuery(ctx context.Context, b tds.Backend, q *tds.Query) (tds.Rows, erro
 		}
 	}
 	return exec.ApplyWith(cols, rows, q, env)
+}
+
+// suppliesNulls reports whether the source joined at i (-1: the FROM) is NULL-extended by an outer join.
+func suppliesNulls(joins []tds.Join, i int) bool {
+	if i >= 0 && (joins[i].Type == tds.JoinLeft || joins[i].Type == tds.JoinFull) {
+		return true
+	}
+	for _, j := range joins[i+1:] {
+		if j.Type == tds.JoinRight || j.Type == tds.JoinFull {
+			return true
+		}
+	}
+	return false
+}
+
+// nullRejecting keeps the conjuncts no NULL-extended row satisfies; `e.id IS NULL` pushed to that side drops rows the join needs.
+func nullRejecting(where *tds.Expr) *tds.Expr {
+	var keep []*tds.Expr
+	for _, c := range flattenAnd(where) {
+		if exec.RejectsNulls(c, exprCols(c)) {
+			keep = append(keep, c)
+		}
+	}
+	switch len(keep) {
+	case 0:
+		return nil
+	case 1:
+		return keep[0]
+	}
+	return &tds.Expr{And: keep}
 }
 
 func scanJoinSide(ctx context.Context, b tds.Backend, q *tds.Query) ([]catalog.Column, [][]any, error) {
@@ -1051,7 +1087,7 @@ func walkPredicates(e *tds.Expr, fn func(*tds.Predicate)) {
 // foldLikePatterns turns a constant LIKE pattern ('Smi' + '%', or a bound outer value) into the string a backend may push.
 func foldLikePatterns(e *tds.Expr) {
 	walkPredicates(e, func(p *tds.Predicate) {
-		if ve, ok := p.Value.(*tds.ValueExpr); ok && p.Op == tds.OpLike {
+		if ve, ok := p.Value.(*tds.ValueExpr); ok && p.Op == tds.OpLike && p.Escape == 0 {
 			if v, ok := exec.FoldConst(ve); ok {
 				if s, ok := v.(string); ok {
 					p.Value = s

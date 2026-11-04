@@ -67,3 +67,38 @@ func TestSplitComments(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitWithoutSemicolons(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"DECLARE @x int = 1 SELECT @x", []string{"DECLARE @x int = 1", "SELECT @x"}},
+		{"DECLARE @x int = 1\nDECLARE @y int = 2\nSELECT @x + @y", []string{"DECLARE @x int = 1", "DECLARE @y int = 2", "SELECT @x + @y"}},
+		{"DECLARE @x int = CASE WHEN 1 = 1 THEN (SELECT 1) ELSE 2 END SELECT @x", []string{"DECLARE @x int = CASE WHEN 1 = 1 THEN (SELECT 1) ELSE 2 END", "SELECT @x"}},
+		{"DECLARE @s varchar(20) = 'SELECT x' -- SET y\nSELECT @s", []string{"DECLARE @s varchar(20) = 'SELECT x' -- SET y", "SELECT @s"}},
+		{"SET NOCOUNT ON\nSELECT 1", []string{"SET NOCOUNT ON", "SELECT 1"}},
+		{"USE [db one] SELECT 1", []string{"USE [db one]", "SELECT 1"}},
+		{"SELECT 1 SELECT 2", []string{"SELECT 1", "SELECT 2"}},
+		{"SELECT 1 UNION ALL SELECT 2 UNION /* x */ SELECT 3", []string{"SELECT 1 UNION ALL SELECT 2 UNION /* x */ SELECT 3"}},
+		{"WITH c AS (SELECT 1 AS a) SELECT a FROM c", []string{"WITH c AS (SELECT 1 AS a) SELECT a FROM c"}},
+		{"WITH c AS (SELECT 1 AS a) SELECT a FROM c SELECT 2", []string{"WITH c AS (SELECT 1 AS a) SELECT a FROM c", "SELECT 2"}},
+		{"SELECT TOP 1 WITH TIES a FROM t WITH (NOLOCK) ORDER BY a", []string{"SELECT TOP 1 WITH TIES a FROM t WITH (NOLOCK) ORDER BY a"}},
+		{"UPDATE t SET a = 1 WHERE b = 2 DECLARE @x int = 1", []string{"UPDATE t SET a = 1 WHERE b = 2", "DECLARE @x int = 1"}},
+		{"INSERT INTO t SELECT a FROM u WHERE a IN (SELECT b FROM v)", []string{"INSERT INTO t SELECT a FROM u WHERE a IN (SELECT b FROM v)"}},
+		{"CREATE PROCEDURE p AS DECLARE @x int = 1 SELECT @x", []string{"CREATE PROCEDURE p AS DECLARE @x int = 1 SELECT @x"}},
+		{"EXEC p @a = 1 SELECT 2", []string{"EXEC p @a = 1", "SELECT 2"}},
+		{"INSERT INTO t VALUES (1), (2) SELECT a FROM t", []string{"INSERT INTO t VALUES (1), (2)", "SELECT a FROM t"}},
+		{"INSERT INTO t (a) SELECT b FROM u", []string{"INSERT INTO t (a) SELECT b FROM u"}},
+	}
+	for _, c := range cases {
+		got := Split(c.in)
+		if strings.Join(got, "|") != strings.Join(c.want, "|") || len(got) != len(c.want) {
+			t.Errorf("Split(%q)\n  = %q\n  want %q", c.in, got, c.want)
+		}
+	}
+	got, err := Resolve("DECLARE @x int = 1\nDECLARE @y int = 2\nSELECT @x + @y AS z")
+	if err != nil || strings.TrimSpace(got) != "SELECT 1 + 2 AS z" {
+		t.Errorf("Resolve without semicolons = %q, %v", got, err)
+	}
+}

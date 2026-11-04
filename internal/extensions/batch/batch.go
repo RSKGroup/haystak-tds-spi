@@ -46,15 +46,11 @@ func Resolve(sql string) (string, error) {
 	return strings.Join(out, "\n;\n"), nil
 }
 
-// Split cuts sql at each ';' outside strings, [names] and comments; leading comments are trimmed off each statement.
+// Split cuts sql into statements: at each ';' outside strings, [names] and comments, and where T-SQL ends one without it.
 func Split(sql string) []string {
 	var stmts []string
 	start := 0
-	add := func(s string) {
-		if s = TrimLeadingComments(s); s != "" {
-			stmts = append(stmts, s)
-		}
-	}
+	add := func(s string) { stmts = append(stmts, cutStatements(s)...) }
 	for i := 0; i < len(sql); {
 		if j := SkipComment(sql, i); j > i {
 			i = j

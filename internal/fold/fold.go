@@ -29,8 +29,12 @@ func Key(s string) string {
 	return s
 }
 
-// Compare orders a and b as strings.Compare(Key(a), Key(b)) without allocating.
+// Pad drops trailing spaces: SQL Server compares and groups strings as if the shorter were space-padded.
+func Pad(s string) string { return strings.TrimRight(s, " ") }
+
+// Compare orders a and b as strings.Compare(Key(Pad(a)), Key(Pad(b))) without allocating.
 func Compare(a, b string) int {
+	a, b = Pad(a), Pad(b)
 	n := min(len(a), len(b))
 	for i := 0; i < n; i++ {
 		ca, cb := lower(a[i]), lower(b[i])
@@ -50,11 +54,11 @@ func Compare(a, b string) int {
 	return 0
 }
 
-func Equal(a, b string) bool { return len(a) == len(b) && Compare(a, b) == 0 }
+func Equal(a, b string) bool { return Compare(a, b) == 0 }
 
 func Value(v any) any {
 	if s, ok := v.(string); ok {
-		return Key(s)
+		return Key(Pad(s))
 	}
 	return v
 }
@@ -64,6 +68,9 @@ func RowKey(vals []any, exact []bool) string {
 	parts := make([]any, len(vals))
 	for i, v := range vals {
 		if i < len(exact) && exact[i] {
+			if s, ok := v.(string); ok {
+				v = Pad(s)
+			}
 			parts[i] = v
 			continue
 		}

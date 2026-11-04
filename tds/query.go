@@ -27,6 +27,7 @@ type Predicate struct {
 	Op       Op
 	Value    any
 	Sub      *Query // IN (subquery): resolved to a value list before exec
+	Escape   rune   // OpLike: the ESCAPE character, 0 for none; such a pattern comes as a *ValueExpr, not pushable text
 
 	// CaseSensitive is set by a _CS_ COLLATE. False means ASCII case-insensitive, which a pushing backend must match.
 	CaseSensitive bool
@@ -39,7 +40,7 @@ type ColRef struct{ Name string }
 type Expr struct {
 	And   []*Expr
 	Or    []*Expr
-	Not   *Expr
+	Not   *Expr // SQL NOT: UNKNOWN (a NULL operand) stays UNKNOWN, so the row never satisfies it
 	Pred  *Predicate
 	Const *bool // resolved constant (e.g. EXISTS folded before exec)
 }
@@ -120,7 +121,8 @@ type ValueExpr struct {
 	Whens   []CaseWhen // ValCase
 	Else    *ValueExpr // ValCase
 	Cast    string     // ValCast: target type name (INT, VARCHAR, ...)
-	CastLen int        // ValCast: a string target's declared length, 0 for none or MAX; CONVERT's style is Args[0]
+	CastLen int        // ValCast: string length (0 for none or MAX), or time/datetime2/datetimeoffset scale; style is Args[0]
+	AggDist bool       // ValFunc: an aggregate over DISTINCT values, as in COUNT(DISTINCT x) + 1
 	Sub     *Query     // ValSubquery: scalar subquery, resolved to a literal before exec
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 	"github.com/RSKGroup/haystak-tds-spi/tds/catalog"
+	"github.com/RSKGroup/haystak-tds-spi/tds/types"
 )
 
 // Apply runs a logical query against in-memory rows. It is the core thin-path evaluator,
@@ -25,6 +26,16 @@ func Apply(cols []catalog.Column, data [][]any, q *tds.Query) (tds.Rows, error) 
 
 func ApplyWith(cols []catalog.Column, data [][]any, q *tds.Query, env *Env) (tds.Rows, error) {
 	idx := indexCols(cols)
+	if env != nil {
+		e := *env
+		e.colType = func(name string) (types.Type, bool) {
+			if i, ok := resolveCol(idx, name); ok {
+				return cols[i].Type, true
+			}
+			return types.Type{}, false
+		}
+		env = &e
+	}
 
 	var filtered [][]any
 	for _, row := range data {
@@ -273,6 +284,8 @@ type Env struct {
 	CurrentDB  string
 	SPID       int            // @@SPID; 0 = no session
 	Error      *tds.ErrorInfo // the caught error inside a CATCH block (nil otherwise), for ERROR_*
+
+	colType func(string) (types.Type, bool) // the declared type of a source column, for CAST's default text
 }
 
 func (e *Env) subFn() SubFn {
@@ -282,160 +295,117 @@ func (e *Env) subFn() SubFn {
 	return e.Sub
 }
 
+// evalExpr reports whether e is TRUE for row; FALSE and UNKNOWN both filter it out.
 func evalExpr(idx map[string]int, row []any, e *tds.Expr, env *Env) (bool, error) {
-	switch {
-	case e == nil:
-		return true, nil
-	case e.Const != nil:
-		return *e.Const, nil
-	case e.Pred != nil:
-		return evalPred(idx, row, e.Pred, env)
-	case e.Not != nil:
-		v, err := evalExpr(idx, row, e.Not, env)
-		return !v, err
-	case len(e.And) > 0:
-		for _, c := range e.And {
-			v, err := evalExpr(idx, row, c, env)
-			if err != nil {
-				return false, err
-			}
-			if !v {
-				return false, nil
-			}
-		}
-		return true, nil
-	case len(e.Or) > 0:
-		for _, c := range e.Or {
-			v, err := evalExpr(idx, row, c, env)
-			if err != nil {
-				return false, err
-			}
-			if v {
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-	return true, nil
+	t, err := evalTruth(e, func(p *tds.Predicate) (truth, error) { return evalPred(idx, row, p, env) })
+	return t == truthTrue, err
 }
 
-func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (bool, error) {
+func evalPred(idx map[string]int, row []any, p *tds.Predicate, env *Env) (truth, error) {
 	sub := env.subFn()
 	if p.Op == tds.OpExists && p.Sub != nil {
 		if sub == nil {
-			return false, nil
+			return truthFalse, nil
 		}
 		rows, err := sub(row, idx, p.Sub)
 		if err != nil {
-			return false, err
+			return truthFalse, err
 		}
-		return len(rows) > 0, nil
+		return truthOf(len(rows) > 0), nil
 	}
 	var v any
 	if p.LeftExpr != nil {
 		lv, err := evalValue(idx, row, p.LeftExpr, env)
 		if err != nil {
-			return false, err
+			return truthFalse, err
 		}
 		v = lv
 	} else {
 		i, ok := resolveCol(idx, p.Column)
 		if !ok {
-			return false, fmt.Errorf("exec: unknown column %q in WHERE", p.Column)
+			return truthFalse, fmt.Errorf("exec: unknown column %q in WHERE", p.Column)
 		}
 		v = row[i]
 	}
 	if p.Op == tds.OpIn && p.Sub != nil {
 		if sub == nil {
-			return false, nil
+			return truthFalse, nil
 		}
 		rows, err := sub(row, idx, p.Sub)
 		if err != nil {
-			return false, err
+			return truthFalse, err
 		}
+		vals := make([]any, 0, len(rows))
 		for _, r := range rows {
 			if len(r) > 0 {
-				if c, ok := compareCS(v, r[0], p.CaseSensitive); ok && c == 0 {
-					return true, nil
-				}
+				vals = append(vals, r[0])
 			}
 		}
-		return false, nil
+		return inTruth(v, vals, p.CaseSensitive), nil
 	}
 	switch p.Op {
-	case tds.OpIsNull:
-		return v == nil, nil
-	case tds.OpIsNotNull:
-		return v != nil, nil
+	case tds.OpIsNull, tds.OpIsNotNull:
+		return nullTruth(p.Op, v), nil
 	case tds.OpIn:
 		list, _ := p.Value.([]any)
-		for _, item := range list {
-			if c, ok := compareCS(v, item, p.CaseSensitive); ok && c == 0 {
-				return true, nil
-			}
-		}
-		return false, nil
+		return inTruth(v, list, p.CaseSensitive), nil
 	case tds.OpLike:
 		pat := p.Value
 		if ve, ok := pat.(*tds.ValueExpr); ok {
 			pv, err := evalValue(idx, row, ve, env)
 			if err != nil {
-				return false, err
+				return truthFalse, err
 			}
 			pat = pv
 		}
-		return likeHolds(v, pat, p.CaseSensitive), nil
+		return likeTruth(v, pat, p.CaseSensitive, p.Escape), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
 		case *tds.ValueExpr:
 			rv, err := evalValue(idx, row, r, env)
 			if err != nil {
-				return false, err
+				return truthFalse, err
 			}
 			rhs = rv
 		case tds.ColRef:
 			j, ok := resolveCol(idx, r.Name)
 			if !ok {
-				return false, fmt.Errorf("exec: unknown column %q in WHERE", r.Name)
+				return truthFalse, fmt.Errorf("exec: unknown column %q in WHERE", r.Name)
 			}
 			rhs = row[j]
 		}
-		c, ok := compareCS(v, rhs, p.CaseSensitive)
-		if !ok {
-			return false, nil
-		}
-		return satisfies(p.Op, c), nil
+		return cmpTruth(p.Op, v, rhs, p.CaseSensitive), nil
 	}
 }
 
-// likeHolds is LIKE over evaluated operands: a NULL on either side is UNKNOWN, which no row satisfies.
-func likeHolds(v, pat any, exact bool) bool {
-	if v == nil || pat == nil {
-		return false
-	}
-	return likeMatch(toStr(v), toStr(pat), exact)
-}
-
-// likeMatch is T-SQL's LIKE (% _ [set] [a-f] [^set]), folding both sides itself to keep the ASCII-only case rule.
-func likeMatch(s, pattern string, exact bool) bool {
+// likeMatch is T-SQL's LIKE (% _ [set] [a-f] [^set], esc before a character makes it literal; 0 for none).
+func likeMatch(s, pattern string, exact bool, esc rune) bool {
 	if !exact {
 		s, pattern = fold.Key(s), fold.Key(pattern)
+		if esc >= 'A' && esc <= 'Z' {
+			esc += 'a' - 'A'
+		}
 	}
 	str, pat := []rune(s), []rune(pattern)
 	si, pi, starP, starS := 0, 0, -1, 0
 	for si < len(str) {
 		matched := false
 		if pi < len(pat) {
-			switch c := pat[pi]; c {
-			case '%':
+			switch c := pat[pi]; {
+			case esc != 0 && c == esc:
+				if pi+1 >= len(pat) {
+					return false // an escape with nothing after it makes the pattern invalid: FALSE
+				}
+				matched, pi = pat[pi+1] == str[si], pi+2
+			case c == '%':
 				starP, starS = pi, si
 				pi++
 				continue
-			case '_':
+			case c == '_':
 				matched, pi = true, pi+1
-			case '[':
-				if in, n := likeClass(pat[pi:], str[si]); n > 0 {
+			case c == '[':
+				if in, n := likeClass(pat[pi:], str[si], esc); n > 0 {
 					matched, pi = in, pi+n
 				} else {
 					matched, pi = str[si] == '[', pi+1
@@ -460,23 +430,30 @@ func likeMatch(s, pattern string, exact bool) bool {
 	return pi == len(pat)
 }
 
-// likeClass matches c against the [set] that opens p; n is the set's length, 0 when it never closes.
-func likeClass(p []rune, c rune) (in bool, n int) {
+// likeClass matches c against the [set] opening p (n its length, 0 if unclosed); esc makes ^ - ] plain members.
+func likeClass(p []rune, c rune, esc rune) (in bool, n int) {
 	i := 1
 	neg := i < len(p) && p[i] == '^'
 	if neg {
 		i++
 	}
 	start := i
+	var set []rune
+	var plain []bool
 	for i < len(p) && (p[i] != ']' || i == start) {
+		if esc != 0 && p[i] == esc && i+1 < len(p) {
+			set, plain = append(set, p[i+1]), append(plain, true)
+			i += 2
+			continue
+		}
+		set, plain = append(set, p[i]), append(plain, false)
 		i++
 	}
 	if i >= len(p) {
 		return false, 0
 	}
-	set := p[start:i]
 	for k := 0; k < len(set); k++ {
-		if k+2 < len(set) && set[k+1] == '-' {
+		if k+2 < len(set) && set[k+1] == '-' && !plain[k+1] {
 			in = in || (c >= set[k] && c <= set[k+2])
 			k += 2
 			continue
@@ -551,7 +528,7 @@ func compareCS(a, b any, exact bool) (int, bool) {
 	case string:
 		if bv, ok := b.(string); ok {
 			if exact {
-				return strings.Compare(av, bv), true
+				return strings.Compare(fold.Pad(av), fold.Pad(bv)), true
 			}
 			return fold.Compare(av, bv), true
 		}

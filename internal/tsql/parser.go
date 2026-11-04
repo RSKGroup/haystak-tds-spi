@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/RSKGroup/haystak-tds-spi/internal/fold"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
@@ -1015,6 +1016,10 @@ func (p *parser) funcCall(name string) (*tds.ValueExpr, error) {
 func (p *parser) funcArgs(name string) (*tds.ValueExpr, error) {
 	p.next() // (
 	var args []*tds.ValueExpr
+	distinct := isAggName(name) && p.isKeyword("DISTINCT")
+	if distinct {
+		p.next()
+	}
 	jsonObject := name == "JSON_OBJECT"
 	if p.peek().kind != tRParen {
 		for {
@@ -1050,7 +1055,7 @@ func (p *parser) funcArgs(name string) (*tds.ValueExpr, error) {
 		return nil, fmt.Errorf("tsql: expected ')' after function args, got %q", p.peek().text)
 	}
 	p.next()
-	return &tds.ValueExpr{Kind: tds.ValFunc, Func: name, Args: args}, nil
+	return &tds.ValueExpr{Kind: tds.ValFunc, Func: name, Args: args, AggDist: distinct}, nil
 }
 
 func (p *parser) caseExpr() (*tds.ValueExpr, error) {
@@ -1160,7 +1165,7 @@ func (p *parser) typeName() (string, error) {
 	return name, err
 }
 
-// castType reads a type name and, for a string or binary type, its declared length (0 for none or MAX).
+// castType reads a type name and its length (string, binary; 0 for none or MAX) or scale (time types; 7 by default).
 func (p *parser) castType() (string, int, error) {
 	t := p.peek()
 	if t.kind != tIdent && t.kind != tKeyword {
@@ -1169,9 +1174,12 @@ func (p *parser) castType() (string, int, error) {
 	name := strings.ToUpper(t.text)
 	p.next()
 	n := 0
+	if scaledType(name) {
+		n = 7 // SQL Server's default fractional-second scale
+	}
 	if p.peek().kind == tLParen {
 		p.next()
-		if p.peek().kind == tNumber && sizedType(name) {
+		if p.peek().kind == tNumber && (sizedType(name) || scaledType(name)) {
 			n, _ = strconv.Atoi(p.peek().text)
 		}
 		for p.peek().kind != tRParen && p.peek().kind != tEOF {
@@ -1182,6 +1190,10 @@ func (p *parser) castType() (string, int, error) {
 		}
 	}
 	return name, n, nil
+}
+
+func scaledType(name string) bool {
+	return name == "TIME" || name == "DATETIME2" || name == "DATETIMEOFFSET"
 }
 
 func sizedType(name string) bool {
@@ -1832,6 +1844,16 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		if err := collate(); err != nil {
 			return nil, err
 		}
+		if p.peekIs("ESCAPE") {
+			p.next()
+			esc, err := p.likeEscape()
+			if err != nil {
+				return nil, err
+			}
+			e := mk(tds.OpLike, pat)
+			e.Pred.Escape = esc
+			return wrap(e), nil
+		}
 		// A literal pattern stays a string, the form a backend may push; any other is evaluated per row.
 		if s, ok := pat.Lit.(string); ok && pat.Kind == tds.ValLit {
 			return wrap(mk(tds.OpLike, s)), nil
@@ -1880,6 +1902,17 @@ func (p *parser) predicate() (*tds.Expr, error) {
 		return nil, err
 	}
 	return mk(op, rhs), nil
+}
+
+// likeEscape reads ESCAPE's argument, which T-SQL requires to be one character.
+func (p *parser) likeEscape() (rune, error) {
+	t := p.peek()
+	if t.kind != tString || utf8.RuneCountInString(t.text) != 1 {
+		return 0, fmt.Errorf("tsql: the ESCAPE character must be a single-character string, got %q", t.text)
+	}
+	p.next()
+	r, _ := utf8.DecodeRuneInString(t.text)
+	return r, nil
 }
 
 // boundValue keeps a literal BETWEEN bound in its literal form and an expression bound as an expression.

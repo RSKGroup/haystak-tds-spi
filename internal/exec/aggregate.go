@@ -20,7 +20,27 @@ func IsAggregate(q *tds.Query) bool { return isAggregate(q) }
 // HasDistinctAgg reports whether any select item is a DISTINCT aggregate (COUNT(DISTINCT col)).
 func HasDistinctAgg(q *tds.Query) bool {
 	for _, it := range q.Select {
-		if it.AggDist {
+		if it.AggDist || hasDistinctCall(it.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDistinctCall(ve *tds.ValueExpr) bool {
+	if ve == nil || ve.Kind == tds.ValSubquery {
+		return false
+	}
+	if ve.AggDist || hasDistinctCall(ve.Left) || hasDistinctCall(ve.Right) || hasDistinctCall(ve.Operand) || hasDistinctCall(ve.Else) {
+		return true
+	}
+	for _, a := range ve.Args {
+		if hasDistinctCall(a) {
+			return true
+		}
+	}
+	for _, w := range ve.Whens {
+		if hasDistinctCall(w.Match) || hasDistinctCall(w.Result) {
 			return true
 		}
 	}
@@ -103,7 +123,7 @@ func bindAggregates(ve *tds.ValueExpr, idx map[string]int, group [][]any, env *E
 					rows[i] = []any{v}
 				}
 			}
-			v, err := computeAgg(fn, arg, aggSep(ve.Args), argIdx, rows, false)
+			v, err := computeAgg(fn, arg, aggSep(ve.Args), argIdx, rows, ve.AggDist)
 			if err != nil {
 				return nil, err
 			}
@@ -417,101 +437,60 @@ func evalAggValue(origIdx map[string]int, group [][]any, outIdx map[string]int, 
 }
 
 func evalAggExpr(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, e *tds.Expr, env *Env) (bool, error) {
-	switch {
-	case e == nil:
-		return true, nil
-	case e.Const != nil:
-		return *e.Const, nil
-	case e.Pred != nil:
-		return evalAggPred(origIdx, group, outIdx, outRow, e.Pred, env)
-	case e.Not != nil:
-		v, err := evalAggExpr(origIdx, group, outIdx, outRow, e.Not, env)
-		return !v, err
-	case len(e.And) > 0:
-		for _, c := range e.And {
-			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c, env)
-			if err != nil {
-				return false, err
-			}
-			if !v {
-				return false, nil
-			}
-		}
-		return true, nil
-	case len(e.Or) > 0:
-		for _, c := range e.Or {
-			v, err := evalAggExpr(origIdx, group, outIdx, outRow, c, env)
-			if err != nil {
-				return false, err
-			}
-			if v {
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-	return true, nil
+	t, err := evalTruth(e, func(p *tds.Predicate) (truth, error) {
+		return evalAggPred(origIdx, group, outIdx, outRow, p, env)
+	})
+	return t == truthTrue, err
 }
 
-func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, p *tds.Predicate, env *Env) (bool, error) {
+func evalAggPred(origIdx map[string]int, group [][]any, outIdx map[string]int, outRow []any, p *tds.Predicate, env *Env) (truth, error) {
 	var v any
 	if p.LeftExpr != nil {
 		lv, err := evalAggValue(origIdx, group, outIdx, outRow, p.LeftExpr, env)
 		if err != nil {
-			return false, err
+			return truthFalse, err
 		}
 		v = lv
 	} else {
 		i, ok := resolveCol(outIdx, p.Column)
 		if !ok {
-			return false, fmt.Errorf("exec: unknown column %q in HAVING", p.Column)
+			return truthFalse, fmt.Errorf("exec: unknown column %q in HAVING", p.Column)
 		}
 		v = outRow[i]
 	}
 	switch p.Op {
-	case tds.OpIsNull:
-		return v == nil, nil
-	case tds.OpIsNotNull:
-		return v != nil, nil
+	case tds.OpIsNull, tds.OpIsNotNull:
+		return nullTruth(p.Op, v), nil
 	case tds.OpIn:
 		list, _ := p.Value.([]any)
-		for _, item := range list {
-			if c, ok := compareCS(v, item, p.CaseSensitive); ok && c == 0 {
-				return true, nil
-			}
-		}
-		return false, nil
+		return inTruth(v, list, p.CaseSensitive), nil
 	case tds.OpLike:
 		pat := p.Value
 		if ve, ok := pat.(*tds.ValueExpr); ok {
 			pv, err := evalAggValue(origIdx, group, outIdx, outRow, ve, env)
 			if err != nil {
-				return false, err
+				return truthFalse, err
 			}
 			pat = pv
 		}
-		return likeHolds(v, pat, p.CaseSensitive), nil
+		return likeTruth(v, pat, p.CaseSensitive, p.Escape), nil
 	default:
 		rhs := p.Value
 		switch r := rhs.(type) {
 		case *tds.ValueExpr:
 			rv, err := evalAggValue(origIdx, group, outIdx, outRow, r, env)
 			if err != nil {
-				return false, err
+				return truthFalse, err
 			}
 			rhs = rv
 		case tds.ColRef:
 			j, ok := resolveCol(outIdx, r.Name)
 			if !ok {
-				return false, fmt.Errorf("exec: unknown column %q in HAVING", r.Name)
+				return truthFalse, fmt.Errorf("exec: unknown column %q in HAVING", r.Name)
 			}
 			rhs = outRow[j]
 		}
-		c, ok := compareCS(v, rhs, p.CaseSensitive)
-		if !ok {
-			return false, nil
-		}
-		return satisfies(p.Op, c), nil
+		return cmpTruth(p.Op, v, rhs, p.CaseSensitive), nil
 	}
 }
 
@@ -533,13 +512,13 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 		}
 		switch it.Agg {
 		case tds.AggNone:
-			i, ok := idx[it.Column]
+			i, ok := resolveCol(idx, it.Column)
 			if !ok {
 				return nil, fmt.Errorf("exec: unknown column %q in SELECT", it.Column)
 			}
 			typ = cols[i].Type
 			if name == "" {
-				name = it.Column
+				name = it.Column[strings.LastIndex(it.Column, ".")+1:]
 			}
 		case tds.AggCount, tds.AggCountBig:
 			typ = types.Type{Kind: types.Int64}
@@ -552,7 +531,7 @@ func aggOutCols(cols []catalog.Column, idx map[string]int, sel []tds.SelectItem)
 				name = "agg"
 			}
 		case tds.AggMin, tds.AggMax:
-			if i, ok := idx[it.Arg]; ok {
+			if i, ok := resolveCol(idx, it.Arg); ok {
 				typ = cols[i].Type
 			} else {
 				typ = types.Type{Kind: types.Float64}
@@ -582,7 +561,7 @@ func groupOneSet(idx map[string]int, rows [][]any, sel []tds.SelectItem, set []s
 	setCols := make(map[string]bool, len(set))
 	exact := make([]bool, len(set))
 	for j, g := range set {
-		i, ok := idx[g]
+		i, ok := resolveCol(idx, g) // alias.col over a single source's bare column names
 		if !ok {
 			return nil, fmt.Errorf("exec: unknown column %q in GROUP BY", g)
 		}
