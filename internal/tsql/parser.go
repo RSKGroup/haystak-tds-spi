@@ -1165,7 +1165,7 @@ func (p *parser) typeName() (string, error) {
 	return name, err
 }
 
-// castType reads a type name and its length (string, binary; 0 for none or MAX) or scale (time types; 7 by default).
+// castType reads a type name and its length (string, binary; 30 when not given, 0 for MAX) or scale (time types; 7).
 func (p *parser) castType() (string, int, error) {
 	t := p.peek()
 	if t.kind != tIdent && t.kind != tKeyword {
@@ -1174,13 +1174,19 @@ func (p *parser) castType() (string, int, error) {
 	name := strings.ToUpper(t.text)
 	p.next()
 	n := 0
-	if scaledType(name) {
+	switch {
+	case scaledType(name):
 		n = 7 // SQL Server's default fractional-second scale
+	case sizedType(name):
+		n = 30 // CAST and CONVERT's default length; a declared variable's is 1, applied where it is declared
 	}
 	if p.peek().kind == tLParen {
 		p.next()
-		if p.peek().kind == tNumber && (sizedType(name) || scaledType(name)) {
-			n, _ = strconv.Atoi(p.peek().text)
+		if sizedType(name) || scaledType(name) {
+			n = 0
+			if p.peek().kind == tNumber {
+				n, _ = strconv.Atoi(p.peek().text)
+			}
 		}
 		for p.peek().kind != tRParen && p.peek().kind != tEOF {
 			p.next()

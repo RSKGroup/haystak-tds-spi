@@ -18,7 +18,7 @@ func Resolve(sql string) (string, error) {
 	if !strings.ContainsRune(sql, '@') {
 		return sql, nil
 	}
-	vars := map[string]string{}
+	vars, types := map[string]string{}, map[string]string{}
 	var out []string
 	for _, st := range Split(sql) {
 		t := strings.TrimSpace(st)
@@ -27,11 +27,11 @@ func Resolve(sql string) (string, error) {
 		}
 		switch strings.ToUpper(firstWord(t)) {
 		case "DECLARE":
-			if err := bindDeclare(stripComments(t), vars); err != nil {
+			if err := bindDeclare(stripComments(t), vars, types); err != nil {
 				return "", err
 			}
 		case "SET":
-			done, err := bindSet(stripComments(t), vars)
+			done, err := bindSet(stripComments(t), vars, types)
 			if err != nil {
 				return "", err
 			}
@@ -186,22 +186,25 @@ func substitute(s string, vars map[string]string) string {
 }
 
 // bindDeclare parses `DECLARE @a <type> [= <lit>] [, @b …]` and records each initialized variable.
-func bindDeclare(stmt string, vars map[string]string) error {
+func bindDeclare(stmt string, vars, types map[string]string) error {
 	for _, part := range splitTopCommas(strings.TrimSpace(stmt[len("DECLARE"):])) {
 		p := strings.TrimSpace(part)
 		name, rest, ok := varName(p)
 		if !ok {
 			return fmt.Errorf("batch: DECLARE expects @name, got %q", p)
 		}
+		typ := rest
 		if eq := topIndex(rest, '='); eq >= 0 { // `<type> = <value>` — bind to the value; no '=' ⇒ NULL, unbound
-			vars[name] = strings.TrimSpace(rest[eq+1:])
+			typ = rest[:eq]
+			vars[name] = fitDeclared(strings.TrimSpace(rest[eq+1:]), typ)
 		}
+		types[name] = strings.TrimSpace(typ)
 	}
 	return nil
 }
 
 // bindSet handles `SET @v = <value>`; ok is false for a non-variable SET (e.g. SET NOCOUNT ON).
-func bindSet(stmt string, vars map[string]string) (bool, error) {
+func bindSet(stmt string, vars, types map[string]string) (bool, error) {
 	name, rest, ok := varName(strings.TrimSpace(stmt[len("SET"):]))
 	if !ok {
 		return false, nil
@@ -210,7 +213,7 @@ func bindSet(stmt string, vars map[string]string) (bool, error) {
 	if eq < 0 {
 		return false, fmt.Errorf("batch: SET @%s expects '='", name)
 	}
-	vars[name] = strings.TrimSpace(rest[eq+1:])
+	vars[name] = fitDeclared(strings.TrimSpace(rest[eq+1:]), types[name])
 	return true, nil
 }
 

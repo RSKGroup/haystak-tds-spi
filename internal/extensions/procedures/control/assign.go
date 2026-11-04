@@ -40,7 +40,7 @@ func trySelectAssign(ctx context.Context, sql string, sc *scope, run routines.Ru
 	}
 	exprs := make([]string, len(asgs))
 	for i, a := range asgs {
-		exprs[i] = a.expr
+		exprs[i] = declaredExpr(a.expr, sc.types[a.name])
 	}
 	q := "SELECT " + strings.Join(exprs, ", ")
 	if tail != "" {

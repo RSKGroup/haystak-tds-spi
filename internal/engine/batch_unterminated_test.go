@@ -23,3 +23,16 @@ func TestBatchWithoutSemicolons(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateThenSetOptionWithoutSemicolon(t *testing.T) {
+	cases := []struct{ sql, want string }{
+		{"UPDATE users SET name = 'zed' WHERE id = 1\nSET NOCOUNT ON\nSELECT name FROM users WHERE id = 1", "[[zed]]"},
+		{"UPDATE users SET name = 'zed' WHERE id = 2 SELECT name FROM users ORDER BY id", "[[ada] [zed]]"},
+		{"DELETE FROM users WHERE id = 1 SET NOCOUNT OFF SELECT COUNT(*) FROM users", "[[1]]"},
+	}
+	for _, c := range cases {
+		if got := fmt.Sprint(qry(t, c.sql)); got != c.want {
+			t.Errorf("%q = %s, want %s", c.sql, got, c.want)
+		}
+	}
+}

@@ -121,7 +121,7 @@ type ValueExpr struct {
 	Whens   []CaseWhen // ValCase
 	Else    *ValueExpr // ValCase
 	Cast    string     // ValCast: target type name (INT, VARCHAR, ...)
-	CastLen int        // ValCast: string length (0 for none or MAX), or time/datetime2/datetimeoffset scale; style is Args[0]
+	CastLen int        // ValCast: string length (30 if not given, 0 for MAX), or time/datetime2/datetimeoffset scale; style is Args[0]
 	AggDist bool       // ValFunc: an aggregate over DISTINCT values, as in COUNT(DISTINCT x) + 1
 	Sub     *Query     // ValSubquery: scalar subquery, resolved to a literal before exec
 }

@@ -6,6 +6,7 @@ package exec
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -207,13 +208,15 @@ func defaultText(t time.Time, typ string, scale int) string {
 	return s
 }
 
-// concatText writes CONCAT's date/time arguments as CAST with no style would, before they are joined.
-func concatText(exprs []*tds.ValueExpr, args []any, env *Env) {
+// textArgs writes the date/time values a string function takes as text (pos, or AllArgs) as CAST with no style would.
+func textArgs(exprs []*tds.ValueExpr, args []any, pos []int, env *Env) {
 	for i, a := range args {
-		if t, ok := a.(time.Time); ok && i < len(exprs) {
-			src, scale := temporalType(exprs[i], env)
-			args[i] = defaultText(t, src, scale)
+		t, ok := a.(time.Time)
+		if !ok || i >= len(exprs) || (!slices.Contains(pos, i) && !slices.Contains(pos, functions.AllArgs)) {
+			continue
 		}
+		src, scale := temporalType(exprs[i], env)
+		args[i] = defaultText(t, src, scale)
 	}
 }
 

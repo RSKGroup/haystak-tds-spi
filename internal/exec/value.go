@@ -220,8 +220,8 @@ func evalValue(idx map[string]int, row []any, ve *tds.ValueExpr, env *Env) (any,
 			}
 			args[i] = v
 		}
-		if ve.Func == "CONCAT" || ve.Func == "CONCAT_WS" {
-			concatText(ve.Args, args, env)
+		if pos := functions.TextParams(ve.Func); pos != nil {
+			textArgs(ve.Args, args, pos, env)
 		}
 		return evalFunc(ve.Func, args, env), nil
 	case tds.ValCase:

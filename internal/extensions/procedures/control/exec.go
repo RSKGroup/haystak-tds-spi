@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/batch"
 	"github.com/RSKGroup/haystak-tds-spi/internal/extensions/routines"
 	"github.com/RSKGroup/haystak-tds-spi/tds"
 )
@@ -34,7 +35,10 @@ type state struct {
 	results []tds.Rows
 }
 
-type scope struct{ vars map[string]string } // @name -> SQL-literal value
+type scope struct {
+	vars  map[string]string // @name -> SQL-literal value
+	types map[string]string // @name -> declared type, so SET fits the value as DECLARE does
+}
 
 var controlLead = map[string]bool{
 	"IF": true, "WHILE": true, "BEGIN": true, "RETURN": true, "PRINT": true,
@@ -94,7 +98,7 @@ func RunAll(ctx context.Context, sql string, run routines.Runner) ([]tds.Rows, e
 	if err != nil {
 		return nil, err
 	}
-	sc := &scope{vars: map[string]string{}}
+	sc := &scope{vars: map[string]string{}, types: map[string]string{}}
 	st := &state{}
 	if err := execStmt(ctx, blk, sc, run, st); err != nil {
 		return nil, err
@@ -129,8 +133,9 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 	case *Declare:
 		for _, v := range n.Vars {
 			lit := nullLiteralForType(v.typ) // typed NULL so columns built from the (unset) var keep their SQL type
+			sc.types[v.name] = v.typ
 			if v.init != "" {
-				l, err := evalLit(ctx, run, v.init, sc)
+				l, err := evalLit(ctx, run, declaredExpr(v.init, v.typ), sc)
 				if err != nil {
 					return err
 				}
@@ -139,7 +144,7 @@ func execStmt(ctx context.Context, s Stmt, sc *scope, run routines.Runner, st *s
 			sc.vars[v.name] = lit
 		}
 	case *Set:
-		lit, err := evalLit(ctx, run, n.Expr, sc)
+		lit, err := evalLit(ctx, run, declaredExpr(n.Expr, sc.types[n.Name]), sc)
 		if err != nil {
 			return err
 		}
@@ -325,6 +330,14 @@ func evalBool(ctx context.Context, run routines.Runner, cond string, sc *scope) 
 		}
 	}
 	return false, nil
+}
+
+// declaredExpr casts a value to its variable's declared text type, whose missing length is 1, not CAST's 30.
+func declaredExpr(expr, typ string) string {
+	if cast, ok := batch.DeclaredTextType(typ); ok {
+		return "CAST((" + expr + ") AS " + cast + ")"
+	}
+	return expr
 }
 
 func evalLit(ctx context.Context, run routines.Runner, expr string, sc *scope) (string, error) {

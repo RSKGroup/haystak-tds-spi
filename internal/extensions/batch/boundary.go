@@ -78,13 +78,14 @@ func statementEnd(s string) int {
 		return len(s)
 	}
 	lead := strings.ToUpper(ws[0].text)
-	mainSeen, values := lead != "WITH", false
+	values, ownSet := false, false
 	for k := 1; k < len(ws); k++ {
 		w := ws[k]
 		if w.depth != 0 {
 			continue
 		}
 		u := strings.ToUpper(w.text)
+		hint := u == "WITH" && w.parenAfter // a table hint, WITH (NOLOCK), not a new statement
 		switch lead {
 		case "CREATE", "ALTER":
 			return len(s) // a routine body runs to the end of its batch
@@ -97,37 +98,48 @@ func statementEnd(s string) int {
 			if leadWords[u] {
 				return w.at
 			}
-		case "SELECT", "WITH":
-			if !mainSeen {
-				if u == "SELECT" || u == "INSERT" || u == "UPDATE" || u == "DELETE" || u == "MERGE" {
-					mainSeen, lead = true, u
-				}
-				continue
+		case "WITH":
+			if u == "SELECT" || u == "INSERT" || u == "UPDATE" || u == "DELETE" || u == "MERGE" {
+				lead = u // the CTE's statement: its words follow that statement's rules
 			}
-			if lead != "SELECT" {
-				if u == "DECLARE" || u == "USE" || (u == "SET" && lead != "UPDATE" && lead != "MERGE") {
-					return w.at
-				}
-				continue
-			}
+		case "SELECT":
 			switch {
 			case u == "SELECT":
 				if !setOpWord(ws[k-1].text) {
 					return w.at
 				}
 			case u == "WITH":
-				if !w.parenAfter && (k+1 >= len(ws) || !strings.EqualFold(ws[k+1].text, "TIES")) {
+				if !hint && (k+1 >= len(ws) || !strings.EqualFold(ws[k+1].text, "TIES")) {
 					return w.at
 				}
 			case leadWords[u]:
 				return w.at
 			}
-		default:
-			if u == "DECLARE" || u == "USE" || (u == "SET" && lead != "UPDATE" && lead != "MERGE") {
+		case "UPDATE", "DELETE":
+			switch {
+			case u == "SET" && lead == "UPDATE" && !ownSet:
+				ownSet = true // an UPDATE has one SET clause; a second SET starts a statement
+			case hint:
+			case leadWords[u]:
 				return w.at
 			}
-			values = values || (lead == "INSERT" && u == "VALUES")
-			if values && u == "SELECT" { // INSERT ... SELECT is one statement, INSERT ... VALUES (...) then SELECT two
+		case "MERGE":
+			switch {
+			case u == "SET" && strings.EqualFold(ws[k-1].text, "UPDATE"):
+			case u == "INSERT" || u == "UPDATE" || u == "DELETE" || hint: // its WHEN ... THEN actions
+			case leadWords[u]:
+				return w.at
+			}
+		case "INSERT":
+			values = values || u == "VALUES"
+			switch {
+			case u == "SELECT" && !values: // INSERT ... SELECT is one statement, INSERT ... VALUES (...) then SELECT two
+			case u == "EXEC" || u == "EXECUTE" || hint:
+			case leadWords[u]:
+				return w.at
+			}
+		default:
+			if u == "DECLARE" || u == "USE" || u == "SET" {
 				return w.at
 			}
 		}

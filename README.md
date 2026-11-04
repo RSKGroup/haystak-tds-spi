@@ -165,7 +165,7 @@ Query shape:
 - Subqueries: `IN (…)`, `EXISTS`, scalar `= (…)`, derived tables `FROM (SELECT …) t`, and correlated forms (against any source of the outer query, joined ones included); each may be a set operation, as in `FROM (SELECT ... UNION ALL SELECT ...) t`
 - Table-value constructors: `FROM (VALUES (...), (...)) t(c1, c2)`
 - CTEs (`WITH`), including recursive
-- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`; `--` and `/* */` comments (nested) anywhere in a batch, and a `;` inside a comment, string or `[name]` does not end a statement; statements need no `;` between them (`DECLARE @x int = 1 SELECT @x`, `SET NOCOUNT ON` then a query, `SELECT 1 SELECT 2`)
+- No-`FROM` scalar `SELECT`, `;`-separated multi-statement batches, and RPC `sp_executesql`; `--` and `/* */` comments (nested) anywhere in a batch, and a `;` inside a comment, string or `[name]` does not end a statement; statements need no `;` between them (`DECLARE @x int = 1 SELECT @x`, `SET NOCOUNT ON` then a query, `SELECT 1 SELECT 2`, `UPDATE t SET a = 1 SET NOCOUNT ON`: an UPDATE's one SET clause and a MERGE's `UPDATE SET` stay with them, any other SET starts a statement)
 
 Predicates and operators:
 
@@ -180,7 +180,7 @@ Predicates and operators:
 Functions:
 
 - Aggregate: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
-- String: `LEN`/`DATALEN`, `UPPER`, `LOWER`, `LTRIM`, `RTRIM`, `TRIM`, `SUBSTRING`, `REPLACE`, `CONCAT`
+- String: `LEN`/`DATALEN`, `UPPER`, `LOWER`, `LTRIM`, `RTRIM`, `TRIM`, `SUBSTRING`, `REPLACE`, `CONCAT`; a date or time passed where a string function takes text is read as its default text, as `CAST` writes it (`LEFT(GETDATE(), 3)` is the month)
 - Conditional: `ISNULL`, `COALESCE`, `NULLIF`, `CASE` (simple and searched)
 - Numeric: `ABS`
 - Date: `YEAR`, `MONTH`, `DAY`, `GETDATE`, `GETUTCDATE`, `SYSDATETIME`, `SYSUTCDATETIME`
@@ -192,7 +192,8 @@ Functions:
   one) and `TRY_CONVERT` gives NULL when it does not parse. `CONVERT(varchar(n), <datetime>, style)`
   formats by the style; with no style a datetime/smalldatetime is written in style 0 (`Nov  4 2026  2:05PM`), a date as
   `yyyy-mm-dd`, a time, datetime2 or datetimeoffset in ODBC form with its scale's digits (`14:30:00.0000000`, `... +05:30`).
-  A declared length cuts the text, and `char(n)`/`nchar(n)` pad it to n. A datetime compared with text reads the
+  A declared length cuts the text, and `char(n)`/`nchar(n)` pad it to n; with no length `CAST`/`CONVERT` use 30, as SQL
+  Server does, and a variable declared `varchar`/`char` with no length holds one character. A datetime compared with text reads the
   text the same way, so `col >= '01/01/2025'` compares dates
 
 Catalog:
