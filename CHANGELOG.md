@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.13.0 - 2026-11-04
+
+**Read this before upgrading: some queries now answer differently, and all of them were wrong before.** No exported API was removed; `tds.ValueExpr` gains `CastLen`, and the comment on `OpLike` says its value may be an expression. A query copied from SQL Server Management Studio now runs where it was refused. A few queries change what they return, each from a wrong answer to the right one.
+
+**Comments never split a batch.** A `;` inside a `/* */` or `--` comment ended the statement, and a statement that began with a comment was not recognised as a DECLARE. The batch splitter now reads comments, strings and `[names]`, block comments nest as in T-SQL, and each statement's leading comments are dropped before it is read.
+
+**Any word T-SQL does not reserve is an alias.** `SELECT x AS first` was refused, because after AS only a plain identifier was accepted. Any non-reserved word now names a column or a table, in the `name = expr` form and in a VALUES column list too.
+
+**Set operations work in every subquery.** UNION, INTERSECT and EXCEPT were read only at the top level and in CTE bodies. They now work in derived tables, JOIN and APPLY bodies, scalar subqueries, EXISTS and IN. Also: `COUNT(*) + 1` and `MIN(x) + 'x'` are expressions, and `FROM (VALUES ...) v(x)` works.
+
+**A correlated subquery sees the outer row everywhere.** Outer values were bound into a subquery's WHERE only, so a FROM-less APPLY body could not read the outer row.
+- They now bind in the select list, CASE, nested derived tables, set-operation arms, table-function arguments and nested subqueries. A name the subquery defines itself wins, as in SQL Server.
+- Wrong answers fixed along the way: correlation was checked against the FROM alias only. A subquery that read a joined table ran once up front and answered from the wrong column. Correlated counts came back 0, and correlated subqueries over a derived table returned NULL.
+- A table function used as the FROM now honours its joins, and `alias.*` on a single table, derived table or table function expands to its columns instead of an empty row.
+
+**LIKE takes an expression.** `LIKE col`, `LIKE 'Smi' + '%'` and `LIKE @x + '%'` were refused. Any expression is now the pattern: one built from constants is folded before the backend sees it, and one that reads the row is evaluated per row. BETWEEN bounds are expressions too. LIKE now has its own matcher, so `[ -]` sets match, and NULL on either side never matches.
+
+**CONVERT to a date keeps its style.** `CONVERT(date, '05/01/1980', 101)` and TRY_CONVERT returned the text unchanged. The parser now keeps the style and the declared length. DATE, DATETIME, DATETIME2 and SMALLDATETIME conversions return dates read per style, and a datetime converted to text is formatted per style. A datetime compared with text such as `'01/01/2025'` compares as dates, and DATEADD and YEAR take text.
+
+**NULL comparisons follow three-valued logic.** A comparison with NULL was FALSE, so `NOT (col = 'x')` returned the NULL rows, as did NOT IN, NOT BETWEEN, NOT LIKE and NOT over AND or OR. UNKNOWN now stays UNKNOWN through NOT, AND and OR in WHERE, ON, HAVING and CASE WHEN. A WHERE conjunct is no longer pushed to the NULL-supplying side of an outer join, so `LEFT JOIN ... WHERE r.id IS NULL` returns the unmatched rows.
+
+**Trailing spaces do not count in a comparison.** `'ab' = 'ab   '` was false. Comparison, GROUP BY, DISTINCT, NULLIF and set operations now ignore trailing spaces, as SQL Server does, and `CHAR(n)` and `NCHAR(n)` pad to n. LIKE ignores the value's trailing spaces but not the pattern's.
+
+**A statement ends where the next one starts.** Only `;` ended a statement, so a DECLARE took the rest of the batch, `SET NOCOUNT ON` followed by a query dropped the query, and `SELECT 1 SELECT 2` failed. A statement now ends at a word that can only start another. UPDATE, DELETE and MERGE end at a SET that is not their own.
+
+**More of T-SQL is accepted.** `COUNT(DISTINCT x) + 1`, through the additive field `tds.ValueExpr.AggDist`. `LIKE ... ESCAPE`, through the additive field `tds.Predicate.Escape`; a pattern with ESCAPE reaches a backend only as an expression, never as pattern text. And `GROUP BY` on a qualified column such as `u.name`.
+
+**Dates and text convert as SQL Server converts them.**
+- TIME keeps the clock on 1900-01-01, and DATETIMEOFFSET keeps its offset. Both, and datetime2, round to their declared precision.
+- A date converted to text with no style reads as SQL Server writes it for its type.
+- CONCAT and every string function given a date use that text; before, CONCAT dropped the date and `LEFT(<date>, 3)` was empty.
+- `CAST` and `CONVERT` to char or varchar with no length cut at 30, and a variable declared with no length holds 1.
+
+
 ## v1.12.0 - 2026-10-20
 
 **`Server.CloseSessions` ends live sessions.** A host can end every session a predicate selects, as
